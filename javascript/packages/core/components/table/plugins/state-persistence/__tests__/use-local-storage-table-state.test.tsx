@@ -10,9 +10,28 @@ import { getInterpolationProviderWrapper } from '#core/test/wrappers/get-interpo
 import { getRouterWrapper } from '#core/test/wrappers/get-router-wrapper';
 import { useLocalStorageTableState } from '../use-local-storage-table-state';
 
+const VALID_COLUMN_IDS = ['name', 'department', 'status'];
+
 import type { TableState } from '#core/components/table/types/table-types';
 
 describe('useLocalStorageTableState', () => {
+<<<<<<< HEAD
+=======
+  const testData = [
+
+    { id: '1', name: 'Alice Johnson', department: 'Engineering', status: 'Active' },
+    { id: '2', name: 'Bob Smith', department: 'Marketing', status: 'Inactive' },
+    { id: '3', name: 'Carol Davis', department: 'Engineering', status: 'Active' },
+    { id: '4', name: 'David Wilson', department: 'Sales', status: 'Active' },
+  ];
+
+  const testColumns = [
+    { id: 'name', label: 'Name' },
+    { id: 'department', label: 'Department' },
+    { id: 'status', label: 'Status' },
+  ];
+
+>>>>>>> 99976d40 (Implement sharing table state through url params)
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
@@ -25,9 +44,12 @@ describe('useLocalStorageTableState', () => {
   });
 
   describe('hook behavior', () => {
+    const routerWrapper = buildWrapper([getRouterWrapper()]);
+
     it('returns default state when no persisted data exists', () => {
-      const { result } = renderHook(() =>
-        useLocalStorageTableState({ tableSettingsId: 'test-table' })
+      const { result } = renderHook(
+        () => useLocalStorageTableState({ tableSettingsId: 'test-table' }),
+        routerWrapper
       );
 
       expect(result.current.globalFilter).toBe('');
@@ -35,8 +57,9 @@ describe('useLocalStorageTableState', () => {
     });
 
     it('persists state changes to localStorage', () => {
-      const { result } = renderHook(() =>
-        useLocalStorageTableState({ tableSettingsId: 'test-table' })
+      const { result } = renderHook(
+        () => useLocalStorageTableState({ tableSettingsId: 'test-table' }),
+        routerWrapper
       );
 
       act(() => {
@@ -51,11 +74,13 @@ describe('useLocalStorageTableState', () => {
     });
 
     it('persists filter settings under filterSettingsId when provided', () => {
-      const { result } = renderHook(() =>
-        useLocalStorageTableState({
-          tableSettingsId: 'test-table',
-          filterSettingsId: 'test-table.project-123',
-        })
+      const { result } = renderHook(
+        () =>
+          useLocalStorageTableState({
+            tableSettingsId: 'test-table',
+            filterSettingsId: 'test-table.project-123',
+          }),
+        routerWrapper
       );
 
       act(() => {
@@ -89,8 +114,9 @@ describe('useLocalStorageTableState', () => {
       };
       localStorage.setItem(TABLE_LOCAL_STORAGE_KEY, JSON.stringify(existingState));
 
-      const { result } = renderHook(() =>
-        useLocalStorageTableState({ tableSettingsId: 'test-table' })
+      const { result } = renderHook(
+        () => useLocalStorageTableState({ tableSettingsId: 'test-table' }),
+        routerWrapper
       );
 
       expect(result.current.globalFilter).toBe('restored-filter');
@@ -105,11 +131,13 @@ describe('useLocalStorageTableState', () => {
       };
       localStorage.setItem(TABLE_LOCAL_STORAGE_KEY, JSON.stringify(existingState));
 
-      const { result } = renderHook(() =>
-        useLocalStorageTableState({
-          tableSettingsId: 'test-table',
-          filterSettingsId: 'test-table.project-123',
-        })
+      const { result } = renderHook(
+        () =>
+          useLocalStorageTableState({
+            tableSettingsId: 'test-table',
+            filterSettingsId: 'test-table.project-123',
+          }),
+        routerWrapper
       );
 
       expect(result.current.globalFilter).toBe('project-restored-filter');
@@ -119,14 +147,16 @@ describe('useLocalStorageTableState', () => {
     });
 
     it('uses initial state when no persisted data exists', () => {
-      const { result } = renderHook(() =>
-        useLocalStorageTableState({
-          tableSettingsId: 'test-table',
-          initialState: {
-            globalFilter: 'initial-filter',
-            columnVisibility: { name: false },
-          },
-        })
+      const { result } = renderHook(
+        () =>
+          useLocalStorageTableState({
+            tableSettingsId: 'test-table',
+            initialState: {
+              globalFilter: 'initial-filter',
+              columnVisibility: { name: false },
+            },
+          }),
+        routerWrapper
       );
 
       expect(result.current.globalFilter).toBe('initial-filter');
@@ -140,19 +170,24 @@ describe('useLocalStorageTableState', () => {
       });
 
       expect(() => {
-        renderHook(() => useLocalStorageTableState({ tableSettingsId: 'test-table' }));
+        renderHook(
+          () => useLocalStorageTableState({ tableSettingsId: 'test-table' }),
+          routerWrapper
+        );
       }).not.toThrow();
 
       localStorage.getItem = originalGetItem;
     });
 
     it('maintains separate state for different table settings IDs', () => {
-      const { result: result1 } = renderHook(() =>
-        useLocalStorageTableState({ tableSettingsId: 'table-1' })
+      const { result: result1 } = renderHook(
+        () => useLocalStorageTableState({ tableSettingsId: 'table-1' }),
+        routerWrapper
       );
 
-      const { result: result2 } = renderHook(() =>
-        useLocalStorageTableState({ tableSettingsId: 'table-2' })
+      const { result: result2 } = renderHook(
+        () => useLocalStorageTableState({ tableSettingsId: 'table-2' }),
+        routerWrapper
       );
 
       act(() => {
@@ -169,18 +204,22 @@ describe('useLocalStorageTableState', () => {
     });
 
     it('allows different projects to have separate filter state for same table', () => {
-      const { result: project1 } = renderHook(() =>
-        useLocalStorageTableState({
-          tableSettingsId: 'user-table',
-          filterSettingsId: 'user-table.project-123',
-        })
+      const { result: project1 } = renderHook(
+        () =>
+          useLocalStorageTableState({
+            tableSettingsId: 'user-table',
+            filterSettingsId: 'user-table.project-123',
+          }),
+        routerWrapper
       );
 
-      const { result: project2 } = renderHook(() =>
-        useLocalStorageTableState({
-          tableSettingsId: 'user-table',
-          filterSettingsId: 'user-table.project-456',
-        })
+      const { result: project2 } = renderHook(
+        () =>
+          useLocalStorageTableState({
+            tableSettingsId: 'user-table',
+            filterSettingsId: 'user-table.project-456',
+          }),
+        routerWrapper
       );
 
       act(() => {
@@ -430,6 +469,113 @@ describe('useLocalStorageTableState', () => {
         'Engineering'
       );
       expect(storedData['shared-table']['project-2']).toBeUndefined();
+    });
+  });
+
+  describe('urlFilters', () => {
+    it('returns buildShareUrl as a function when urlFilters is not configured', () => {
+      const { result } = renderHook(
+        () => useLocalStorageTableState({ tableSettingsId: 'test-table' }),
+        buildWrapper([getRouterWrapper()])
+      );
+      expect(typeof result.current.buildShareUrl).toBe('function');
+    });
+
+    it('ignores URL params when urlFilters is not enabled', () => {
+      const { result } = renderHook(
+        () =>
+          useLocalStorageTableState({
+            tableSettingsId: 'test-table',
+            validColumnIds: VALID_COLUMN_IDS,
+          }),
+        buildWrapper([getRouterWrapper({ location: '/?tb.test-table.gf=fromurl' })])
+      );
+      expect(result.current.globalFilter).toBe('');
+    });
+
+    it('URL state takes priority over localStorage when urlFilters.enabled = true', () => {
+      localStorage.setItem(
+        TABLE_LOCAL_STORAGE_KEY,
+        JSON.stringify({ 'test-table.globalFilter': 'fromlocal' })
+      );
+
+      const { result } = renderHook(
+        () =>
+          useLocalStorageTableState({
+            tableSettingsId: 'test-table',
+            validColumnIds: VALID_COLUMN_IDS,
+            urlFilters: { enabled: true },
+          }),
+        buildWrapper([getRouterWrapper({ location: '/?tb.test-table.gf=fromurl' })])
+      );
+
+      expect(result.current.globalFilter).toBe('fromurl');
+    });
+
+    it('URL state takes priority over initialState when urlFilters.enabled = true', () => {
+      const { result } = renderHook(
+        () =>
+          useLocalStorageTableState({
+            tableSettingsId: 'test-table',
+            validColumnIds: VALID_COLUMN_IDS,
+            initialState: { globalFilter: 'frominitial' },
+            urlFilters: { enabled: true },
+          }),
+        buildWrapper([getRouterWrapper({ location: '/?tb.test-table.gf=fromurl' })])
+      );
+
+      expect(result.current.globalFilter).toBe('fromurl');
+    });
+
+    it('falls back to localStorage when URL has no params and urlFilters.enabled = true', () => {
+      localStorage.setItem(
+        TABLE_LOCAL_STORAGE_KEY,
+        JSON.stringify({ 'test-table.globalFilter': 'fromlocal' })
+      );
+
+      const { result } = renderHook(
+        () =>
+          useLocalStorageTableState({
+            tableSettingsId: 'test-table',
+            validColumnIds: VALID_COLUMN_IDS,
+            urlFilters: { enabled: true },
+          }),
+        buildWrapper([getRouterWrapper()])
+      );
+
+      expect(result.current.globalFilter).toBe('fromlocal');
+    });
+
+    it('silently drops invalid column IDs from URL params', () => {
+      const { result } = renderHook(
+        () =>
+          useLocalStorageTableState({
+            tableSettingsId: 'test-table',
+            validColumnIds: VALID_COLUMN_IDS,
+            urlFilters: { enabled: true },
+          }),
+        buildWrapper([
+          getRouterWrapper({
+            location: '/?tb.test-table.cf=ghost:eq:x,status:eq:active',
+          }),
+        ])
+      );
+
+      expect(result.current.columnFilters).toEqual([{ id: 'status', value: 'active' }]);
+    });
+
+    it('applies URL sorting when urlFilters.enabled = true', () => {
+      const { result } = renderHook(
+        () =>
+          useLocalStorageTableState({
+            tableSettingsId: 'test-table',
+            validColumnIds: VALID_COLUMN_IDS,
+            urlFilters: { enabled: true },
+          }),
+        buildWrapper([getRouterWrapper({ location: '/?tb.test-table.so=name:desc' })])
+      );
+
+      expect(result.current.sorting).toEqual([{ id: 'name', desc: true }]);
     });
   });
 });
