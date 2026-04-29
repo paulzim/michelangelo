@@ -32,6 +32,9 @@ IMAGE_PULL_POLICY = os.environ.get("IMAGE_PULL_POLICY", "Never")
 
 RAY_LOG_URL_PREFIX = os.environ.get("RAY_LOG_URL_PREFIX")
 
+KUEUE_QUEUE_NAME = os.environ.get("KUEUE_QUEUE_NAME", "")
+metric_base_url = os.environ.get("METRIC_BASE_URL", "")
+
 def get_ray_log_url(ray_job_name):
     """
     Generate a log URL for a Ray job based on the job name.
@@ -267,35 +270,25 @@ def execute_ray_task(task_path, task_name, cluster, cluster_namespace, runtime_e
         retry_attempt_id = retry_attempt_id,
     )
 
+    # Enhanced: Call existing Go activity that now returns activity ID
     cluster_response = ray.create_cluster(cluster, timeout_seconds = DEFAULT_CREATE_CLUSTER_TIMEOUT_SECONDS)
 
-    cluster = cluster_response["rayCluster"]
-    first_activity_id = cluster_response["activityId"]
-
-    print("ray | first activity ID:", first_activity_id)
-
-    if cluster == None:
-        end_time_seconds = time.time()
-        end_time_formated_str = time.utc_format_seconds(TIME_FOMART, end_time_seconds)
-        report_progress(
-            task_path = task_path,
-            task_name = task_name,
-            task_log = "",
-            task_message = "Ray Cluster Creation Failed",
-            task_state = TASK_STATE_FAILED,
-            start_time = start_time_formated_str,
-            end_time = end_time_formated_str,
-            output = "",
-            retry_attempt_id = retry_attempt_id,
-            first_activity_id = first_activity_id,
-        )
-        fail("ray | cluster creation failed, activityId=" + first_activity_id)
+    # Extract cluster info and activity ID from enhanced response
+    cluster = cluster_response["rayCluster"]  # This contains the actual cluster data
+    first_activity_id = cluster_response["activityId"]  # NEW: Activity ID from Go
 
     cluster_url = cluster["status"].get("jobUrl", "UAPI did not report RayJob URL")
     cluster_name = cluster["metadata"]["name"]
     cluster_namespace = cluster["metadata"]["namespace"]
 
     print("ray | cluster created:", "ns=" + cluster_namespace, "n=" + cluster_name, "url=" + cluster_url)
+    print("ray | first activity ID:", first_activity_id)  # NEW: Log the activity ID
+
+    # Enhanced: Progress report with activity ID - this establishes the first activity for this task
+    external_resources = []
+    if metric_base_url:
+        metrics_url = metric_base_url + "/d/cluster-jobs/cluster-jobs?var-job=" + cluster_name
+        external_resources = [{"name": "Job Metrics", "url": metrics_url}]
 
     report_progress(
         task_path = task_path,
@@ -307,7 +300,8 @@ def execute_ray_task(task_path, task_name, cluster, cluster_namespace, runtime_e
         end_time = "",
         output = "",
         retry_attempt_id = retry_attempt_id,
-        first_activity_id = first_activity_id,
+        first_activity_id = first_activity_id,  # NEW: Store first activity ID for retry boundary
+        external_resources = external_resources,
     )
 
     atexit.register(terminate_cluster, cluster_namespace, cluster_name)
@@ -488,11 +482,16 @@ def ray_cluster_spec(
         # Add SYS_PTRACE capability for profiling.
         annotations["michelangelo/profiling-ptrace-enabled"] = "true"
 
+    labels = {}
+    if KUEUE_QUEUE_NAME:
+        labels["kueue.x-k8s.io/queue-name"] = KUEUE_QUEUE_NAME
+
     return {
         "metadata": {
             "generateName": "uf-ray-",
             "namespace": "default",
             "annotations": annotations,
+            "labels": labels,
         },
         "spec": {
             "user": {"name": USER_ID},
