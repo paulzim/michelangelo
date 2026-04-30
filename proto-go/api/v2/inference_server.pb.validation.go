@@ -164,6 +164,48 @@ func RegisterDecomSpecValidateExt(f func(*DecomSpec, string) error) {
 	decomSpecValidateExt = f
 }
 
+// clusterTargetValidateExt is an extension hook for additional validation logic
+var clusterTargetValidateExt func(*ClusterTarget, string) error
+
+func (this *ClusterTarget) Validate(prefix string) error {
+
+	if f, ok := this.Connection.(*ClusterTarget_Kubernetes); ok {
+		v := f.Kubernetes
+		n := `kubernetes`
+		var i interface{}
+		if reflect.ValueOf(v).Kind() == reflect.Ptr {
+			i = reflect.ValueOf(v).Interface()
+			if reflect.ValueOf(v).IsNil() {
+				i = nil
+			}
+		} else {
+			i = reflect.ValueOf(&v).Interface()
+		}
+		validate, hasValidate := i.(interface{ Validate(string) error })
+		if hasValidate {
+			if err := validate.Validate(prefix + n + "."); err != nil {
+				return err
+			}
+		}
+	}
+	if this.GetConnection() == nil {
+		return status.Error(codes.InvalidArgument, "one field in oneof "+prefix+"connection(kubernetes) must be set")
+	}
+
+	// Call extension validation if registered
+	if clusterTargetValidateExt != nil {
+		if err := clusterTargetValidateExt(this, prefix); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RegisterClusterTargetValidateExt registers an extension validation function
+func RegisterClusterTargetValidateExt(f func(*ClusterTarget, string) error) {
+	clusterTargetValidateExt = f
+}
+
 // inferenceServerSpecValidateExt is an extension hook for additional validation logic
 var inferenceServerSpecValidateExt func(*InferenceServerSpec, string) error
 
@@ -245,6 +287,28 @@ func (this *InferenceServerSpec) Validate(prefix string) error {
 			}
 		}
 	}
+	{
+		v := this.GetClusterTargets()
+		for i, v := range v {
+			n := `cluster_targets[` + strconv.Itoa(i) + `]`
+
+			var i interface{}
+			if reflect.ValueOf(v).Kind() == reflect.Ptr {
+				i = reflect.ValueOf(v).Interface()
+				if reflect.ValueOf(v).IsNil() {
+					i = nil
+				}
+			} else {
+				i = reflect.ValueOf(&v).Interface()
+			}
+			validate, hasValidate := i.(interface{ Validate(string) error })
+			if hasValidate {
+				if err := validate.Validate(prefix + n + "."); err != nil {
+					return err
+				}
+			}
+		}
+	}
 	// Call extension validation if registered
 	if inferenceServerSpecValidateExt != nil {
 		if err := inferenceServerSpecValidateExt(this, prefix); err != nil {
@@ -259,6 +323,47 @@ func RegisterInferenceServerSpecValidateExt(f func(*InferenceServerSpec, string)
 	inferenceServerSpecValidateExt = f
 }
 
+// clusterTargetStatusValidateExt is an extension hook for additional validation logic
+var clusterTargetStatusValidateExt func(*ClusterTargetStatus, string) error
+
+func (this *ClusterTargetStatus) Validate(prefix string) error {
+
+	{
+		v := this.GetConditions()
+		for i, v := range v {
+			n := `conditions[` + strconv.Itoa(i) + `]`
+
+			var i interface{}
+			if reflect.ValueOf(v).Kind() == reflect.Ptr {
+				i = reflect.ValueOf(v).Interface()
+				if reflect.ValueOf(v).IsNil() {
+					i = nil
+				}
+			} else {
+				i = reflect.ValueOf(&v).Interface()
+			}
+			validate, hasValidate := i.(interface{ Validate(string) error })
+			if hasValidate {
+				if err := validate.Validate(prefix + n + "."); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	// Call extension validation if registered
+	if clusterTargetStatusValidateExt != nil {
+		if err := clusterTargetStatusValidateExt(this, prefix); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RegisterClusterTargetStatusValidateExt registers an extension validation function
+func RegisterClusterTargetStatusValidateExt(f func(*ClusterTargetStatus, string) error) {
+	clusterTargetStatusValidateExt = f
+}
+
 // inferenceServerStatusValidateExt is an extension hook for additional validation logic
 var inferenceServerStatusValidateExt func(*InferenceServerStatus, string) error
 
@@ -268,6 +373,28 @@ func (this *InferenceServerStatus) Validate(prefix string) error {
 		v := this.GetConditions()
 		for i, v := range v {
 			n := `conditions[` + strconv.Itoa(i) + `]`
+
+			var i interface{}
+			if reflect.ValueOf(v).Kind() == reflect.Ptr {
+				i = reflect.ValueOf(v).Interface()
+				if reflect.ValueOf(v).IsNil() {
+					i = nil
+				}
+			} else {
+				i = reflect.ValueOf(&v).Interface()
+			}
+			validate, hasValidate := i.(interface{ Validate(string) error })
+			if hasValidate {
+				if err := validate.Validate(prefix + n + "."); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	{
+		v := this.GetClusterStatuses()
+		for i, v := range v {
+			n := `cluster_statuses[` + strconv.Itoa(i) + `]`
 
 			var i interface{}
 			if reflect.ValueOf(v).Kind() == reflect.Ptr {
