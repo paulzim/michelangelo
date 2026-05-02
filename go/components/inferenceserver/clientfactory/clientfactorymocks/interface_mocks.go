@@ -11,6 +11,7 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 	v2 "github.com/michelangelo-ai/michelangelo/proto-go/api/v2"
+	dynamic "k8s.io/client-go/dynamic"
 	client "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -50,6 +51,21 @@ func (m *MockClientFactory) GetClient(ctx context.Context, cluster *v2.ClusterTa
 func (mr *MockClientFactoryMockRecorder) GetClient(ctx, cluster interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClient", reflect.TypeOf((*MockClientFactory)(nil).GetClient), ctx, cluster)
+}
+
+// GetDynamicClient mocks base method.
+func (m *MockClientFactory) GetDynamicClient(ctx context.Context, cluster *v2.ClusterTarget) (dynamic.Interface, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetDynamicClient", ctx, cluster)
+	ret0, _ := ret[0].(dynamic.Interface)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetDynamicClient indicates an expected call of GetDynamicClient.
+func (mr *MockClientFactoryMockRecorder) GetDynamicClient(ctx, cluster interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDynamicClient", reflect.TypeOf((*MockClientFactory)(nil).GetDynamicClient), ctx, cluster)
 }
 
 // GetHTTPClient mocks base method.

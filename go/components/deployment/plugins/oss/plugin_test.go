@@ -102,11 +102,11 @@ func TestParseStage(t *testing.T) {
 					CandidateRevision: &api.ResourceIdentifier{Name: "model-v1"},
 					Stage:             v2pb.DEPLOYMENT_STAGE_VALIDATION,
 					Conditions: []*api.Condition{
-						{Type: common.ActorTypeResourceAcquisition, Status: api.CONDITION_STATUS_FALSE},
+						{Type: common.ActorTypePlacementPrep, Status: api.CONDITION_STATUS_FALSE},
 					},
 				},
 			},
-			expectedStage: v2pb.DEPLOYMENT_STAGE_RESOURCE_ACQUISITION,
+			expectedStage: v2pb.DEPLOYMENT_STAGE_PLACEMENT,
 		},
 		{
 			name: "rollout complete condition true, rollout complete stage",
@@ -256,12 +256,12 @@ func TestParseStage(t *testing.T) {
 					Stage:             v2pb.DEPLOYMENT_STAGE_VALIDATION,
 					Conditions: []*api.Condition{
 						{Type: common.ActorTypeValidation, Status: api.CONDITION_STATUS_TRUE},
-						{Type: common.ActorTypeResourceAcquisition, Status: api.CONDITION_STATUS_FALSE},
+						{Type: common.ActorTypePlacementPrep, Status: api.CONDITION_STATUS_FALSE},
 						{Type: common.ActorTypeRolloutComplete, Status: api.CONDITION_STATUS_TRUE},
 					},
 				},
 			},
-			expectedStage: v2pb.DEPLOYMENT_STAGE_RESOURCE_ACQUISITION,
+			expectedStage: v2pb.DEPLOYMENT_STAGE_PLACEMENT,
 		},
 	}
 

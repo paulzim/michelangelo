@@ -7,197 +7,170 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
 
 	"github.com/michelangelo-ai/michelangelo/go/components/deployment/route/routemocks"
-	"github.com/michelangelo-ai/michelangelo/proto-go/api"
+	"github.com/michelangelo-ai/michelangelo/go/components/inferenceserver/backends"
+	"github.com/michelangelo-ai/michelangelo/go/components/inferenceserver/clientfactory/clientfactorymocks"
+	"github.com/michelangelo-ai/michelangelo/go/components/inferenceserver/modelconfig/modelconfigmocks"
+	apipb "github.com/michelangelo-ai/michelangelo/proto-go/api"
 	v2pb "github.com/michelangelo-ai/michelangelo/proto-go/api/v2"
 )
 
-func TestTrafficRoutingRetrieve(t *testing.T) {
+// trafficMocks groups the mocks used by traffic-routing tests. Distinct from rolloutMocks
+// because this actor uses the dynamic client + route provider rather than the typed client +
+// backend / model config provider.
+type trafficMocks struct {
+	factory       *clientfactorymocks.MockClientFactory
+	routeProvider *routemocks.MockRouteProvider
+}
+
+// newTrafficFixture builds a Params + target wired to the supplied mocks. dynamicClientErr
+// lets a test inject a GetDynamicClient failure without re-mocking the factory each time.
+func newTrafficFixture(t *testing.T, dynamicClientErr error) (Params, *v2pb.ClusterTarget, *trafficMocks) {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	t.Cleanup(ctrl.Finish)
+
+	mocks := &trafficMocks{
+		factory:       clientfactorymocks.NewMockClientFactory(ctrl),
+		routeProvider: routemocks.NewMockRouteProvider(ctrl),
+	}
+
+	mocks.factory.EXPECT().GetDynamicClient(gomock.Any(), gomock.Any()).
+		Return(dynamic.Interface(nil), dynamicClientErr).AnyTimes()
+
+	params := Params{
+		ClientFactory:       mocks.factory,
+		BackendRegistry:     backends.NewRegistry(),
+		ModelConfigProvider: modelconfigmocks.NewMockModelConfigProvider(ctrl),
+		RouteProvider:       mocks.routeProvider,
+		Logger:              zap.NewNop(),
+	}
+	target := &v2pb.ClusterTarget{ClusterId: testCluster}
+	return params, target, mocks
+}
+
+func TestTrafficRoutingActor_Retrieve(t *testing.T) {
 	tests := []struct {
-		name                    string
-		deployment              *v2pb.Deployment
-		setupMocks              func(*routemocks.MockRouteProvider)
-		expectedConditionStatus api.ConditionStatus
-		expectedConditionReason string
+		name              string
+		dynamicClientErr  error
+		setupMocks        func(*trafficMocks)
+		expectedStatus    apipb.ConditionStatus
+		expectedReasonSub string
 	}{
 		{
-			name: "traffic routing configured successfully",
-			deployment: &v2pb.Deployment{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-deployment", Namespace: "default"},
-				Spec: v2pb.DeploymentSpec{
-					DesiredRevision: &api.ResourceIdentifier{Name: "model-v1"},
-					Target: &v2pb.DeploymentSpec_InferenceServer{
-						InferenceServer: &api.ResourceIdentifier{Name: "test-server"},
-					},
-				},
-			},
-			setupMocks: func(rp *routemocks.MockRouteProvider) {
-				rp.EXPECT().CheckDeploymentRouteStatus(gomock.Any(), gomock.Any(), gomock.Any(), "test-deployment", "default", "test-server", "model-v1").Return(true, nil)
-			},
-			expectedConditionStatus: api.CONDITION_STATUS_TRUE,
-			expectedConditionReason: "",
-		},
-		{
-			name: "deployment route not configured",
-			deployment: &v2pb.Deployment{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-deployment", Namespace: "default"},
-				Spec: v2pb.DeploymentSpec{
-					DesiredRevision: &api.ResourceIdentifier{Name: "model-v1"},
-					Target: &v2pb.DeploymentSpec_InferenceServer{
-						InferenceServer: &api.ResourceIdentifier{Name: "test-server"},
-					},
-				},
-			},
-			setupMocks: func(rp *routemocks.MockRouteProvider) {
-				rp.EXPECT().CheckDeploymentRouteStatus(gomock.Any(), gomock.Any(), gomock.Any(), "test-deployment", "default", "test-server", "model-v1").Return(false, nil)
-			},
-			expectedConditionStatus: api.CONDITION_STATUS_FALSE,
-			expectedConditionReason: "Deployment route is not configured",
+			name:              "GetDynamicClient errors",
+			dynamicClientErr:  errors.New("dial timeout"),
+			setupMocks:        func(*trafficMocks) {},
+			expectedStatus:    apipb.CONDITION_STATUS_FALSE,
+			expectedReasonSub: "dial timeout",
 		},
 		{
 			name: "check deployment route status fails",
-			deployment: &v2pb.Deployment{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-deployment", Namespace: "default"},
-				Spec: v2pb.DeploymentSpec{
-					DesiredRevision: &api.ResourceIdentifier{Name: "model-v1"},
-					Target: &v2pb.DeploymentSpec_InferenceServer{
-						InferenceServer: &api.ResourceIdentifier{Name: "test-server"},
-					},
-				},
+			setupMocks: func(m *trafficMocks) {
+				m.routeProvider.EXPECT().CheckDeploymentRouteStatus(gomock.Any(), gomock.Any(), gomock.Any(),
+					testDeploymentName, testNamespace, testISName, testModelName).
+					Return(false, errors.New("api error"))
 			},
-			setupMocks: func(rp *routemocks.MockRouteProvider) {
-				rp.EXPECT().CheckDeploymentRouteStatus(gomock.Any(), gomock.Any(), gomock.Any(), "test-deployment", "default", "test-server", "model-v1").Return(false, errors.New("api error"))
+			expectedStatus:    apipb.CONDITION_STATUS_FALSE,
+			expectedReasonSub: "api error",
+		},
+		{
+			name: "deployment route not configured",
+			setupMocks: func(m *trafficMocks) {
+				m.routeProvider.EXPECT().CheckDeploymentRouteStatus(gomock.Any(), gomock.Any(), gomock.Any(),
+					testDeploymentName, testNamespace, testISName, testModelName).
+					Return(false, nil)
 			},
-			expectedConditionStatus: api.CONDITION_STATUS_FALSE,
-			expectedConditionReason: "Failed to check deployment route status: api error",
+			expectedStatus:    apipb.CONDITION_STATUS_FALSE,
+			expectedReasonSub: "HTTPRoute in cluster c1 not pointing at model model-v1",
+		},
+		{
+			name: "traffic routing configured successfully",
+			setupMocks: func(m *trafficMocks) {
+				m.routeProvider.EXPECT().CheckDeploymentRouteStatus(gomock.Any(), gomock.Any(), gomock.Any(),
+					testDeploymentName, testNamespace, testISName, testModelName).
+					Return(true, nil)
+			},
+			expectedStatus: apipb.CONDITION_STATUS_TRUE,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
+			params, target, mocks := newTrafficFixture(t, tt.dynamicClientErr)
+			tt.setupMocks(mocks)
 
-			mockRouteProvider := routemocks.NewMockRouteProvider(ctrl)
-			tt.setupMocks(mockRouteProvider)
+			actor := NewTrafficRoutingActor(params, target)
+			got, err := actor.Retrieve(context.Background(), rolloutDeployment(""), &apipb.Condition{})
 
-			actor := &TrafficRoutingActor{
-				RouteProvider: mockRouteProvider,
-				Logger:        zap.NewNop(),
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedStatus, got.Status)
+			if tt.expectedReasonSub != "" {
+				assert.Contains(t, got.Reason, tt.expectedReasonSub)
 			}
-
-			condition, err := actor.Retrieve(context.Background(), tt.deployment, &api.Condition{})
-
-			assert.NoError(t, err)
-			assert.NotNil(t, condition)
-			assert.Equal(t, tt.expectedConditionStatus, condition.Status)
-			assert.Equal(t, tt.expectedConditionReason, condition.Reason)
 		})
 	}
 }
 
-func TestTrafficRoutingRun(t *testing.T) {
+func TestTrafficRoutingActor_Run(t *testing.T) {
 	tests := []struct {
-		name                    string
-		deployment              *v2pb.Deployment
-		setupMocks              func(*routemocks.MockRouteProvider)
-		expectedConditionStatus api.ConditionStatus
-		expectedConditionReason string
+		name              string
+		dynamicClientErr  error
+		setupMocks        func(*trafficMocks)
+		expectedStatus    apipb.ConditionStatus
+		expectedReasonSub string
 	}{
 		{
-			name: "traffic routing configured successfully",
-			deployment: &v2pb.Deployment{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-deployment", Namespace: "default"},
-				Spec: v2pb.DeploymentSpec{
-					DesiredRevision: &api.ResourceIdentifier{Name: "model-v1"},
-					Target: &v2pb.DeploymentSpec_InferenceServer{
-						InferenceServer: &api.ResourceIdentifier{Name: "test-server"},
-					},
-				},
-			},
-			setupMocks: func(rp *routemocks.MockRouteProvider) {
-				rp.EXPECT().EnsureDeploymentRoute(gomock.Any(), gomock.Any(), gomock.Any(), "test-deployment", "default", "test-server", "model-v1").Return(nil)
-			},
-			expectedConditionStatus: api.CONDITION_STATUS_TRUE,
-			expectedConditionReason: "",
-		},
-		{
-			name: "missing inference server",
-			deployment: &v2pb.Deployment{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-deployment", Namespace: "default"},
-				Spec: v2pb.DeploymentSpec{
-					DesiredRevision: &api.ResourceIdentifier{Name: "model-v1"},
-					Target:          nil,
-				},
-			},
-			setupMocks:              func(rp *routemocks.MockRouteProvider) {},
-			expectedConditionStatus: api.CONDITION_STATUS_FALSE,
-			expectedConditionReason: "inference server not specified for deployment test-deployment",
+			name:              "GetDynamicClient errors",
+			dynamicClientErr:  errors.New("dial timeout"),
+			setupMocks:        func(*trafficMocks) {},
+			expectedStatus:    apipb.CONDITION_STATUS_FALSE,
+			expectedReasonSub: "dial timeout",
 		},
 		{
 			name: "add deployment route fails",
-			deployment: &v2pb.Deployment{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-deployment", Namespace: "default"},
-				Spec: v2pb.DeploymentSpec{
-					DesiredRevision: &api.ResourceIdentifier{Name: "model-v1"},
-					Target: &v2pb.DeploymentSpec_InferenceServer{
-						InferenceServer: &api.ResourceIdentifier{Name: "test-server"},
-					},
-				},
+			setupMocks: func(m *trafficMocks) {
+				m.routeProvider.EXPECT().EnsureDeploymentRoute(gomock.Any(), gomock.Any(), gomock.Any(),
+					testDeploymentName, testNamespace, testISName, testModelName).
+					Return(errors.New("route creation failed"))
 			},
-			setupMocks: func(rp *routemocks.MockRouteProvider) {
-				rp.EXPECT().EnsureDeploymentRoute(gomock.Any(), gomock.Any(), gomock.Any(), "test-deployment", "default", "test-server", "model-v1").Return(errors.New("route creation failed"))
-			},
-			expectedConditionStatus: api.CONDITION_STATUS_FALSE,
-			expectedConditionReason: "Failed to add deployment route: route creation failed",
+			expectedStatus:    apipb.CONDITION_STATUS_FALSE,
+			expectedReasonSub: "route creation failed",
 		},
 		{
-			name: "traffic routing configured with complex deployment",
-			deployment: &v2pb.Deployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "complex-deployment",
-					Namespace: "production",
-					Annotations: map[string]string{
-						"rollout.michelangelo.ai/strategy": "rolling",
-					},
-				},
-				Spec: v2pb.DeploymentSpec{
-					DesiredRevision: &api.ResourceIdentifier{Name: "bert_cola"},
-					Target: &v2pb.DeploymentSpec_InferenceServer{
-						InferenceServer: &api.ResourceIdentifier{Name: "triton-server"},
-					},
-				},
+			name: "traffic routing configured successfully",
+			setupMocks: func(m *trafficMocks) {
+				m.routeProvider.EXPECT().EnsureDeploymentRoute(gomock.Any(), gomock.Any(), gomock.Any(),
+					testDeploymentName, testNamespace, testISName, testModelName).
+					Return(nil)
 			},
-			setupMocks: func(rp *routemocks.MockRouteProvider) {
-				rp.EXPECT().EnsureDeploymentRoute(gomock.Any(), gomock.Any(), gomock.Any(), "complex-deployment", "production", "triton-server", "bert_cola").Return(nil)
-			},
-			expectedConditionStatus: api.CONDITION_STATUS_TRUE,
-			expectedConditionReason: "",
+			expectedStatus: apipb.CONDITION_STATUS_TRUE,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
+			params, target, mocks := newTrafficFixture(t, tt.dynamicClientErr)
+			tt.setupMocks(mocks)
 
-			mockRouteProvider := routemocks.NewMockRouteProvider(ctrl)
-			tt.setupMocks(mockRouteProvider)
+			actor := NewTrafficRoutingActor(params, target)
+			got, err := actor.Run(context.Background(), rolloutDeployment(""), &apipb.Condition{})
 
-			actor := &TrafficRoutingActor{
-				RouteProvider: mockRouteProvider,
-				Logger:        zap.NewNop(),
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedStatus, got.Status)
+			if tt.expectedReasonSub != "" {
+				assert.Contains(t, got.Reason, tt.expectedReasonSub)
 			}
-
-			condition, err := actor.Run(context.Background(), tt.deployment, &api.Condition{})
-
-			assert.NoError(t, err)
-			assert.NotNil(t, condition)
-			assert.Equal(t, tt.expectedConditionStatus, condition.Status)
-			assert.Equal(t, tt.expectedConditionReason, condition.Reason)
 		})
 	}
+}
+
+func TestTrafficRoutingActor_GetType(t *testing.T) {
+	params, target, _ := newTrafficFixture(t, nil)
+	actor := NewTrafficRoutingActor(params, target)
+	assert.Equal(t, "TrafficRoutingConfigured-"+testCluster, actor.GetType())
 }
