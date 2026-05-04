@@ -12,26 +12,25 @@ Michelangelo does not bundle an MLflow server. This guide assumes you are runnin
 ┌─────────────────────────────────────────────┐
 │ Operator Responsibility                     │
 │ ├─ Deploy or point to an MLflow server      │
-│ ├─ Ensure network reachability from pods    │
-│ └─ Inject MLFLOW_TRACKING_URI via ConfigMap │
+│ └─ Ensure network reachability from pods    │
 └─────────────────────────────────────────────┘
                      ↓
 ┌─────────────────────────────────────────────┐
 │ User Responsibility (task code)             │
+│ ├─ Set MLFLOW_TRACKING_URI in workflow code │
 │ ├─ Import mlflow inside @uniflow.task()     │
-│ ├─ Read URI from environment variable       │
 │ └─ Log runs, params, metrics, artifacts     │
 └─────────────────────────────────────────────┘
 ```
 
-Michelangelo does not intercept or wrap MLflow calls. Users call the MLflow client directly inside `@uniflow.task()` functions; Michelangelo provides the environment variable injection and network access.
+Michelangelo does not intercept or wrap MLflow calls. Users call the MLflow client directly inside `@uniflow.task()` functions and configure the tracking URI themselves. The operator's job is to ensure the MLflow server is reachable from task pods.
 
 ---
 
 ## Prerequisites
 
 - A running MLflow Tracking Server accessible from your Kubernetes cluster. Replace `http://mlflow.example.com:5000` in the examples below with your actual server address.
-- Sufficient RBAC to create ConfigMaps and patch namespace-scoped resources in the compute cluster namespace.
+- Sufficient RBAC to create NetworkPolicy resources in the compute cluster namespace if egress rules are needed.
 - The `mlflow` Python package available in the task's Docker image (users add this to their `requirements.txt`).
 
 ---
@@ -85,41 +84,35 @@ Replace `<your-pod-selector-label>` with labels that match your task pods. Check
 
 ---
 
-## Step 2: Inject the Tracking URI into the ConfigMap
+## Step 2: Configure the Tracking URI
 
-Michelangelo injects the `michelangelo-config` ConfigMap as an `envFrom` source into every task pod. Adding a key here makes it available as an environment variable in all Ray and Spark pods dispatched by Michelangelo.
+`MLFLOW_TRACKING_URI` is a user-space configuration — it belongs in workflow code or the Ray job pod environment, not in the Michelangelo system ConfigMap. Users should set it themselves using one of these approaches.
+
+### Option A: Set in workflow code
+
+The simplest approach is to call `mlflow.set_tracking_uri()` directly in the task or at the top of the workflow module:
+
+```python
+import mlflow
+import michelangelo.uniflow.core as uniflow
+from michelangelo.uniflow.plugins.ray import RayTask
+
+@uniflow.task(config=RayTask(head_cpu=2, head_memory="4Gi"))
+def train_model(train_data, config: dict):
+    mlflow.set_tracking_uri("http://mlflow.example.com:5000")
+    mlflow.set_experiment("fraud-detection")
+    ...
+```
+
+### Option B: Set via pipeline environment
+
+Users can pass `MLFLOW_TRACKING_URI` as an environment variable when submitting a pipeline run, keeping the URI out of source code:
 
 ```bash
-kubectl patch configmap michelangelo-config \
-  --namespace=<compute-namespace> \
-  --type=merge \
-  -p '{"data":{"MLFLOW_TRACKING_URI":"http://mlflow.example.com:5000"}}'
+ma pipeline dev-run -f pipeline.yaml --env MLFLOW_TRACKING_URI=http://mlflow.example.com:5000
 ```
 
-Or add it to your existing declarative ConfigMap manifest:
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: michelangelo-config
-  namespace: <compute-namespace>
-data:
-  # Existing keys
-  MA_FILE_SYSTEM: s3://default
-  MA_FILE_SYSTEM_S3_SCHEME: http
-  AWS_ACCESS_KEY_ID: <your-access-key-id>
-  AWS_SECRET_ACCESS_KEY: <your-secret-access-key>
-  AWS_ENDPOINT_URL: <your-storage-endpoint>
-  # MLflow
-  MLFLOW_TRACKING_URI: "http://mlflow.example.com:5000"
-```
-
-New pods pick up the change automatically. Already-running pods will not see the update until they are replaced.
-
-:::tip
-`MLFLOW_TRACKING_URI` is the environment variable that MLflow's Python client reads natively — no extra configuration is needed in user task code.
-:::
+In task code, MLflow reads `MLFLOW_TRACKING_URI` from the environment automatically — no explicit `set_tracking_uri()` call is needed when the variable is set.
 
 ---
 
@@ -127,45 +120,37 @@ New pods pick up the change automatically. Already-running pods will not see the
 
 ### Self-hosted MLflow with basic auth
 
-If your MLflow server requires HTTP basic authentication, add the credentials to the ConfigMap:
+If your MLflow server requires HTTP basic authentication, pass the credentials as pipeline environment variables:
 
 ```bash
-kubectl patch configmap michelangelo-config \
-  --namespace=<compute-namespace> \
-  --type=merge \
-  -p '{"data":{
-    "MLFLOW_TRACKING_URI":"http://mlflow.example.com:5000",
-    "MLFLOW_TRACKING_USERNAME":"<username>",
-    "MLFLOW_TRACKING_PASSWORD":"<password>"
-  }}'
+ma pipeline dev-run -f pipeline.yaml \
+  --env MLFLOW_TRACKING_URI=http://mlflow.example.com:5000 \
+  --env MLFLOW_TRACKING_USERNAME=<username> \
+  --env MLFLOW_TRACKING_PASSWORD=<password>
 ```
 
 MLflow's client reads `MLFLOW_TRACKING_USERNAME` and `MLFLOW_TRACKING_PASSWORD` natively.
 
 :::warning
-`michelangelo-config` is a ConfigMap, not a Secret — values are stored in plaintext in etcd. For production environments, consider using [workload identity](https://kubernetes.io/docs/concepts/security/service-accounts/) (IRSA on AWS, Workload Identity on GKE) so that task pods authenticate to MLflow via IAM roles rather than static credentials.
+Avoid hardcoding credentials in source code or pipeline YAML files committed to version control. Pass them at runtime via `--env` or a secrets manager integrated with your CI/CD system.
 :::
 
 ### Databricks Managed MLflow
 
-If you are using Databricks Managed MLflow, set the following keys:
+If you are using Databricks Managed MLflow, pass the following environment variables at pipeline submission time:
 
 ```bash
-kubectl patch configmap michelangelo-config \
-  --namespace=<compute-namespace> \
-  --type=merge \
-  -p '{"data":{
-    "MLFLOW_TRACKING_URI":"databricks",
-    "DATABRICKS_HOST":"https://<your-workspace>.azuredatabricks.net",
-    "DATABRICKS_TOKEN":"<your-personal-access-token>"
-  }}'
+ma pipeline dev-run -f pipeline.yaml \
+  --env MLFLOW_TRACKING_URI=databricks \
+  --env DATABRICKS_HOST=https://<your-workspace>.azuredatabricks.net \
+  --env DATABRICKS_TOKEN=<your-personal-access-token>
 ```
 
 ---
 
 ## What Users Do (Task Code)
 
-Once the operator has completed the steps above, users can use MLflow from any `@uniflow.task()` function without any extra configuration — the MLflow client reads `MLFLOW_TRACKING_URI` from the environment automatically.
+Once the operator has confirmed network reachability (Step 1), users configure their MLflow tracking URI and log experiments from any `@uniflow.task()` function.
 
 ```python
 import mlflow
@@ -216,20 +201,18 @@ MLflow includes its own model registry. Michelangelo also has a built-in model r
 
 ## Verification
 
-After applying the configuration, confirm the environment variable is visible inside a task pod:
+Verify network reachability from within the compute namespace using a temporary curl pod — the same approach as Step 1:
 
 ```bash
-kubectl exec -it <task-pod-name> -n <compute-namespace> -- env | grep MLFLOW
-```
-
-You can also verify end-to-end reachability from a task pod by running a connectivity check against the MLflow health endpoint:
-
-```bash
-kubectl exec -it <task-pod-name> -n <compute-namespace> -- \
+kubectl run mlflow-verify \
+  --image=curlimages/curl \
+  --namespace=<compute-namespace> \
+  --restart=Never \
+  --rm -it -- \
   curl -sv http://mlflow.example.com:5000/health
 ```
 
-A `200 OK` response confirms both the environment variable injection and network reachability are working correctly.
+A `200 OK` response confirms task pods in that namespace can reach the MLflow server. The pod is automatically deleted after the check (`--rm`).
 
 ---
 
@@ -237,9 +220,8 @@ A `200 OK` response confirms both the environment variable injection and network
 
 | Symptom | Likely cause | Resolution |
 |---|---|---|
-| `MLFLOW_TRACKING_URI` not set in pod | ConfigMap patch not applied, or pod predates the patch | Verify with `kubectl get configmap michelangelo-config -n <compute-namespace> -o yaml`; restart pods if needed |
 | `ConnectionRefusedError` or `requests.exceptions.ConnectionError` | MLflow server unreachable from pod | Re-run the connectivity test from Step 1; check NetworkPolicy and firewall rules |
-| `RestException: PERMISSION_DENIED` | Credentials missing or incorrect | Verify `MLFLOW_TRACKING_USERNAME` / `MLFLOW_TRACKING_PASSWORD` are set; check MLflow server auth config |
+| `RestException: PERMISSION_DENIED` | Credentials missing or incorrect | Verify `MLFLOW_TRACKING_USERNAME` / `MLFLOW_TRACKING_PASSWORD` are set at pipeline submission time |
 | `mlflow: command not found` / `ModuleNotFoundError` | `mlflow` not in task's Docker image | Add `mlflow` to `requirements.txt` or the project Dockerfile |
 | MLflow run logged but artifacts missing | Artifact store (S3/GCS) unreachable from pod | Confirm task pod has access to the artifact store configured in the MLflow server |
 | `INVALID_PARAMETER_VALUE` on `log_model` | Client/server version mismatch | Pin `mlflow` to the same major version as the server |
