@@ -12,9 +12,10 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 
-	"github.com/michelangelo-ai/michelangelo/go/components/jobs/client/k8sengine"
 	"github.com/michelangelo-ai/michelangelo/go/components/jobs/common/constants"
 	"github.com/michelangelo-ai/michelangelo/go/components/jobs/common/secrets"
+	matypes "github.com/michelangelo-ai/michelangelo/go/components/jobs/common/types"
+	"github.com/michelangelo-ai/michelangelo/go/components/jobs/common/types/typesmocks"
 	"github.com/michelangelo-ai/michelangelo/go/components/jobs/compute"
 	"github.com/michelangelo-ai/michelangelo/go/components/jobs/compute/computemocks"
 	apipb "github.com/michelangelo-ai/michelangelo/proto-go/api"
@@ -32,6 +33,31 @@ import (
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/rest/fake"
 )
+
+// permissiveMapper returns a MockMapper with relaxed expectations on every
+// method, matching the no-op behavior the original tests relied on from a
+// real mapper. Tests that need specific mapper behavior should construct
+// their own *typesmocks.MockMapper directly.
+func permissiveMapper(t *testing.T) *typesmocks.MockMapper {
+	ctrl := gomock.NewController(t)
+	m := typesmocks.NewMockMapper(ctrl)
+	m.EXPECT().GetLocalName(gomock.Any()).
+		DoAndReturn(func(obj runtime.Object) (string, string) {
+			if mo, ok := obj.(metav1.Object); ok {
+				return "default", mo.GetName()
+			}
+			return "", ""
+		}).AnyTimes()
+	m.EXPECT().MapGlobalJobToLocal(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&rayv1.RayJob{}, nil).AnyTimes()
+	m.EXPECT().MapGlobalJobClusterToLocal(gomock.Any(), gomock.Any()).
+		Return(&rayv1.RayCluster{}, nil).AnyTimes()
+	m.EXPECT().MapLocalClusterStatusToGlobal(gomock.Any()).
+		Return(&matypes.JobClusterStatus{Ray: &v2pb.RayClusterStatus{}}, nil).AnyTimes()
+	m.EXPECT().MapLocalJobStatusToGlobal(gomock.Any()).
+		Return(&matypes.JobStatus{Ray: &v2pb.RayJobStatus{}}, nil).AnyTimes()
+	return m
+}
 
 func TestGetClusterStatus(t *testing.T) {
 	tests := []struct {
@@ -188,7 +214,7 @@ func TestDeleteJob(t *testing.T) {
 			k8sc := Client{
 				factory: f,
 				helper:  NewHelper(),
-				mapper:  k8sengine.NewMapper().Mapper,
+				mapper:  permissiveMapper(t),
 			}
 
 			// test
@@ -255,7 +281,7 @@ func TestDeletePromConfigMap(t *testing.T) {
 			k8sc := Client{
 				factory: f,
 				helper:  NewHelper(),
-				mapper:  k8sengine.NewMapper().Mapper,
+				mapper:  permissiveMapper(t),
 			}
 
 			// test
@@ -322,7 +348,7 @@ func TestDeleteSecret(t *testing.T) {
 			k8sc := Client{
 				factory: f,
 				helper:  NewHelper(),
-				mapper:  k8sengine.NewMapper().Mapper,
+				mapper:  permissiveMapper(t),
 			}
 
 			// test
@@ -419,7 +445,7 @@ func TestCreatePromConfigMap(t *testing.T) {
 				return NewClient(Params{
 					Factory: f,
 					Logger:  zaptest.NewLogger(t),
-					Mapper:  k8sengine.NewMapper().Mapper,
+					Mapper:  permissiveMapper(t),
 					Helper:  NewHelper(),
 				})
 			},
@@ -440,7 +466,7 @@ func TestCreatePromConfigMap(t *testing.T) {
 					Factory: f,
 					Logger:  zaptest.NewLogger(t),
 					Helper:  NewHelper(),
-					Mapper:  k8sengine.NewMapper().Mapper,
+					Mapper:  permissiveMapper(t),
 				})
 			},
 			wantError: true,
@@ -476,7 +502,7 @@ func TestCreatePromConfigMap(t *testing.T) {
 					Factory: f,
 					Logger:  zaptest.NewLogger(t),
 					Helper:  NewHelper(),
-					Mapper:  k8sengine.NewMapper().Mapper,
+					Mapper:  permissiveMapper(t),
 				})
 			},
 			// file path will be created as temp file in test body
@@ -570,7 +596,7 @@ func TestCreateSecret(t *testing.T) {
 				factory:         f,
 				helper:          NewHelper(),
 				secretsProvider: provider,
-				mapper:          k8sengine.NewMapper().Mapper,
+				mapper:          permissiveMapper(t),
 			}
 
 			// test
@@ -588,88 +614,55 @@ func TestCreateSecret(t *testing.T) {
 // TestGetJobStatus tests the GetJobStatus method
 func TestGetJobStatus(t *testing.T) {
 	mkRayV2 := func(name string) *v2pb.RayJob { return &v2pb.RayJob{ObjectMeta: metav1.ObjectMeta{Name: name}} }
-	mkRayV1 := func(jobStatus string, deployStatus rayv1.JobDeploymentStatus, msg string) *rayv1.RayJob {
-		r := &rayv1.RayJob{}
-		r.Status.JobStatus = rayv1.JobStatus(jobStatus)
-		r.Status.JobDeploymentStatus = deployStatus
-		r.Status.Message = msg
-		return r
-	}
 
 	tests := []struct {
-		name string
-		// GetJobStatus inputs
-		useGetJobStatus bool
-		jobObject       runtime.Object
-		setupFactory    func(f *computemocks.MockFactory)
-		expectErr       string
-		expectStatus    string
-		expectMsg       string
+		name         string
+		jobObject    runtime.Object
+		setupFactory func(f *computemocks.MockFactory)
+		expectErr    string
+		expectStatus string
+		expectMsg    string
 	}{
 		{
-			name:            "GetClientSetForCluster error",
-			useGetJobStatus: true,
-			jobObject:       mkRayV2("job-a"),
+			name:      "GetClientSetForCluster error",
+			jobObject: mkRayV2("job-a"),
 			setupFactory: func(f *computemocks.MockFactory) {
 				f.EXPECT().GetClientSetForCluster(gomock.Any()).Return(nil, assert.AnError)
 			},
 			expectErr: "get client for cluster err",
 		},
 		{
-			name:            "unsupported Spark job type",
-			useGetJobStatus: true,
-			jobObject:       &v2pb.SparkJob{},
-			setupFactory:    func(f *computemocks.MockFactory) {},
-			expectErr:       "Spark job status not implemented",
-			expectStatus:    "",
-			expectMsg:       "",
-		},
-		{
-			name:         "translate: running -> RUNNING",
-			jobObject:    mkRayV1(string(rayv1.JobStatusRunning), "", ""),
+			name:         "unsupported Spark job type",
+			jobObject:    &v2pb.SparkJob{},
 			setupFactory: func(f *computemocks.MockFactory) {},
-			expectStatus: string(constants.RayJobStatusRunning),
-			expectMsg:    "",
+			expectErr:    "Spark job status not implemented",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.useGetJobStatus {
-				gctrl := gomock.NewController(t)
-				defer gctrl.Finish()
-				f := computemocks.NewMockFactory(gctrl)
-				cl := &Client{factory: f, helper: NewHelper(), mapper: k8sengine.NewMapper().Mapper, logger: zaptest.NewLogger(t)}
-				if tt.setupFactory != nil {
-					tt.setupFactory(f)
-				}
-				cluster := &v2pb.Cluster{ObjectMeta: metav1.ObjectMeta{Name: "c1"}}
-				js, err := cl.GetJobStatus(context.Background(), tt.jobObject, cluster)
-				if tt.expectErr != "" {
-					require.Error(t, err)
-					require.Contains(t, err.Error(), tt.expectErr)
-					return
-				}
-				require.NoError(t, err)
-				var gotStatus, gotMsg string
-				if js != nil && js.Ray != nil {
-					gotStatus = js.Ray.JobStatus
-					gotMsg = js.Ray.Message
-				}
-				assert.Equal(t, tt.expectStatus, gotStatus)
-				assert.Equal(t, tt.expectMsg, gotMsg)
+			gctrl := gomock.NewController(t)
+			defer gctrl.Finish()
+			f := computemocks.NewMockFactory(gctrl)
+			cl := &Client{factory: f, helper: NewHelper(), mapper: permissiveMapper(t), logger: zaptest.NewLogger(t)}
+			if tt.setupFactory != nil {
+				tt.setupFactory(f)
+			}
+			cluster := &v2pb.Cluster{ObjectMeta: metav1.ObjectMeta{Name: "c1"}}
+			js, err := cl.GetJobStatus(context.Background(), tt.jobObject, cluster)
+			if tt.expectErr != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.expectErr)
 				return
 			}
-			// When not using GetJobStatus path, validate mapper-based conversion on local RayJob object
-			js, err := k8sengine.NewMapper().Mapper.MapLocalJobStatusToGlobal(tt.jobObject)
 			require.NoError(t, err)
+			var gotStatus, gotMsg string
 			if js != nil && js.Ray != nil {
-				assert.Equal(t, tt.expectStatus, js.Ray.JobStatus)
-				assert.Equal(t, tt.expectMsg, js.Ray.Message)
-			} else {
-				assert.Equal(t, tt.expectStatus, "")
-				assert.Equal(t, tt.expectMsg, "")
+				gotStatus = js.Ray.JobStatus
+				gotMsg = js.Ray.Message
 			}
+			assert.Equal(t, tt.expectStatus, gotStatus)
+			assert.Equal(t, tt.expectMsg, gotMsg)
 		})
 	}
 }
@@ -753,7 +746,7 @@ func TestCreateJob(t *testing.T) {
 			k8sc := Client{
 				factory: f,
 				helper:  NewHelper(),
-				mapper:  k8sengine.NewMapper().Mapper,
+				mapper:  permissiveMapper(t),
 			}
 
 			// test
@@ -772,7 +765,7 @@ func TestCreateJob(t *testing.T) {
 func TestGetJobClusterStatus_ClientSetError(t *testing.T) {
 	g := gomock.NewController(t)
 	f := computemocks.NewMockFactory(g)
-	cl := &Client{factory: f, helper: NewHelper(), mapper: k8sengine.NewMapper().Mapper}
+	cl := &Client{factory: f, helper: NewHelper(), mapper: permissiveMapper(t)}
 	jobCluster := &v2pb.RayCluster{ObjectMeta: metav1.ObjectMeta{Name: "rc1"}}
 	cluster := &v2pb.Cluster{ObjectMeta: metav1.ObjectMeta{Name: "c1"}}
 

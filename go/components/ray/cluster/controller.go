@@ -174,6 +174,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			func(obj client.Object) {
 				cluster := obj.(*v2pb.RayCluster)
 				cluster.Status.State = v2pb.RAY_CLUSTER_STATE_PROVISIONING
+
 				launchedCond := jobsutils.GetCondition(&cluster.Status.StatusConditions, LaunchedCondition, cluster.Generation)
 				jobsutils.UpdateCondition(launchedCond, jobsutils.ConditionUpdateParams{
 					Status:     apipb.CONDITION_STATUS_TRUE,
@@ -572,6 +573,14 @@ func (r *Reconciler) applyRayClusterStatus(
 	// Update cluster state
 	rayCluster.Status.State = newState
 	res.RequeueAfter = requeueAfter
+
+	// Copy log_url through from the mapper. The mapper owns its computation
+	// (it knows the LogPersistenceConfig, the local cluster name, and the
+	// compute-cluster Ray namespace); the controller just surfaces the value
+	// onto the v2 RayClusterStatus so callers see it.
+	if clusterStatus.Ray.LogUrl != "" {
+		rayCluster.Status.LogUrl = clusterStatus.Ray.LogUrl
+	}
 
 	// Extract reason for condition updates
 	reasonStr := clusterStatus.Reason
