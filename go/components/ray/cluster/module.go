@@ -19,7 +19,6 @@ var Module = fx.Options(
 )
 
 func register(
-	conf Config,
 	logger logr.Logger,
 	apiHandlerFactory apiHandler.Factory,
 	env env.Context,

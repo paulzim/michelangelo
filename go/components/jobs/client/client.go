@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/michelangelo-ai/michelangelo/go/components/jobs/client/k8sengine"
 	"github.com/michelangelo-ai/michelangelo/go/components/jobs/common/constants"
 	"github.com/michelangelo-ai/michelangelo/go/components/jobs/common/secrets"
 	matypes "github.com/michelangelo-ai/michelangelo/go/components/jobs/common/types"
@@ -103,7 +102,7 @@ type Params struct {
 	Factory compute.Factory
 	Logger  *zap.Logger
 	Secrets secrets.SecretProvider
-	Mapper  k8sengine.MapperInterface `name:"k8sengineMapper"`
+	Mapper  matypes.Mapper `name:"k8sengineMapper"`
 	Helper  Helper
 }
 
@@ -168,7 +167,7 @@ type Client struct {
 	factory         compute.Factory
 	logger          *zap.Logger
 	secretsProvider secrets.SecretProvider
-	mapper          k8sengine.MapperInterface
+	mapper          matypes.Mapper
 	helper          Helper
 }
 
