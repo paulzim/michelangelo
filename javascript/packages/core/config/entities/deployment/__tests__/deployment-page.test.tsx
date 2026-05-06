@@ -76,35 +76,21 @@ describe('Deployment list page', () => {
 });
 
 describe('Deployment detail page', () => {
-  const mockDeployment = {
+  const buildDeployment = (overrides = {}) => ({
     metadata: {
       name: 'sentiment-deployment',
       creationTimestamp: { seconds: 1746000000 },
-      labels: {
-        'michelangelo/owner': 'user-example',
-      },
+      labels: { 'michelangelo/owner': 'user-example' },
     },
     status: {
       state: DEPLOYMENT_STATE.HEALTHY,
       stage: DEPLOYMENT_STAGE.ROLLOUT_COMPLETE,
-      conditions: [
-        {
-          type: 'Validation',
-          status: DEPLOYMENT_CONDITION_STATUS.TRUE,
-          lastUpdatedTimestamp: '1746000600000',
-        },
-        {
-          type: 'Placement',
-          status: DEPLOYMENT_CONDITION_STATUS.UNKNOWN,
-          message: 'Placing on inference server.',
-          reason: 'PlacementInProgress',
-          lastUpdatedTimestamp: '1746002400000',
-        },
-      ],
+      conditions: [] as object[],
     },
-  };
+    ...overrides,
+  });
 
-  const renderDetailPage = () =>
+  it('renders details for deployment', async () => {
     render(
       <EntityDetailRoute phases={{ deploy: DEPLOY_PHASE }} />,
       buildWrapper([
@@ -114,14 +100,11 @@ describe('Deployment detail page', () => {
         }),
         getServiceProviderWrapper({
           request: createQueryMockRouter({
-            GetDeployment: { deployment: mockDeployment },
+            GetDeployment: { deployment: buildDeployment() },
           }),
         }),
       ])
     );
-
-  it('renders details for deployment', async () => {
-    renderDetailPage();
 
     expect(screen.getByText('sentiment-deployment')).toBeInTheDocument();
     expect(await screen.findByText('Created')).toBeInTheDocument();
@@ -131,7 +114,41 @@ describe('Deployment detail page', () => {
   });
 
   it('renders the stages for the deployment', async () => {
-    renderDetailPage();
+    render(
+      <EntityDetailRoute phases={{ deploy: DEPLOY_PHASE }} />,
+      buildWrapper([
+        getErrorProviderWrapper(),
+        getRouterWrapper({
+          location: '/myproject/deploy/deployments/sentiment-deployment/stages',
+        }),
+        getServiceProviderWrapper({
+          request: createQueryMockRouter({
+            GetDeployment: {
+              deployment: buildDeployment({
+                status: {
+                  state: DEPLOYMENT_STATE.HEALTHY,
+                  stage: DEPLOYMENT_STAGE.ROLLOUT_COMPLETE,
+                  conditions: [
+                    {
+                      type: 'Validation',
+                      status: DEPLOYMENT_CONDITION_STATUS.TRUE,
+                      lastUpdatedTimestamp: '1746000600000',
+                    },
+                    {
+                      type: 'Placement',
+                      status: DEPLOYMENT_CONDITION_STATUS.UNKNOWN,
+                      message: 'Placing on inference server.',
+                      reason: 'PlacementInProgress',
+                      lastUpdatedTimestamp: '1746002400000',
+                    },
+                  ],
+                },
+              }),
+            },
+          }),
+        }),
+      ])
+    );
 
     expect(await screen.findByRole('tab', { name: 'Stages' })).toBeInTheDocument();
     await screen.findAllByText('Validation');
@@ -139,7 +156,36 @@ describe('Deployment detail page', () => {
   });
 
   it('renders the Information and Details fields within a deployment stage', async () => {
-    renderDetailPage();
+    render(
+      <EntityDetailRoute phases={{ deploy: DEPLOY_PHASE }} />,
+      buildWrapper([
+        getErrorProviderWrapper(),
+        getRouterWrapper({
+          location: '/myproject/deploy/deployments/sentiment-deployment/stages',
+        }),
+        getServiceProviderWrapper({
+          request: createQueryMockRouter({
+            GetDeployment: {
+              deployment: buildDeployment({
+                status: {
+                  state: DEPLOYMENT_STATE.HEALTHY,
+                  stage: DEPLOYMENT_STAGE.ROLLOUT_COMPLETE,
+                  conditions: [
+                    {
+                      type: 'Placement',
+                      status: DEPLOYMENT_CONDITION_STATUS.UNKNOWN,
+                      message: 'Placing on inference server.',
+                      reason: 'PlacementInProgress',
+                      lastUpdatedTimestamp: '1746002400000',
+                    },
+                  ],
+                },
+              }),
+            },
+          }),
+        }),
+      ])
+    );
 
     expect(await screen.findByText('Information')).toBeInTheDocument();
     expect(screen.getByText('Placing on inference server.')).toBeInTheDocument();
