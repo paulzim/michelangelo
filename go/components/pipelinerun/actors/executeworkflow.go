@@ -22,6 +22,7 @@ import (
 	"github.com/michelangelo-ai/michelangelo/go/base/config"
 	clientInterfaces "github.com/michelangelo-ai/michelangelo/go/base/workflowclient/interface"
 	pipelinerunutils "github.com/michelangelo-ai/michelangelo/go/components/pipelinerun/actors/utils"
+	triggerworkflow "github.com/michelangelo-ai/michelangelo/go/worker/workflows/trigger"
 	apipb "github.com/michelangelo-ai/michelangelo/proto-go/api"
 	v2 "github.com/michelangelo-ai/michelangelo/proto-go/api/v2"
 )
@@ -44,10 +45,6 @@ const (
 	// Workflow input parameter keys for canvas flex pipeline
 	WorkflowTaskConfigsKey = "task_configs"
 	WorkflowConfigKey      = "workflow_config"
-
-	// PipelineRunExecutionTimestampLabel is the label key for the logical execution
-	// timestamp set by the trigger workflow (unix seconds).
-	PipelineRunExecutionTimestampLabel = "pipelinerun.michelangelo/execution-timestamp"
 
 	// Cache-related environment variable names.
 	cacheEnabledVarName = "CACHE_ENABLED"
@@ -552,7 +549,7 @@ func getWorkflowInputs(pipelineRun *v2.PipelineRun) ([]interface{}, []interface{
 
 	envs["MA_NAMESPACE"] = pipelineRun.Namespace
 	envs["MA_PIPELINE_RUN_NAME"] = pipelineRun.Name
-	if executionTs, ok := pipelineRun.Labels[PipelineRunExecutionTimestampLabel]; ok {
+	if executionTs, ok := pipelineRun.Labels[triggerworkflow.PipelineRunExecutionTimestampLabel]; ok {
 		envs["STARLARK_TIME"] = "unix:" + executionTs
 	}
 	addTaskImageToEnv(pipelineRun, envs)
