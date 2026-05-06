@@ -45,6 +45,10 @@ const (
 	WorkflowTaskConfigsKey = "task_configs"
 	WorkflowConfigKey      = "workflow_config"
 
+	// PipelineRunExecutionTimestampLabel is the label key for the logical execution
+	// timestamp set by the trigger workflow (unix seconds).
+	PipelineRunExecutionTimestampLabel = "pipelinerun.michelangelo/execution-timestamp"
+
 	// Cache-related environment variable names.
 	cacheEnabledVarName = "CACHE_ENABLED"
 	cacheVersionVarName = "CACHE_VERSION"
@@ -548,6 +552,9 @@ func getWorkflowInputs(pipelineRun *v2.PipelineRun) ([]interface{}, []interface{
 
 	envs["MA_NAMESPACE"] = pipelineRun.Namespace
 	envs["MA_PIPELINE_RUN_NAME"] = pipelineRun.Name
+	if executionTs, ok := pipelineRun.Labels[PipelineRunExecutionTimestampLabel]; ok {
+		envs["STARLARK_TIME"] = "unix:" + executionTs
+	}
 	addTaskImageToEnv(pipelineRun, envs)
 	return args, kwArgs, envs, nil
 }
