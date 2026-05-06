@@ -58,14 +58,25 @@ jobs:
       - name: Sync sandbox
         run: $HOME/.local/bin/poetry run ma sandbox sync --workflow cadence
 
-      # Run the integration test script.
+      - name: Check out integration-test repo
+        uses: actions/checkout@v4
+        with:
+          repository: michelangelo-ai/integration-test
+          token: ${{ secrets.CR_PAT }}
+          path: integration-test
+
+      - name: Install integration test dependencies
+        run: .venv/bin/pip install retrying pyyaml -q
+
       - name: Run integration tests
         run: |
-          source .venv/bin/activate
-          ../.github/scripts/integration-test.sh
+          $GITHUB_WORKSPACE/python/.venv/bin/pytest \
+            functional/api/test_api_crud.py \
+            -v -m "api and crud"
+        working-directory: ${{ github.workspace }}/integration-test
         env:
-          MA_NAMESPACE: ma-dev-test
-          POLL_INTERVAL: "30"
-          TIMEOUT: "1800"
+          MA_API_SERVER: localhost:15566
+          GIT_REF: main
+          PYTHONPATH: ${{ github.workspace }}/integration-test
 
       # Infrastructure is intentionally kept running between CI runs.
