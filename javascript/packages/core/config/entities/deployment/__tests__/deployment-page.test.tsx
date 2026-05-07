@@ -192,4 +192,46 @@ describe('Deployment detail page', () => {
     expect(screen.getByText('Details')).toBeInTheDocument();
     expect(screen.getByText('PlacementInProgress')).toBeInTheDocument();
   });
+
+  it('renders the Deployment history tab', async () => {
+    render(
+      <EntityDetailRoute phases={{ deploy: DEPLOY_PHASE }} />,
+      buildWrapper([
+        getErrorProviderWrapper(),
+        getRouterWrapper({
+          location: '/myproject/deploy/deployments/sentiment-deployment/history',
+        }),
+        getServiceProviderWrapper({
+          request: createQueryMockRouter({
+            GetDeployment: { deployment: buildDeployment() },
+            ListRevision: { revisionList: { items: [] } },
+          }),
+        }),
+      ])
+    );
+
+    expect(await screen.findByRole('tab', { name: 'Deployment history' })).toBeInTheDocument();
+  });
+
+  it('renders the correct column headers for the deployment history tab', async () => {
+    render(
+      <EntityDetailRoute phases={{ deploy: DEPLOY_PHASE }} />,
+      buildWrapper([
+        getErrorProviderWrapper(),
+        getRouterWrapper({
+          location: '/myproject/deploy/deployments/sentiment-deployment/history',
+        }),
+        getServiceProviderWrapper({
+          request: createQueryMockRouter({
+            GetDeployment: { deployment: buildDeployment() },
+            ListRevision: { revisionList: { items: [] } },
+          }),
+        }),
+      ])
+    );
+
+    expect(await screen.findByRole('columnheader', { name: 'Revision' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Owner' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Created' })).toBeInTheDocument();
+  });
 });
