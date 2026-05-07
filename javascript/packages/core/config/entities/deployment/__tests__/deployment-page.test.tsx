@@ -230,7 +230,9 @@ describe('Deployment detail page', () => {
       ])
     );
 
-    expect(await screen.findByRole('columnheader', { name: 'Deployment revision' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('columnheader', { name: 'Deployment revision' })
+    ).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Owner' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Created' })).toBeInTheDocument();
   });
