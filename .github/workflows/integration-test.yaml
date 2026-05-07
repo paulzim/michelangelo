@@ -68,7 +68,7 @@ jobs:
       - name: Install integration test dependencies
         run: .venv/bin/pip install retrying pyyaml -q
 
-      - name: Run integration tests
+      - name: Run API CRUD tests
         run: |
           $GITHUB_WORKSPACE/python/.venv/bin/pytest \
             functional/api/test_api_crud.py \
@@ -77,6 +77,18 @@ jobs:
         env:
           MA_API_SERVER: localhost:15566
           GIT_REF: main
+          PYTHONPATH: ${{ github.workspace }}/integration-test
+
+      - name: Run CLI e2e tests
+        run: |
+          $GITHUB_WORKSPACE/python/.venv/bin/pytest \
+            functional/cli/test_cli.py \
+            -v -m "cli"
+        working-directory: ${{ github.workspace }}/integration-test
+        env:
+          MA_API_SERVER: localhost:15566
+          MA_NAMESPACE: ma-dev-test
+          MICHELANGELO_PYTHON_DIR: ${{ github.workspace }}/python
           PYTHONPATH: ${{ github.workspace }}/integration-test
 
       # Infrastructure is intentionally kept running between CI runs.
