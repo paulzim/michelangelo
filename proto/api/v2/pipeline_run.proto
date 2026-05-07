@@ -721,7 +721,9 @@ message Resume {
 // - Status monitoring
 // - Debugging and troubleshooting
 message PipelineRun {
-  option (michelangelo.api.resource) = {};
+  option (michelangelo.api.resource) = {
+    conversion: true  // Enable conversion for multi-version support
+  };
 
   option (michelangelo.api.index) = {
     path: "spec.pipeline",
