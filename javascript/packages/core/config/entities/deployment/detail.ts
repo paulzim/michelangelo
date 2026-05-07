@@ -18,6 +18,27 @@ export const DEPLOYMENT_DETAIL_CONFIG: DetailViewConfig = {
   ],
   pages: [
     {
+      id: 'history',
+      label: 'Deployment history',
+      type: 'table',
+      queryConfig: {
+        endpoint: 'list',
+        service: 'revision',
+        serviceOptions: {
+          listOptions: {
+            labelSelector: 'michelangelo/deployment=${page.metadata.name}',
+          },
+        },
+      },
+      tableConfig: {
+        columns: [
+          { id: 'metadata.name', label: 'Revision', type: CellType.TEXT },
+          { id: 'spec.owner.name', label: 'Owner', type: CellType.TEXT },
+          { id: 'metadata.creationTimestamp.seconds', label: 'Created', type: CellType.DATE },
+        ],
+      },
+    },
+    {
       id: 'stages',
       label: 'Stages',
       type: 'execution',

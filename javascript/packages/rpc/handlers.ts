@@ -50,6 +50,9 @@ async function createHandlers() {
     ListModel: services.ModelService.listModel as ExtractUnaryRpc<
       typeof services.ModelService.listModel
     >,
+    ListRevision: services.RevisionService.listRevision as ExtractUnaryRpc<
+      typeof services.RevisionService.listRevision
+    >,
   } as const;
 }
 
