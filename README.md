@@ -91,3 +91,4 @@ This project is licensed under the [Apache 2.0 License](https://github.com/miche
 ## Acknowledgments
 
 Thank you to the Michelangelo Open Source team for getting this project off the ground, and thank you in advance to our contributors.
+You are awesome!
