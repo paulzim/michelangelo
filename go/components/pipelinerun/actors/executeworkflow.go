@@ -22,6 +22,7 @@ import (
 	"github.com/michelangelo-ai/michelangelo/go/base/config"
 	clientInterfaces "github.com/michelangelo-ai/michelangelo/go/base/workflowclient/interface"
 	pipelinerunutils "github.com/michelangelo-ai/michelangelo/go/components/pipelinerun/actors/utils"
+	triggerworkflow "github.com/michelangelo-ai/michelangelo/go/worker/workflows/trigger"
 	apipb "github.com/michelangelo-ai/michelangelo/proto-go/api"
 	v2 "github.com/michelangelo-ai/michelangelo/proto-go/api/v2"
 )
@@ -548,6 +549,9 @@ func getWorkflowInputs(pipelineRun *v2.PipelineRun) ([]interface{}, []interface{
 
 	envs["MA_NAMESPACE"] = pipelineRun.Namespace
 	envs["MA_PIPELINE_RUN_NAME"] = pipelineRun.Name
+	if executionTs, ok := pipelineRun.Labels[triggerworkflow.PipelineRunExecutionTimestampLabel]; ok {
+		envs["STARLARK_TIME"] = "unix:" + executionTs
+	}
 	addTaskImageToEnv(pipelineRun, envs)
 	return args, kwArgs, envs, nil
 }

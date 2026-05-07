@@ -24,6 +24,7 @@ import (
 	clientInterfaces "github.com/michelangelo-ai/michelangelo/go/base/workflowclient/interface"
 	workflowclientMock "github.com/michelangelo-ai/michelangelo/go/base/workflowclient/interface/interface_mock"
 	pipelinerunutils "github.com/michelangelo-ai/michelangelo/go/components/pipelinerun/actors/utils"
+	triggerworkflow "github.com/michelangelo-ai/michelangelo/go/worker/workflows/trigger"
 	apipb "github.com/michelangelo-ai/michelangelo/proto-go/api"
 	v2 "github.com/michelangelo-ai/michelangelo/proto-go/api/v2"
 )
@@ -2446,6 +2447,76 @@ func TestGetWorkflowInputsWithPythonSDKBasedPipeline(t *testing.T) {
 			for _, key := range testCase.expectedEnvKeys {
 				_, exists := envs[key]
 				require.True(t, exists, "Environment variable %s should exist", key)
+			}
+		})
+	}
+}
+
+func TestGetWorkflowInputsStarlarkTime(t *testing.T) {
+	testCases := []struct {
+		name                 string
+		labels               map[string]string
+		expectStarlarkTime   bool
+		expectedStarlarkTime string
+	}{
+		{
+			name: "With execution timestamp label",
+			labels: map[string]string{
+				triggerworkflow.PipelineRunExecutionTimestampLabel: "1704067200",
+			},
+			expectStarlarkTime:   true,
+			expectedStarlarkTime: "unix:1704067200",
+		},
+		{
+			name:               "Without execution timestamp label",
+			labels:             map[string]string{},
+			expectStarlarkTime: false,
+		},
+		{
+			name:               "Nil labels",
+			labels:             nil,
+			expectStarlarkTime: false,
+		},
+		{
+			name: "With other labels but no execution timestamp",
+			labels: map[string]string{
+				"some-other-label": "value",
+			},
+			expectStarlarkTime: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			pipelineRun := &v2.PipelineRun{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      "test-pipeline-run",
+					Namespace: "default",
+					Labels:    tc.labels,
+				},
+				Status: v2.PipelineRunStatus{
+					SourcePipeline: &v2.SourcePipeline{
+						Pipeline: &v2.Pipeline{
+							Spec: v2.PipelineSpec{
+								Manifest: &v2.PipelineManifest{
+									Content: nil,
+								},
+							},
+						},
+					},
+				},
+			}
+
+			_, _, envs, err := getWorkflowInputs(pipelineRun)
+			require.NoError(t, err)
+
+			if tc.expectStarlarkTime {
+				val, exists := envs["STARLARK_TIME"]
+				require.True(t, exists, "STARLARK_TIME should be set")
+				require.Equal(t, tc.expectedStarlarkTime, val)
+			} else {
+				_, exists := envs["STARLARK_TIME"]
+				require.False(t, exists, "STARLARK_TIME should not be set")
 			}
 		})
 	}
