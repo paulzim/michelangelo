@@ -32,7 +32,7 @@ export const DEPLOYMENT_DETAIL_CONFIG: DetailViewConfig = {
       },
       tableConfig: {
         columns: [
-          { id: 'metadata.name', label: 'Revision', type: CellType.TEXT },
+          { id: 'metadata.name', label: 'Deployment revision', type: CellType.TEXT },
           { id: 'spec.owner.name', label: 'Owner', type: CellType.TEXT },
           { id: 'metadata.creationTimestamp.seconds', label: 'Created', type: CellType.DATE },
         ],
