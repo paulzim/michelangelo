@@ -335,19 +335,99 @@ func (m *DecomSpec) GetDecommission() bool {
 	return false
 }
 
+type ClusterTarget struct {
+	ClusterId string `protobuf:"bytes,1,opt,name=cluster_id,json=clusterId,proto3" json:"clusterId,omitempty"`
+	// Types that are valid to be assigned to Connection:
+	//	*ClusterTarget_Kubernetes
+	Connection isClusterTarget_Connection `protobuf_oneof:"connection"`
+}
+
+func (m *ClusterTarget) Reset()      { *m = ClusterTarget{} }
+func (*ClusterTarget) ProtoMessage() {}
+func (*ClusterTarget) Descriptor() ([]byte, []int) {
+	return fileDescriptor_e7efe1708a5d2997, []int{4}
+}
+func (m *ClusterTarget) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ClusterTarget) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ClusterTarget.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ClusterTarget) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ClusterTarget.Merge(m, src)
+}
+func (m *ClusterTarget) XXX_Size() int {
+	return m.Size()
+}
+func (m *ClusterTarget) XXX_DiscardUnknown() {
+	xxx_messageInfo_ClusterTarget.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ClusterTarget proto.InternalMessageInfo
+
+type isClusterTarget_Connection interface {
+	isClusterTarget_Connection()
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type ClusterTarget_Kubernetes struct {
+	Kubernetes *ConnectionSpec `protobuf:"bytes,2,opt,name=kubernetes,proto3,oneof" json:"kubernetes,omitempty"`
+}
+
+func (*ClusterTarget_Kubernetes) isClusterTarget_Connection() {}
+
+func (m *ClusterTarget) GetConnection() isClusterTarget_Connection {
+	if m != nil {
+		return m.Connection
+	}
+	return nil
+}
+
+func (m *ClusterTarget) GetClusterId() string {
+	if m != nil {
+		return m.ClusterId
+	}
+	return ""
+}
+
+func (m *ClusterTarget) GetKubernetes() *ConnectionSpec {
+	if x, ok := m.GetConnection().(*ClusterTarget_Kubernetes); ok {
+		return x.Kubernetes
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*ClusterTarget) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*ClusterTarget_Kubernetes)(nil),
+	}
+}
+
 type InferenceServerSpec struct {
-	TenancyType TenancyType `protobuf:"varint,1,opt,name=tenancy_type,json=tenancyType,proto3,enum=michelangelo.api.v2.TenancyType" json:"tenancyType,omitempty"`
-	OwnerSpec   *OwnerSpec  `protobuf:"bytes,2,opt,name=owner_spec,json=ownerSpec,proto3" json:"ownerSpec,omitempty"`
-	InitSpec    *InitSpec   `protobuf:"bytes,3,opt,name=init_spec,json=initSpec,proto3" json:"initSpec,omitempty"`
-	DecomSpec   *DecomSpec  `protobuf:"bytes,4,opt,name=decom_spec,json=decomSpec,proto3" json:"decomSpec,omitempty"`
-	Owner       *UserInfo   `protobuf:"bytes,5,opt,name=owner,proto3" json:"owner,omitempty"`
-	BackendType BackendType `protobuf:"varint,6,opt,name=backend_type,json=backendType,proto3,enum=michelangelo.api.v2.BackendType" json:"backendType,omitempty"`
+	TenancyType    TenancyType      `protobuf:"varint,1,opt,name=tenancy_type,json=tenancyType,proto3,enum=michelangelo.api.v2.TenancyType" json:"tenancyType,omitempty"`
+	OwnerSpec      *OwnerSpec       `protobuf:"bytes,2,opt,name=owner_spec,json=ownerSpec,proto3" json:"ownerSpec,omitempty"`
+	InitSpec       *InitSpec        `protobuf:"bytes,3,opt,name=init_spec,json=initSpec,proto3" json:"initSpec,omitempty"`
+	DecomSpec      *DecomSpec       `protobuf:"bytes,4,opt,name=decom_spec,json=decomSpec,proto3" json:"decomSpec,omitempty"`
+	Owner          *UserInfo        `protobuf:"bytes,5,opt,name=owner,proto3" json:"owner,omitempty"`
+	BackendType    BackendType      `protobuf:"varint,6,opt,name=backend_type,json=backendType,proto3,enum=michelangelo.api.v2.BackendType" json:"backendType,omitempty"`
+	ClusterTargets []*ClusterTarget `protobuf:"bytes,7,rep,name=cluster_targets,json=clusterTargets,proto3" json:"clusterTargets,omitempty"`
 }
 
 func (m *InferenceServerSpec) Reset()      { *m = InferenceServerSpec{} }
 func (*InferenceServerSpec) ProtoMessage() {}
 func (*InferenceServerSpec) Descriptor() ([]byte, []int) {
-	return fileDescriptor_e7efe1708a5d2997, []int{4}
+	return fileDescriptor_e7efe1708a5d2997, []int{5}
 }
 func (m *InferenceServerSpec) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -418,21 +498,96 @@ func (m *InferenceServerSpec) GetBackendType() BackendType {
 	return BACKEND_TYPE_INVALID
 }
 
+func (m *InferenceServerSpec) GetClusterTargets() []*ClusterTarget {
+	if m != nil {
+		return m.ClusterTargets
+	}
+	return nil
+}
+
+type ClusterTargetStatus struct {
+	ClusterId  string               `protobuf:"bytes,1,opt,name=cluster_id,json=clusterId,proto3" json:"clusterId,omitempty"`
+	State      InferenceServerState `protobuf:"varint,2,opt,name=state,proto3,enum=michelangelo.api.v2.InferenceServerState" json:"state,omitempty"`
+	Conditions []*api.Condition     `protobuf:"bytes,3,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	Message    string               `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+}
+
+func (m *ClusterTargetStatus) Reset()      { *m = ClusterTargetStatus{} }
+func (*ClusterTargetStatus) ProtoMessage() {}
+func (*ClusterTargetStatus) Descriptor() ([]byte, []int) {
+	return fileDescriptor_e7efe1708a5d2997, []int{6}
+}
+func (m *ClusterTargetStatus) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ClusterTargetStatus) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ClusterTargetStatus.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ClusterTargetStatus) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ClusterTargetStatus.Merge(m, src)
+}
+func (m *ClusterTargetStatus) XXX_Size() int {
+	return m.Size()
+}
+func (m *ClusterTargetStatus) XXX_DiscardUnknown() {
+	xxx_messageInfo_ClusterTargetStatus.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ClusterTargetStatus proto.InternalMessageInfo
+
+func (m *ClusterTargetStatus) GetClusterId() string {
+	if m != nil {
+		return m.ClusterId
+	}
+	return ""
+}
+
+func (m *ClusterTargetStatus) GetState() InferenceServerState {
+	if m != nil {
+		return m.State
+	}
+	return INFERENCE_SERVER_STATE_INVALID
+}
+
+func (m *ClusterTargetStatus) GetConditions() []*api.Condition {
+	if m != nil {
+		return m.Conditions
+	}
+	return nil
+}
+
+func (m *ClusterTargetStatus) GetMessage() string {
+	if m != nil {
+		return m.Message
+	}
+	return ""
+}
+
 type InferenceServerStatus struct {
-	InferenceServerId     string               `protobuf:"bytes,1,opt,name=inference_server_id,json=inferenceServerId,proto3" json:"inferenceServerId,omitempty"`
-	ObservedGeneration    int64                `protobuf:"varint,2,opt,name=observed_generation,json=observedGeneration,proto3" json:"observedGeneration,omitempty"`
-	State                 InferenceServerState `protobuf:"varint,3,opt,name=state,proto3,enum=michelangelo.api.v2.InferenceServerState" json:"state,omitempty"`
-	ProviderMetadata      string               `protobuf:"bytes,4,opt,name=provider_metadata,json=providerMetadata,proto3" json:"providerMetadata,omitempty"`
-	CreateTime            string               `protobuf:"bytes,5,opt,name=create_time,json=createTime,proto3" json:"createTime,omitempty"`
-	UpdateTime            string               `protobuf:"bytes,6,opt,name=update_time,json=updateTime,proto3" json:"updateTime,omitempty"`
-	Conditions            []*api.Condition     `protobuf:"bytes,7,rep,name=conditions,proto3" json:"conditions,omitempty"`
-	AvailableEnvironments []string             `protobuf:"bytes,8,rep,name=available_environments,json=availableEnvironments,proto3" json:"availableEnvironments,omitempty"`
+	InferenceServerId     string                 `protobuf:"bytes,1,opt,name=inference_server_id,json=inferenceServerId,proto3" json:"inferenceServerId,omitempty"`
+	ObservedGeneration    int64                  `protobuf:"varint,2,opt,name=observed_generation,json=observedGeneration,proto3" json:"observedGeneration,omitempty"`
+	State                 InferenceServerState   `protobuf:"varint,3,opt,name=state,proto3,enum=michelangelo.api.v2.InferenceServerState" json:"state,omitempty"`
+	ProviderMetadata      string                 `protobuf:"bytes,4,opt,name=provider_metadata,json=providerMetadata,proto3" json:"providerMetadata,omitempty"`
+	CreateTime            string                 `protobuf:"bytes,5,opt,name=create_time,json=createTime,proto3" json:"createTime,omitempty"`
+	UpdateTime            string                 `protobuf:"bytes,6,opt,name=update_time,json=updateTime,proto3" json:"updateTime,omitempty"`
+	Conditions            []*api.Condition       `protobuf:"bytes,7,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	AvailableEnvironments []string               `protobuf:"bytes,8,rep,name=available_environments,json=availableEnvironments,proto3" json:"availableEnvironments,omitempty"`
+	ClusterStatuses       []*ClusterTargetStatus `protobuf:"bytes,9,rep,name=cluster_statuses,json=clusterStatuses,proto3" json:"clusterStatuses,omitempty"`
 }
 
 func (m *InferenceServerStatus) Reset()      { *m = InferenceServerStatus{} }
 func (*InferenceServerStatus) ProtoMessage() {}
 func (*InferenceServerStatus) Descriptor() ([]byte, []int) {
-	return fileDescriptor_e7efe1708a5d2997, []int{5}
+	return fileDescriptor_e7efe1708a5d2997, []int{7}
 }
 func (m *InferenceServerStatus) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -517,10 +672,17 @@ func (m *InferenceServerStatus) GetAvailableEnvironments() []string {
 	return nil
 }
 
+func (m *InferenceServerStatus) GetClusterStatuses() []*ClusterTargetStatus {
+	if m != nil {
+		return m.ClusterStatuses
+	}
+	return nil
+}
+
 func (m *InferenceServer) Reset()      { *m = InferenceServer{} }
 func (*InferenceServer) ProtoMessage() {}
 func (*InferenceServer) Descriptor() ([]byte, []int) {
-	return fileDescriptor_e7efe1708a5d2997, []int{6}
+	return fileDescriptor_e7efe1708a5d2997, []int{8}
 }
 func (m *InferenceServer) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -552,7 +714,7 @@ var xxx_messageInfo_InferenceServer proto.InternalMessageInfo
 func (m *InferenceServerList) Reset()      { *m = InferenceServerList{} }
 func (*InferenceServerList) ProtoMessage() {}
 func (*InferenceServerList) Descriptor() ([]byte, []int) {
-	return fileDescriptor_e7efe1708a5d2997, []int{7}
+	return fileDescriptor_e7efe1708a5d2997, []int{9}
 }
 func (m *InferenceServerList) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -589,7 +751,9 @@ func init() {
 	proto.RegisterType((*OwnerSpec)(nil), "michelangelo.api.v2.OwnerSpec")
 	proto.RegisterType((*InitSpec)(nil), "michelangelo.api.v2.InitSpec")
 	proto.RegisterType((*DecomSpec)(nil), "michelangelo.api.v2.DecomSpec")
+	proto.RegisterType((*ClusterTarget)(nil), "michelangelo.api.v2.ClusterTarget")
 	proto.RegisterType((*InferenceServerSpec)(nil), "michelangelo.api.v2.InferenceServerSpec")
+	proto.RegisterType((*ClusterTargetStatus)(nil), "michelangelo.api.v2.ClusterTargetStatus")
 	proto.RegisterType((*InferenceServerStatus)(nil), "michelangelo.api.v2.InferenceServerStatus")
 	proto.RegisterType((*InferenceServer)(nil), "michelangelo.api.v2.InferenceServer")
 	proto.RegisterType((*InferenceServerList)(nil), "michelangelo.api.v2.InferenceServerList")
@@ -600,80 +764,89 @@ func init() {
 }
 
 var fileDescriptor_e7efe1708a5d2997 = []byte{
-	// 1155 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x56, 0xcd, 0x6e, 0xdb, 0x46,
-	0x10, 0x16, 0x25, 0xdb, 0x91, 0x46, 0x4e, 0xab, 0xac, 0x13, 0x47, 0x4d, 0x60, 0xc6, 0x51, 0xda,
-	0xc2, 0x71, 0x01, 0xaa, 0x71, 0x52, 0x20, 0x70, 0x1b, 0x14, 0xfa, 0x61, 0x52, 0x36, 0xb2, 0x1c,
-	0xac, 0x99, 0x00, 0xc9, 0xa1, 0x04, 0x45, 0x6e, 0x9c, 0xad, 0xcd, 0x25, 0x41, 0xae, 0x58, 0xf8,
-	0x56, 0xf4, 0xd8, 0x43, 0xd0, 0x07, 0xe8, 0xa3, 0xf4, 0x01, 0x0a, 0xf4, 0x92, 0x63, 0x8e, 0x8d,
-	0x7d, 0xe9, 0xa5, 0x68, 0xce, 0x3d, 0x15, 0xbb, 0x24, 0x65, 0xca, 0xfa, 0x81, 0x0f, 0x3d, 0x89,
-	0x3b, 0xf3, 0x7d, 0x33, 0xb3, 0xdf, 0xcc, 0x0e, 0x04, 0x9b, 0x1e, 0x75, 0x5e, 0x91, 0x43, 0x9b,
-	0xed, 0x93, 0x43, 0xbf, 0x69, 0x07, 0xb4, 0x19, 0x6f, 0x35, 0x29, 0x7b, 0x49, 0x42, 0xc2, 0x1c,
-	0x62, 0x45, 0x24, 0x8c, 0x49, 0xa8, 0x05, 0xa1, 0xcf, 0x7d, 0xb4, 0x92, 0xc7, 0x6a, 0x76, 0x40,
-	0xb5, 0x78, 0xeb, 0xda, 0xbd, 0x83, 0xfb, 0x91, 0x46, 0x25, 0xd5, 0xb3, 0x9d, 0x57, 0x94, 0x91,
-	0xf0, 0xa8, 0x19, 0x1c, 0xec, 0x0b, 0x43, 0xd4, 0xf4, 0x08, 0xb7, 0x9b, 0xf1, 0x9d, 0xe6, 0x3e,
-	0x61, 0x24, 0xb4, 0x39, 0x71, 0x93, 0x50, 0xd7, 0xd4, 0x89, 0xb4, 0x7e, 0xc0, 0xa9, 0xcf, 0xa2,
-	0xd4, 0x7f, 0x73, 0xc2, 0xef, 0xf8, 0xcc, 0xa5, 0x79, 0xc8, 0xda, 0xb4, 0xca, 0x03, 0xdf, 0x9d,
-	0x19, 0x41, 0xb8, 0x43, 0xff, 0x7b, 0xe2, 0xf0, 0x99, 0x45, 0xc4, 0x5b, 0xcd, 0x61, 0x94, 0xdd,
-	0xb7, 0x61, 0x43, 0x75, 0x8f, 0x84, 0x31, 0x65, 0xfb, 0x7b, 0x01, 0x71, 0x50, 0x1d, 0x2e, 0xc4,
-	0x24, 0x8c, 0xa8, 0xcf, 0xea, 0xca, 0xba, 0xb2, 0x51, 0xc1, 0xd9, 0x11, 0xdd, 0x87, 0xba, 0xe3,
-	0x33, 0x6e, 0x8b, 0xcb, 0x5b, 0x83, 0x21, 0x3d, 0x74, 0x2d, 0x4e, 0xbc, 0xe0, 0xd0, 0xe6, 0xa4,
-	0x5e, 0x94, 0xd0, 0xd5, 0x91, 0xbf, 0x2d, 0xdc, 0x66, 0xea, 0x6d, 0x7c, 0x07, 0x95, 0xdd, 0x1f,
-	0x18, 0x09, 0x65, 0x82, 0x07, 0x00, 0xbe, 0x38, 0x58, 0x94, 0xbd, 0xf4, 0x65, 0x8e, 0xea, 0x96,
-	0xaa, 0x4d, 0x11, 0x5d, 0x93, 0x1c, 0x83, 0xbd, 0xf4, 0x71, 0xc5, 0xcf, 0x3e, 0x11, 0x82, 0x05,
-	0x4e, 0x49, 0x28, 0x33, 0x2e, 0x62, 0xf9, 0xdd, 0xf8, 0x4d, 0x81, 0xb2, 0xc1, 0x28, 0x97, 0xf1,
-	0x1f, 0xc2, 0xc5, 0x90, 0x44, 0xfe, 0x30, 0x14, 0x8d, 0x0d, 0x88, 0x93, 0xa6, 0xb8, 0x39, 0x35,
-	0x05, 0x4e, 0x91, 0x82, 0x89, 0x97, 0xc3, 0xdc, 0x09, 0x75, 0x60, 0x39, 0x4a, 0x74, 0x49, 0xc2,
-	0x14, 0x65, 0x98, 0xf5, 0xa9, 0x61, 0x72, 0x02, 0xe2, 0x6a, 0x94, 0x53, 0xf3, 0x16, 0x5c, 0x64,
-	0x43, 0xcf, 0xa2, 0x2c, 0xe2, 0x36, 0x73, 0x48, 0x54, 0x2f, 0xc9, 0xb2, 0x97, 0xd9, 0xd0, 0x33,
-	0x32, 0x5b, 0xa3, 0x09, 0x95, 0x2e, 0x71, 0x7c, 0x4f, 0x32, 0x1a, 0xb0, 0xec, 0x8a, 0x83, 0x47,
-	0xa3, 0x51, 0x13, 0xca, 0x78, 0xcc, 0xd6, 0x78, 0x5d, 0x82, 0x15, 0x23, 0x9b, 0xde, 0x3d, 0x39,
-	0xbc, 0x59, 0xc9, 0x9c, 0x30, 0x9b, 0x39, 0x47, 0x16, 0x3f, 0x0a, 0x88, 0xe4, 0x7e, 0x30, 0xa3,
-	0x64, 0x33, 0x01, 0x9a, 0x47, 0x01, 0xc1, 0x55, 0x7e, 0x7a, 0x38, 0xed, 0x4f, 0xee, 0xd6, 0x73,
-	0xfa, 0x23, 0xef, 0x9c, 0xf4, 0x47, 0xd6, 0xb0, 0x0d, 0x15, 0xca, 0x28, 0x4f, 0xd8, 0x25, 0xc9,
-	0x5e, 0x9b, 0xca, 0xce, 0x1a, 0x86, 0xcb, 0x34, 0x6b, 0xdd, 0x03, 0x00, 0x79, 0xcf, 0x84, 0xbc,
-	0x30, 0x27, 0xf5, 0x48, 0x2f, 0x5c, 0x71, 0x47, 0xd2, 0xdd, 0x85, 0x45, 0x59, 0x47, 0x7d, 0x71,
-	0x4e, 0xda, 0xa7, 0x51, 0x3a, 0x53, 0x09, 0x56, 0x68, 0x36, 0xb0, 0x9d, 0x03, 0xc2, 0xdc, 0x44,
-	0xb3, 0xa5, 0x39, 0x9a, 0xb5, 0x13, 0x60, 0xa2, 0xd9, 0xe0, 0xf4, 0xd0, 0xf8, 0xb5, 0x04, 0x57,
-	0xce, 0x36, 0x84, 0xdb, 0x7c, 0x18, 0x21, 0x0d, 0x56, 0xce, 0xee, 0x19, 0x8b, 0xba, 0xe9, 0xd3,
-	0xba, 0x44, 0xc7, 0x39, 0x86, 0x8b, 0x9a, 0xb0, 0xe2, 0x0f, 0x24, 0xce, 0xb5, 0xd2, 0x75, 0x22,
-	0xa6, 0x40, 0xb4, 0xa1, 0x84, 0x51, 0xe6, 0x7a, 0x34, 0xf2, 0xa0, 0xaf, 0x61, 0x31, 0xe2, 0xe2,
-	0x09, 0x96, 0x64, 0xe1, 0xb7, 0x67, 0x68, 0x3d, 0x51, 0x1b, 0xc1, 0x09, 0x0f, 0x7d, 0x06, 0x97,
-	0x82, 0xd0, 0x8f, 0xa9, 0x4b, 0x42, 0x4b, 0x2c, 0x32, 0xd7, 0xe6, 0xb6, 0xd4, 0xbe, 0x82, 0x6b,
-	0x99, 0x63, 0x27, 0xb5, 0xa3, 0x1b, 0x50, 0x75, 0x42, 0x62, 0x73, 0x62, 0x71, 0xea, 0x11, 0x29,
-	0x74, 0x05, 0x43, 0x62, 0x32, 0xa9, 0x47, 0x04, 0x60, 0x18, 0xb8, 0x23, 0xc0, 0x52, 0x02, 0x48,
-	0x4c, 0x12, 0xf0, 0x25, 0xc0, 0xe9, 0x92, 0xab, 0x5f, 0x58, 0x2f, 0x6d, 0x54, 0xb7, 0xae, 0x4f,
-	0x16, 0xdd, 0xc9, 0x30, 0x38, 0x07, 0x47, 0x5f, 0xc0, 0xaa, 0x1d, 0xdb, 0xf4, 0xd0, 0x1e, 0x1c,
-	0x12, 0x8b, 0xb0, 0x98, 0x86, 0x3e, 0xf3, 0x08, 0xe3, 0x51, 0xbd, 0xbc, 0x5e, 0xda, 0xa8, 0xe0,
-	0x2b, 0x23, 0xaf, 0x9e, 0x73, 0x36, 0xfe, 0x28, 0xc2, 0x87, 0x67, 0x24, 0x40, 0x8f, 0xa1, 0x22,
-	0xfa, 0x2d, 0xaf, 0x9c, 0xae, 0x08, 0x4d, 0x4b, 0xb6, 0xbc, 0x96, 0xdf, 0xf2, 0x5a, 0x70, 0xb0,
-	0x2f, 0x0c, 0x91, 0x26, 0x90, 0x5a, 0x7c, 0x47, 0x13, 0x1d, 0x17, 0x82, 0xe0, 0x32, 0x4f, 0xbf,
-	0x50, 0x0f, 0xca, 0x23, 0xe9, 0x92, 0x17, 0xf3, 0xf9, 0xf9, 0x62, 0xed, 0x0e, 0xc4, 0xa6, 0x4e,
-	0xa2, 0x65, 0x11, 0xd0, 0x57, 0xb0, 0x90, 0x7b, 0x3d, 0x1b, 0xe7, 0xea, 0xa8, 0x78, 0x0a, 0x92,
-	0x85, 0xda, 0xb0, 0x14, 0xc9, 0xd9, 0x4b, 0x1f, 0xd0, 0xe6, 0x79, 0x27, 0x62, 0x18, 0xe1, 0x94,
-	0xb9, 0x7d, 0xfd, 0xa7, 0x76, 0xe1, 0xe7, 0xf6, 0x15, 0x58, 0x4e, 0xce, 0x5a, 0x32, 0x29, 0xc9,
-	0xc0, 0x34, 0xfe, 0x51, 0x26, 0xb6, 0x4f, 0x8f, 0x46, 0xfc, 0xff, 0x55, 0xf4, 0xdb, 0x09, 0x45,
-	0xcf, 0x19, 0x4b, 0x94, 0x72, 0x46, 0xcf, 0x6d, 0x58, 0xa4, 0x9c, 0x78, 0x62, 0xf9, 0x8a, 0x69,
-	0xfb, 0xf8, 0x3c, 0x82, 0xe0, 0x84, 0xb2, 0x5d, 0xfa, 0xb7, 0x55, 0xd8, 0x1c, 0x40, 0x35, 0xb7,
-	0x2e, 0x51, 0x1d, 0x2e, 0x9b, 0x7a, 0xbf, 0xd5, 0xef, 0x3c, 0xb7, 0xcc, 0xe7, 0x4f, 0x74, 0xcb,
-	0xe8, 0x3f, 0x6b, 0xf5, 0x8c, 0x6e, 0xad, 0x80, 0xae, 0xc1, 0xea, 0x98, 0xa7, 0xab, 0x77, 0x8d,
-	0x4e, 0xcb, 0xd4, 0xbb, 0x35, 0x05, 0xad, 0xc1, 0x47, 0x63, 0xbe, 0x9d, 0xa7, 0x3d, 0xd3, 0xb0,
-	0xa4, 0xc9, 0xac, 0x15, 0x37, 0x5f, 0x2b, 0x50, 0xcd, 0xed, 0x17, 0x91, 0xa4, 0xdd, 0xea, 0x3c,
-	0xd6, 0xfb, 0xdd, 0xb3, 0x49, 0xae, 0xc2, 0xca, 0x98, 0xc7, 0xc4, 0x86, 0xb9, 0xdb, 0xaf, 0x29,
-	0x68, 0x15, 0xd0, 0x98, 0xa3, 0xd7, 0xdb, 0xb1, 0xba, 0xb5, 0xe2, 0x04, 0xa1, 0xfb, 0xbc, 0xdf,
-	0xda, 0xd9, 0xad, 0x95, 0xd0, 0x75, 0xb8, 0x3a, 0x1e, 0x69, 0x17, 0x77, 0xbe, 0xd9, 0xd3, 0xf1,
-	0x33, 0xbd, 0xb6, 0xb0, 0xf9, 0x77, 0x11, 0x2e, 0x4f, 0xdb, 0x1b, 0xa8, 0x01, 0xaa, 0xd1, 0x7f,
-	0xa8, 0x63, 0xbd, 0xdf, 0xd1, 0x2d, 0x89, 0xc6, 0xd6, 0x9e, 0xd9, 0x32, 0xf3, 0x35, 0x7e, 0x0a,
-	0x8d, 0x99, 0x18, 0xc3, 0x34, 0x5a, 0x3d, 0xe3, 0x85, 0x14, 0xe5, 0x36, 0x7c, 0x32, 0x03, 0xd7,
-	0xc1, 0xba, 0xf8, 0x79, 0xa2, 0xf7, 0xbb, 0x46, 0xff, 0x51, 0xad, 0x38, 0x27, 0xad, 0x38, 0x08,
-	0x4c, 0x09, 0xdd, 0x84, 0xb5, 0x19, 0x98, 0x87, 0x2d, 0xa3, 0xa7, 0x77, 0x6b, 0x0b, 0x73, 0x32,
-	0x76, 0xf5, 0x9e, 0x9e, 0xcb, 0xb8, 0x88, 0x6e, 0xc1, 0x8d, 0x79, 0xc5, 0x09, 0xd0, 0xd2, 0x1c,
-	0x90, 0x8c, 0x27, 0x40, 0x17, 0xe6, 0xd4, 0x9e, 0x24, 0xed, 0xd6, 0xca, 0xed, 0x7b, 0x6f, 0xde,
-	0xa9, 0x85, 0xb7, 0xef, 0xd4, 0xc2, 0xfb, 0x77, 0xaa, 0xf2, 0xe3, 0xb1, 0xaa, 0xfc, 0x7e, 0xac,
-	0x2a, 0x6f, 0x8e, 0x55, 0xe5, 0xcf, 0x63, 0x55, 0xf9, 0xeb, 0x58, 0x2d, 0xbc, 0x3f, 0x56, 0x95,
-	0x5f, 0x4e, 0xd4, 0xc2, 0x9b, 0x13, 0xb5, 0xf0, 0xf6, 0x44, 0x2d, 0xbc, 0x28, 0xc6, 0x5b, 0x83,
-	0x25, 0xf9, 0x27, 0xee, 0xee, 0x7f, 0x01, 0x00, 0x00, 0xff, 0xff, 0x3a, 0xdb, 0xa5, 0x25, 0xe2,
-	0x0a, 0x00, 0x00,
+	// 1312 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x56, 0xcd, 0x8f, 0xd3, 0x46,
+	0x14, 0x8f, 0x93, 0xfd, 0xca, 0xcb, 0x02, 0x61, 0x16, 0x96, 0x14, 0xb4, 0x66, 0x31, 0xb4, 0x5a,
+	0xb6, 0x92, 0x53, 0x16, 0x2a, 0xa1, 0x6d, 0x51, 0x95, 0x0f, 0x03, 0x2e, 0xd9, 0x2c, 0x9a, 0x18,
+	0x24, 0x38, 0xd4, 0x72, 0xec, 0x61, 0x99, 0xee, 0x66, 0x6c, 0xd9, 0x93, 0x54, 0x7b, 0xab, 0x7a,
+	0x6b, 0x0f, 0x55, 0xff, 0xa0, 0x1e, 0x7a, 0xac, 0xd4, 0x1e, 0x38, 0x22, 0xf5, 0x02, 0xcb, 0xa5,
+	0x97, 0xaa, 0xf4, 0xda, 0x53, 0x35, 0x63, 0x3b, 0xeb, 0xec, 0x26, 0x61, 0x5b, 0xf5, 0x94, 0xcc,
+	0x7b, 0xbf, 0xf7, 0xe1, 0xdf, 0xfb, 0xf9, 0x8d, 0x61, 0xbd, 0x47, 0xdd, 0xe7, 0x64, 0xcf, 0x61,
+	0x3b, 0x64, 0xcf, 0xaf, 0x3a, 0x01, 0xad, 0x0e, 0x36, 0xaa, 0x94, 0x3d, 0x23, 0x21, 0x61, 0x2e,
+	0xb1, 0x23, 0x12, 0x0e, 0x48, 0xa8, 0x07, 0xa1, 0xcf, 0x7d, 0xb4, 0x94, 0xc5, 0xea, 0x4e, 0x40,
+	0xf5, 0xc1, 0xc6, 0xc5, 0x5b, 0xbb, 0xb7, 0x23, 0x9d, 0xca, 0xd0, 0x9e, 0xe3, 0x3e, 0xa7, 0x8c,
+	0x84, 0xfb, 0xd5, 0x60, 0x77, 0x47, 0x18, 0xa2, 0x6a, 0x8f, 0x70, 0xa7, 0x3a, 0xb8, 0x51, 0xdd,
+	0x21, 0x8c, 0x84, 0x0e, 0x27, 0x5e, 0x9c, 0xea, 0xa2, 0x7a, 0xac, 0xac, 0x1f, 0x70, 0xea, 0xb3,
+	0x28, 0xf1, 0x5f, 0x39, 0xe6, 0x77, 0x7d, 0xe6, 0xd1, 0x2c, 0xe4, 0xda, 0xb8, 0xce, 0x77, 0xfb,
+	0x5d, 0x12, 0x32, 0xc2, 0x49, 0x8a, 0x5a, 0x19, 0x87, 0x0a, 0x7c, 0x6f, 0x62, 0x1d, 0xe1, 0x0e,
+	0xfd, 0x2f, 0x89, 0xcb, 0x27, 0xb6, 0x3a, 0xd8, 0xa8, 0xf6, 0xa3, 0x94, 0x15, 0xcd, 0x81, 0x52,
+	0x87, 0x84, 0x03, 0xca, 0x76, 0x3a, 0x01, 0x71, 0x51, 0x05, 0xe6, 0x07, 0x24, 0x8c, 0xa8, 0xcf,
+	0x2a, 0xca, 0xaa, 0xb2, 0x56, 0xc4, 0xe9, 0x11, 0xdd, 0x86, 0x8a, 0xeb, 0x33, 0xee, 0x08, 0x8a,
+	0xec, 0x6e, 0x9f, 0xee, 0x79, 0x36, 0x27, 0xbd, 0x60, 0xcf, 0xe1, 0xa4, 0x92, 0x97, 0xd0, 0xe5,
+	0xa1, 0xbf, 0x2e, 0xdc, 0x56, 0xe2, 0xd5, 0xbe, 0x80, 0xe2, 0xf6, 0x57, 0x8c, 0x84, 0xb2, 0xc0,
+	0x1d, 0x00, 0x5f, 0x1c, 0x6c, 0xca, 0x9e, 0xf9, 0xb2, 0x46, 0x69, 0x43, 0xd5, 0xc7, 0x8c, 0x46,
+	0x97, 0x31, 0x26, 0x7b, 0xe6, 0xe3, 0xa2, 0x9f, 0xfe, 0x45, 0x08, 0x66, 0x38, 0x25, 0xa1, 0xac,
+	0x38, 0x8b, 0xe5, 0x7f, 0xed, 0x47, 0x05, 0x16, 0x4c, 0x46, 0xb9, 0xcc, 0x7f, 0x17, 0x4e, 0x85,
+	0x24, 0xf2, 0xfb, 0xa1, 0x18, 0x7f, 0x40, 0xdc, 0xa4, 0xc4, 0x95, 0xb1, 0x25, 0x70, 0x82, 0x14,
+	0x91, 0x78, 0x31, 0xcc, 0x9c, 0x50, 0x03, 0x16, 0xa3, 0x98, 0x97, 0x38, 0x4d, 0x5e, 0xa6, 0x59,
+	0x1d, 0x9b, 0x26, 0x43, 0x20, 0x2e, 0x45, 0x19, 0x36, 0xaf, 0xc2, 0x29, 0xd6, 0xef, 0xd9, 0x94,
+	0x45, 0xdc, 0x61, 0x2e, 0x89, 0x2a, 0x05, 0xd9, 0xf6, 0x22, 0xeb, 0xf7, 0xcc, 0xd4, 0xa6, 0x55,
+	0xa1, 0xd8, 0x24, 0xae, 0xdf, 0x93, 0x11, 0x1a, 0x2c, 0x7a, 0xe2, 0xd0, 0xa3, 0xd1, 0x70, 0x08,
+	0x0b, 0x78, 0xc4, 0xa6, 0x7d, 0xab, 0xc0, 0xa9, 0xc6, 0x5e, 0x3f, 0xe2, 0x24, 0xb4, 0x9c, 0x70,
+	0x87, 0x70, 0xb4, 0x02, 0xe0, 0xc6, 0x06, 0x9b, 0x7a, 0xc9, 0xe0, 0x8a, 0x89, 0xc5, 0xf4, 0x90,
+	0x01, 0x70, 0xa8, 0xac, 0xe4, 0x49, 0xae, 0x8e, 0x7d, 0x92, 0x86, 0xcf, 0x18, 0x71, 0x85, 0x4e,
+	0x45, 0x37, 0xf7, 0x73, 0x38, 0x13, 0x58, 0x47, 0x00, 0xee, 0xd0, 0x8f, 0x66, 0x5e, 0xfd, 0x54,
+	0x50, 0xb4, 0xdf, 0x0a, 0xb0, 0x64, 0xa6, 0xef, 0x5b, 0x47, 0xbe, 0x6e, 0x29, 0x7d, 0x9c, 0x30,
+	0x87, 0xb9, 0xfb, 0x36, 0xdf, 0x0f, 0x88, 0xec, 0xe9, 0xf4, 0x04, 0xfa, 0xac, 0x18, 0x68, 0xed,
+	0x07, 0x04, 0x97, 0xf8, 0xe1, 0xe1, 0x50, 0x2b, 0x99, 0x09, 0x4c, 0xd1, 0x8a, 0xe4, 0x3f, 0xd6,
+	0x8a, 0xec, 0x61, 0x13, 0x8a, 0x94, 0x51, 0x1e, 0x47, 0x17, 0x64, 0xf4, 0xca, 0xd8, 0xe8, 0x54,
+	0x3c, 0x78, 0x81, 0xa6, 0x32, 0xba, 0x03, 0x20, 0x39, 0x8f, 0x83, 0x67, 0xa6, 0x94, 0x1e, 0xce,
+	0x0e, 0x17, 0xbd, 0xe1, 0x18, 0x6f, 0xc2, 0xac, 0xec, 0xa3, 0x32, 0x3b, 0xa5, 0xec, 0xa3, 0x28,
+	0xd1, 0x77, 0x8c, 0x15, 0x9c, 0x75, 0x1d, 0x77, 0x97, 0x30, 0x2f, 0xe6, 0x6c, 0x6e, 0x0a, 0x67,
+	0xf5, 0x18, 0x18, 0x73, 0xd6, 0x3d, 0x3c, 0xa0, 0x07, 0x70, 0x26, 0x95, 0x02, 0x97, 0xe2, 0x88,
+	0x2a, 0xf3, 0xab, 0x85, 0xb5, 0xd2, 0x86, 0x36, 0x7e, 0xe0, 0x59, 0x1d, 0xe1, 0xd3, 0x6e, 0xf6,
+	0x18, 0x69, 0xbf, 0x2a, 0xb0, 0x34, 0x82, 0xe8, 0x70, 0x87, 0xf7, 0xa3, 0x77, 0xe9, 0xed, 0x33,
+	0x98, 0x8d, 0x78, 0xba, 0x17, 0x4e, 0x6f, 0x5c, 0x9f, 0x40, 0xfa, 0xa8, 0x6a, 0x44, 0x00, 0x8e,
+	0xe3, 0xd0, 0x27, 0x52, 0x69, 0xc9, 0xc2, 0xac, 0x14, 0x64, 0xff, 0x97, 0x8e, 0x67, 0x69, 0xa4,
+	0x18, 0x9c, 0x81, 0x8b, 0x15, 0xd6, 0x23, 0x51, 0xe4, 0xec, 0x10, 0x39, 0xb7, 0x22, 0x4e, 0x8f,
+	0xda, 0x5f, 0x05, 0x38, 0x3f, 0xa6, 0x6c, 0x3f, 0x42, 0x3a, 0x2c, 0x1d, 0xbd, 0x35, 0x0e, 0x9f,
+	0xec, 0x2c, 0x1d, 0x8d, 0x31, 0x3d, 0x54, 0x85, 0x25, 0xbf, 0x2b, 0x71, 0x9e, 0x9d, 0x5c, 0x0e,
+	0xe2, 0x6d, 0x15, 0xcf, 0x5b, 0xc0, 0x28, 0x75, 0xdd, 0x1b, 0x7a, 0x0e, 0x29, 0x29, 0xfc, 0x47,
+	0x4a, 0x3e, 0x84, 0xb3, 0x41, 0xe8, 0x0f, 0xa8, 0x47, 0x42, 0x5b, 0x5c, 0x4b, 0x9e, 0xc3, 0x9d,
+	0xe4, 0xf9, 0xca, 0xa9, 0x63, 0x2b, 0xb1, 0xa3, 0xcb, 0x50, 0x72, 0x43, 0xe2, 0x70, 0x62, 0x73,
+	0xda, 0x23, 0x52, 0x84, 0x45, 0x0c, 0xb1, 0xc9, 0xa2, 0x3d, 0x22, 0x00, 0xfd, 0xc0, 0x1b, 0x02,
+	0xe6, 0x62, 0x40, 0x6c, 0x92, 0x80, 0xd1, 0x09, 0xcc, 0xff, 0xbb, 0x09, 0x7c, 0x0c, 0xcb, 0xce,
+	0xc0, 0xa1, 0x7b, 0x4e, 0x77, 0x8f, 0xd8, 0x84, 0x0d, 0x68, 0xe8, 0xb3, 0x1e, 0x61, 0x3c, 0xaa,
+	0x2c, 0xac, 0x16, 0xd6, 0x8a, 0xf8, 0xfc, 0xd0, 0x6b, 0x64, 0x9c, 0xa8, 0x03, 0xe5, 0x54, 0x55,
+	0x91, 0x1c, 0x0b, 0x89, 0x2a, 0x45, 0x59, 0x79, 0xed, 0xdd, 0xda, 0x8d, 0x07, 0x89, 0x53, 0xf1,
+	0x77, 0x92, 0x04, 0xda, 0x2f, 0x79, 0x38, 0x73, 0x84, 0x57, 0xf4, 0x00, 0x8a, 0xe2, 0x05, 0x93,
+	0x3c, 0x26, 0xf7, 0x83, 0xae, 0xc7, 0x1f, 0x02, 0x7a, 0xf6, 0x43, 0x40, 0x0f, 0x76, 0x77, 0x84,
+	0x21, 0xd2, 0x05, 0x52, 0x1f, 0xdc, 0xd0, 0xc5, 0x2b, 0x26, 0x58, 0xc6, 0x0b, 0x3c, 0xf9, 0x87,
+	0x5a, 0xb0, 0x30, 0x9c, 0x47, 0xbc, 0xa2, 0x3e, 0x3a, 0x59, 0xae, 0xed, 0xae, 0xb8, 0xa6, 0xe3,
+	0x6c, 0x69, 0x06, 0xf4, 0x29, 0xcc, 0x64, 0xd6, 0xd5, 0xda, 0x89, 0x64, 0x22, 0x76, 0x8f, 0x8c,
+	0x42, 0x75, 0x98, 0x8b, 0x99, 0x4b, 0x36, 0xd6, 0xfa, 0x49, 0x65, 0xd6, 0x8f, 0x70, 0x12, 0xb9,
+	0x79, 0xe9, 0x9b, 0x7a, 0xee, 0xbb, 0xfa, 0x79, 0x58, 0x8c, 0xcf, 0x7a, 0x2c, 0xbf, 0x58, 0x85,
+	0xda, 0x9f, 0xca, 0xb1, 0x75, 0xdf, 0xa2, 0x11, 0xff, 0x7f, 0x19, 0xfd, 0xfc, 0x18, 0xa3, 0x27,
+	0xcc, 0x25, 0x5a, 0x39, 0xc2, 0xe7, 0x26, 0xcc, 0x52, 0x4e, 0x7a, 0xe9, 0x12, 0xb9, 0x76, 0x12,
+	0x42, 0x70, 0x1c, 0xb2, 0x59, 0xf8, 0xbb, 0x96, 0x5b, 0xef, 0x42, 0x29, 0x73, 0x3f, 0xa1, 0x0a,
+	0x9c, 0xb3, 0x8c, 0x76, 0xad, 0xdd, 0x78, 0x62, 0x5b, 0x4f, 0x1e, 0x1a, 0xb6, 0xd9, 0x7e, 0x5c,
+	0x6b, 0x99, 0xcd, 0x72, 0x0e, 0x5d, 0x84, 0xe5, 0x11, 0x4f, 0xd3, 0x68, 0x9a, 0x8d, 0x9a, 0x65,
+	0x34, 0xcb, 0x0a, 0x5a, 0x81, 0xf7, 0x46, 0x7c, 0x5b, 0x8f, 0x5a, 0x96, 0x69, 0x4b, 0x93, 0x55,
+	0xce, 0xaf, 0x7f, 0xaf, 0x40, 0x29, 0xb3, 0xd0, 0x45, 0x91, 0x7a, 0xad, 0xf1, 0xc0, 0x68, 0x37,
+	0x8f, 0x16, 0xb9, 0x00, 0x4b, 0x23, 0x1e, 0x0b, 0x9b, 0xd6, 0x76, 0xbb, 0xac, 0xa0, 0x65, 0x40,
+	0x23, 0x8e, 0x56, 0x6b, 0xcb, 0x6e, 0x96, 0xf3, 0xc7, 0x02, 0x9a, 0x4f, 0xda, 0xb5, 0xad, 0xed,
+	0x72, 0x01, 0x5d, 0x82, 0x0b, 0xa3, 0x99, 0xb6, 0x71, 0xe3, 0x7e, 0xc7, 0xc0, 0x8f, 0x8d, 0xf2,
+	0xcc, 0xfa, 0x1f, 0x79, 0x38, 0x37, 0x6e, 0x19, 0x21, 0x0d, 0x54, 0xb3, 0x7d, 0xd7, 0xc0, 0x46,
+	0xbb, 0x61, 0xd8, 0x12, 0x8d, 0xed, 0x8e, 0x55, 0xb3, 0xb2, 0x3d, 0x7e, 0x00, 0xda, 0x44, 0x8c,
+	0x69, 0x99, 0xb5, 0x96, 0xf9, 0x54, 0x92, 0x72, 0x1d, 0xde, 0x9f, 0x80, 0x6b, 0x60, 0x43, 0xfc,
+	0x3c, 0x34, 0xda, 0x4d, 0xb3, 0x7d, 0xaf, 0x9c, 0x9f, 0x52, 0x56, 0x1c, 0x04, 0xa6, 0x80, 0xae,
+	0xc0, 0xca, 0x04, 0xcc, 0xdd, 0x9a, 0xd9, 0x32, 0x9a, 0xe5, 0x99, 0x29, 0x15, 0x9b, 0x46, 0xcb,
+	0xc8, 0x54, 0x9c, 0x45, 0x57, 0xe1, 0xf2, 0xb4, 0xe6, 0x04, 0x68, 0x6e, 0x0a, 0x48, 0xe6, 0x13,
+	0xa0, 0xf9, 0x29, 0xbd, 0xc7, 0x45, 0x9b, 0xe5, 0x85, 0xfa, 0xad, 0x17, 0xaf, 0xd5, 0xdc, 0xcb,
+	0xd7, 0x6a, 0xee, 0xed, 0x6b, 0x55, 0xf9, 0xfa, 0x40, 0x55, 0x7e, 0x3e, 0x50, 0x95, 0x17, 0x07,
+	0xaa, 0xf2, 0xea, 0x40, 0x55, 0x7e, 0x3f, 0x50, 0x73, 0x6f, 0x0f, 0x54, 0xe5, 0x87, 0x37, 0x6a,
+	0xee, 0xc5, 0x1b, 0x35, 0xf7, 0xf2, 0x8d, 0x9a, 0x7b, 0x9a, 0x1f, 0x6c, 0x74, 0xe7, 0xe4, 0x17,
+	0xfc, 0xcd, 0x7f, 0x02, 0x00, 0x00, 0xff, 0xff, 0x81, 0xce, 0xad, 0xa1, 0x05, 0x0d, 0x00, 0x00,
 }
 
 func (x TenancyType) String() string {
@@ -747,11 +920,32 @@ func (this *DecomSpec) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *ClusterTarget) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&v2.ClusterTarget{")
+	s = append(s, "ClusterId: "+fmt.Sprintf("%#v", this.ClusterId)+",\n")
+	if this.Connection != nil {
+		s = append(s, "Connection: "+fmt.Sprintf("%#v", this.Connection)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *ClusterTarget_Kubernetes) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&v2.ClusterTarget_Kubernetes{` +
+		`Kubernetes:` + fmt.Sprintf("%#v", this.Kubernetes) + `}`}, ", ")
+	return s
+}
 func (this *InferenceServerSpec) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 10)
+	s := make([]string, 0, 11)
 	s = append(s, "&v2.InferenceServerSpec{")
 	s = append(s, "TenancyType: "+fmt.Sprintf("%#v", this.TenancyType)+",\n")
 	if this.OwnerSpec != nil {
@@ -767,6 +961,24 @@ func (this *InferenceServerSpec) GoString() string {
 		s = append(s, "Owner: "+fmt.Sprintf("%#v", this.Owner)+",\n")
 	}
 	s = append(s, "BackendType: "+fmt.Sprintf("%#v", this.BackendType)+",\n")
+	if this.ClusterTargets != nil {
+		s = append(s, "ClusterTargets: "+fmt.Sprintf("%#v", this.ClusterTargets)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *ClusterTargetStatus) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 8)
+	s = append(s, "&v2.ClusterTargetStatus{")
+	s = append(s, "ClusterId: "+fmt.Sprintf("%#v", this.ClusterId)+",\n")
+	s = append(s, "State: "+fmt.Sprintf("%#v", this.State)+",\n")
+	if this.Conditions != nil {
+		s = append(s, "Conditions: "+fmt.Sprintf("%#v", this.Conditions)+",\n")
+	}
+	s = append(s, "Message: "+fmt.Sprintf("%#v", this.Message)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -774,7 +986,7 @@ func (this *InferenceServerStatus) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 12)
+	s := make([]string, 0, 13)
 	s = append(s, "&v2.InferenceServerStatus{")
 	s = append(s, "InferenceServerId: "+fmt.Sprintf("%#v", this.InferenceServerId)+",\n")
 	s = append(s, "ObservedGeneration: "+fmt.Sprintf("%#v", this.ObservedGeneration)+",\n")
@@ -786,6 +998,9 @@ func (this *InferenceServerStatus) GoString() string {
 		s = append(s, "Conditions: "+fmt.Sprintf("%#v", this.Conditions)+",\n")
 	}
 	s = append(s, "AvailableEnvironments: "+fmt.Sprintf("%#v", this.AvailableEnvironments)+",\n")
+	if this.ClusterStatuses != nil {
+		s = append(s, "ClusterStatuses: "+fmt.Sprintf("%#v", this.ClusterStatuses)+",\n")
+	}
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -959,6 +1174,66 @@ func (m *DecomSpec) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *ClusterTarget) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ClusterTarget) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ClusterTarget) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Connection != nil {
+		{
+			size := m.Connection.Size()
+			i -= size
+			if _, err := m.Connection.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	if len(m.ClusterId) > 0 {
+		i -= len(m.ClusterId)
+		copy(dAtA[i:], m.ClusterId)
+		i = encodeVarintInferenceServer(dAtA, i, uint64(len(m.ClusterId)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ClusterTarget_Kubernetes) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ClusterTarget_Kubernetes) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Kubernetes != nil {
+		{
+			size, err := m.Kubernetes.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintInferenceServer(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	return len(dAtA) - i, nil
+}
 func (m *InferenceServerSpec) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -979,6 +1254,20 @@ func (m *InferenceServerSpec) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.ClusterTargets) > 0 {
+		for iNdEx := len(m.ClusterTargets) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.ClusterTargets[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintInferenceServer(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x3a
+		}
+	}
 	if m.BackendType != 0 {
 		i = encodeVarintInferenceServer(dAtA, i, uint64(m.BackendType))
 		i--
@@ -1040,6 +1329,62 @@ func (m *InferenceServerSpec) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *ClusterTargetStatus) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ClusterTargetStatus) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ClusterTargetStatus) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Message) > 0 {
+		i -= len(m.Message)
+		copy(dAtA[i:], m.Message)
+		i = encodeVarintInferenceServer(dAtA, i, uint64(len(m.Message)))
+		i--
+		dAtA[i] = 0x22
+	}
+	if len(m.Conditions) > 0 {
+		for iNdEx := len(m.Conditions) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Conditions[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintInferenceServer(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
+	if m.State != 0 {
+		i = encodeVarintInferenceServer(dAtA, i, uint64(m.State))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.ClusterId) > 0 {
+		i -= len(m.ClusterId)
+		copy(dAtA[i:], m.ClusterId)
+		i = encodeVarintInferenceServer(dAtA, i, uint64(len(m.ClusterId)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *InferenceServerStatus) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -1060,6 +1405,20 @@ func (m *InferenceServerStatus) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.ClusterStatuses) > 0 {
+		for iNdEx := len(m.ClusterStatuses) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.ClusterStatuses[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintInferenceServer(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x4a
+		}
+	}
 	if len(m.AvailableEnvironments) > 0 {
 		for iNdEx := len(m.AvailableEnvironments) - 1; iNdEx >= 0; iNdEx-- {
 			i -= len(m.AvailableEnvironments[iNdEx])
@@ -1230,6 +1589,34 @@ func (m *DecomSpec) Size() (n int) {
 	return n
 }
 
+func (m *ClusterTarget) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.ClusterId)
+	if l > 0 {
+		n += 1 + l + sovInferenceServer(uint64(l))
+	}
+	if m.Connection != nil {
+		n += m.Connection.Size()
+	}
+	return n
+}
+
+func (m *ClusterTarget_Kubernetes) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Kubernetes != nil {
+		l = m.Kubernetes.Size()
+		n += 1 + l + sovInferenceServer(uint64(l))
+	}
+	return n
+}
 func (m *InferenceServerSpec) Size() (n int) {
 	if m == nil {
 		return 0
@@ -1257,6 +1644,38 @@ func (m *InferenceServerSpec) Size() (n int) {
 	}
 	if m.BackendType != 0 {
 		n += 1 + sovInferenceServer(uint64(m.BackendType))
+	}
+	if len(m.ClusterTargets) > 0 {
+		for _, e := range m.ClusterTargets {
+			l = e.Size()
+			n += 1 + l + sovInferenceServer(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *ClusterTargetStatus) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.ClusterId)
+	if l > 0 {
+		n += 1 + l + sovInferenceServer(uint64(l))
+	}
+	if m.State != 0 {
+		n += 1 + sovInferenceServer(uint64(m.State))
+	}
+	if len(m.Conditions) > 0 {
+		for _, e := range m.Conditions {
+			l = e.Size()
+			n += 1 + l + sovInferenceServer(uint64(l))
+		}
+	}
+	l = len(m.Message)
+	if l > 0 {
+		n += 1 + l + sovInferenceServer(uint64(l))
 	}
 	return n
 }
@@ -1298,6 +1717,12 @@ func (m *InferenceServerStatus) Size() (n int) {
 	if len(m.AvailableEnvironments) > 0 {
 		for _, s := range m.AvailableEnvironments {
 			l = len(s)
+			n += 1 + l + sovInferenceServer(uint64(l))
+		}
+	}
+	if len(m.ClusterStatuses) > 0 {
+		for _, e := range m.ClusterStatuses {
+			l = e.Size()
 			n += 1 + l + sovInferenceServer(uint64(l))
 		}
 	}
@@ -1354,10 +1779,36 @@ func (this *DecomSpec) String() string {
 	}, "")
 	return s
 }
+func (this *ClusterTarget) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&ClusterTarget{`,
+		`ClusterId:` + fmt.Sprintf("%v", this.ClusterId) + `,`,
+		`Connection:` + fmt.Sprintf("%v", this.Connection) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ClusterTarget_Kubernetes) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&ClusterTarget_Kubernetes{`,
+		`Kubernetes:` + strings.Replace(fmt.Sprintf("%v", this.Kubernetes), "ConnectionSpec", "ConnectionSpec", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
 func (this *InferenceServerSpec) String() string {
 	if this == nil {
 		return "nil"
 	}
+	repeatedStringForClusterTargets := "[]*ClusterTarget{"
+	for _, f := range this.ClusterTargets {
+		repeatedStringForClusterTargets += strings.Replace(f.String(), "ClusterTarget", "ClusterTarget", 1) + ","
+	}
+	repeatedStringForClusterTargets += "}"
 	s := strings.Join([]string{`&InferenceServerSpec{`,
 		`TenancyType:` + fmt.Sprintf("%v", this.TenancyType) + `,`,
 		`OwnerSpec:` + strings.Replace(this.OwnerSpec.String(), "OwnerSpec", "OwnerSpec", 1) + `,`,
@@ -1365,6 +1816,25 @@ func (this *InferenceServerSpec) String() string {
 		`DecomSpec:` + strings.Replace(this.DecomSpec.String(), "DecomSpec", "DecomSpec", 1) + `,`,
 		`Owner:` + strings.Replace(fmt.Sprintf("%v", this.Owner), "UserInfo", "UserInfo", 1) + `,`,
 		`BackendType:` + fmt.Sprintf("%v", this.BackendType) + `,`,
+		`ClusterTargets:` + repeatedStringForClusterTargets + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ClusterTargetStatus) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForConditions := "[]*Condition{"
+	for _, f := range this.Conditions {
+		repeatedStringForConditions += strings.Replace(fmt.Sprintf("%v", f), "Condition", "api.Condition", 1) + ","
+	}
+	repeatedStringForConditions += "}"
+	s := strings.Join([]string{`&ClusterTargetStatus{`,
+		`ClusterId:` + fmt.Sprintf("%v", this.ClusterId) + `,`,
+		`State:` + fmt.Sprintf("%v", this.State) + `,`,
+		`Conditions:` + repeatedStringForConditions + `,`,
+		`Message:` + fmt.Sprintf("%v", this.Message) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1378,6 +1848,11 @@ func (this *InferenceServerStatus) String() string {
 		repeatedStringForConditions += strings.Replace(fmt.Sprintf("%v", f), "Condition", "api.Condition", 1) + ","
 	}
 	repeatedStringForConditions += "}"
+	repeatedStringForClusterStatuses := "[]*ClusterTargetStatus{"
+	for _, f := range this.ClusterStatuses {
+		repeatedStringForClusterStatuses += strings.Replace(f.String(), "ClusterTargetStatus", "ClusterTargetStatus", 1) + ","
+	}
+	repeatedStringForClusterStatuses += "}"
 	s := strings.Join([]string{`&InferenceServerStatus{`,
 		`InferenceServerId:` + fmt.Sprintf("%v", this.InferenceServerId) + `,`,
 		`ObservedGeneration:` + fmt.Sprintf("%v", this.ObservedGeneration) + `,`,
@@ -1387,6 +1862,7 @@ func (this *InferenceServerStatus) String() string {
 		`UpdateTime:` + fmt.Sprintf("%v", this.UpdateTime) + `,`,
 		`Conditions:` + repeatedStringForConditions + `,`,
 		`AvailableEnvironments:` + fmt.Sprintf("%v", this.AvailableEnvironments) + `,`,
+		`ClusterStatuses:` + repeatedStringForClusterStatuses + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1829,6 +2305,123 @@ func (m *DecomSpec) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
+func (m *ClusterTarget) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowInferenceServer
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ClusterTarget: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ClusterTarget: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ClusterId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowInferenceServer
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthInferenceServer
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthInferenceServer
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ClusterId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Kubernetes", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowInferenceServer
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthInferenceServer
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthInferenceServer
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &ConnectionSpec{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Connection = &ClusterTarget_Kubernetes{v}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipInferenceServer(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthInferenceServer
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
 func (m *InferenceServerSpec) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -2040,6 +2633,207 @@ func (m *InferenceServerSpec) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		case 7:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ClusterTargets", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowInferenceServer
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthInferenceServer
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthInferenceServer
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ClusterTargets = append(m.ClusterTargets, &ClusterTarget{})
+			if err := m.ClusterTargets[len(m.ClusterTargets)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipInferenceServer(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthInferenceServer
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ClusterTargetStatus) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowInferenceServer
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ClusterTargetStatus: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ClusterTargetStatus: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ClusterId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowInferenceServer
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthInferenceServer
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthInferenceServer
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ClusterId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field State", wireType)
+			}
+			m.State = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowInferenceServer
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.State |= InferenceServerState(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Conditions", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowInferenceServer
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthInferenceServer
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthInferenceServer
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Conditions = append(m.Conditions, &api.Condition{})
+			if err := m.Conditions[len(m.Conditions)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Message", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowInferenceServer
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthInferenceServer
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthInferenceServer
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Message = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipInferenceServer(dAtA[iNdEx:])
@@ -2321,6 +3115,40 @@ func (m *InferenceServerStatus) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.AvailableEnvironments = append(m.AvailableEnvironments, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		case 9:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ClusterStatuses", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowInferenceServer
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthInferenceServer
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthInferenceServer
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ClusterStatuses = append(m.ClusterStatuses, &ClusterTargetStatus{})
+			if err := m.ClusterStatuses[len(m.ClusterStatuses)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -2992,6 +3820,24 @@ spec:
                 - BACKEND_TYPE_DYNAMO
                 - BACKEND_TYPE_TORCHSERVE
                 type: string
+              clusterTargets:
+                items:
+                  properties:
+                    clusterId:
+                      type: string
+                    kubernetes:
+                      properties:
+                        caDataTag:
+                          type: string
+                        host:
+                          type: string
+                        port:
+                          type: string
+                        tokenTag:
+                          type: string
+                      type: object
+                  type: object
+                type: array
               decomSpec:
                 properties:
                   decommission:
@@ -3066,6 +3912,63 @@ spec:
               availableEnvironments:
                 items:
                   type: string
+                type: array
+              clusterStatuses:
+                items:
+                  properties:
+                    clusterId:
+                      type: string
+                    conditions:
+                      items:
+                        properties:
+                          lastUpdatedTimestamp:
+                            format: int64
+                            pattern: ^[-]?\d{1,19}$
+                            type: string
+                          message:
+                            type: string
+                          metadata:
+                            properties:
+                              '@type':
+                                description: A URL/resource name that uniquely identifies
+                                  the type of the serialized protocol buffer message.
+                                type: string
+                              value:
+                                description: Serialized data of the above type.
+                                format: byte
+                                type: string
+                            type: object
+                          observedGeneration:
+                            format: int64
+                            pattern: ^[-]?\d{1,19}$
+                            type: string
+                          reason:
+                            type: string
+                          status:
+                            enum:
+                            - CONDITION_STATUS_UNKNOWN
+                            - CONDITION_STATUS_TRUE
+                            - CONDITION_STATUS_FALSE
+                            type: string
+                          type:
+                            type: string
+                        type: object
+                      type: array
+                    message:
+                      type: string
+                    state:
+                      enum:
+                      - INFERENCE_SERVER_STATE_INVALID
+                      - INFERENCE_SERVER_STATE_INITIALIZED
+                      - INFERENCE_SERVER_STATE_CREATE_PENDING
+                      - INFERENCE_SERVER_STATE_SERVING
+                      - INFERENCE_SERVER_STATE_FAILED
+                      - INFERENCE_SERVER_STATE_DELETE_PENDING
+                      - INFERENCE_SERVER_STATE_CREATING
+                      - INFERENCE_SERVER_STATE_DELETING
+                      - INFERENCE_SERVER_STATE_DELETED
+                      type: string
+                  type: object
                 type: array
               conditions:
                 items:

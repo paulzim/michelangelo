@@ -12,6 +12,7 @@ import (
 
 	"github.com/michelangelo-ai/michelangelo/go/components/inferenceserver/backends"
 	backendsmocks "github.com/michelangelo-ai/michelangelo/go/components/inferenceserver/backends/backendsmocks"
+	"github.com/michelangelo-ai/michelangelo/go/components/inferenceserver/plugins/oss/common"
 	apipb "github.com/michelangelo-ai/michelangelo/proto-go/api"
 	v2pb "github.com/michelangelo-ai/michelangelo/proto-go/api/v2"
 )
@@ -27,6 +28,8 @@ func TestValidationActor_Retrieve(t *testing.T) {
 	tests := []struct {
 		name            string
 		backendType     v2pb.BackendType
+		clusterTargets  []*v2pb.ClusterTarget
+		annotations     map[string]string
 		expectedStatus  apipb.ConditionStatus
 		expectedReason  string
 		expectedMessage string
@@ -35,6 +38,7 @@ func TestValidationActor_Retrieve(t *testing.T) {
 		{
 			name:            "valid triton backend type",
 			backendType:     v2pb.BACKEND_TYPE_TRITON,
+			clusterTargets:  []*v2pb.ClusterTarget{{ClusterId: "c1"}},
 			expectedStatus:  apipb.CONDITION_STATUS_TRUE,
 			expectedReason:  "",
 			expectedMessage: "",
@@ -43,6 +47,7 @@ func TestValidationActor_Retrieve(t *testing.T) {
 		{
 			name:            "invalid backend type - llm-d",
 			backendType:     v2pb.BACKEND_TYPE_LLM_D,
+			clusterTargets:  []*v2pb.ClusterTarget{{ClusterId: "c1"}},
 			expectedStatus:  apipb.CONDITION_STATUS_FALSE,
 			expectedMessage: "InvalidBackendType",
 			expectedReason:  "unsupported backend type: BACKEND_TYPE_LLM_D",
@@ -51,9 +56,28 @@ func TestValidationActor_Retrieve(t *testing.T) {
 		{
 			name:            "invalid backend type",
 			backendType:     v2pb.BACKEND_TYPE_INVALID,
+			clusterTargets:  []*v2pb.ClusterTarget{{ClusterId: "c1"}},
 			expectedStatus:  apipb.CONDITION_STATUS_FALSE,
 			expectedMessage: "InvalidBackendType",
 			expectedReason:  "unsupported backend type: BACKEND_TYPE_INVALID",
+			expectedErr:     false,
+		},
+		{
+			name:            "no cluster targets",
+			backendType:     v2pb.BACKEND_TYPE_TRITON,
+			expectedStatus:  apipb.CONDITION_STATUS_FALSE,
+			expectedMessage: "NoClusterTargets",
+			expectedReason:  "spec.cluster_targets must declare at least one cluster",
+			expectedErr:     false,
+		},
+		{
+			name:            "unknown rollout strategy annotation",
+			backendType:     v2pb.BACKEND_TYPE_TRITON,
+			clusterTargets:  []*v2pb.ClusterTarget{{ClusterId: "c1"}},
+			annotations:     map[string]string{common.ClusterRolloutStrategyAnnotation: "blast"},
+			expectedStatus:  apipb.CONDITION_STATUS_FALSE,
+			expectedMessage: "InvalidRolloutStrategy",
+			expectedReason:  `unknown cluster rollout strategy "blast"; supported: rolling`,
 			expectedErr:     false,
 		},
 	}
@@ -71,11 +95,13 @@ func TestValidationActor_Retrieve(t *testing.T) {
 
 			resource := &v2pb.InferenceServer{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-server",
-					Namespace: "test-namespace",
+					Name:        "test-server",
+					Namespace:   "test-namespace",
+					Annotations: tt.annotations,
 				},
 				Spec: v2pb.InferenceServerSpec{
-					BackendType: tt.backendType,
+					BackendType:    tt.backendType,
+					ClusterTargets: tt.clusterTargets,
 				},
 			}
 

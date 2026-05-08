@@ -26,66 +26,112 @@ func createHealthCheckTestRegistry(mockBackend *backendsmocks.MockBackend) *back
 
 func TestHealthCheckActor_Retrieve(t *testing.T) {
 	tests := []struct {
-		name            string
-		setupMocks      func(*backendsmocks.MockBackend)
-		expectedStatus  apipb.ConditionStatus
-		expectedReason  string
-		expectedMessage string
-		expectedErr     bool
+		name                   string
+		clusterTargets         []*v2pb.ClusterTarget
+		clientFactoryErrors    map[string]error
+		setupMocks             func(*backendsmocks.MockBackend)
+		registryHasBackend     bool
+		expectedStatus         apipb.ConditionStatus
+		expectedReason         string
+		expectedMessage        string
+		expectedClusterStatues []*v2pb.ClusterTargetStatus
 	}{
 		{
-			name: "server is healthy",
-			setupMocks: func(mockBackend *backendsmocks.MockBackend) {
-				mockBackend.EXPECT().
-					IsHealthy(
-						gomock.Any(),
-						gomock.Any(),
-						gomock.Any(),
-						"test-server",
-						"test-namespace",
-					).
-					Return(true, nil)
-			},
-			expectedStatus:  apipb.CONDITION_STATUS_TRUE,
-			expectedReason:  "",
-			expectedMessage: "",
-			expectedErr:     false,
+			name:                   "no clusters - vacuously healthy",
+			clusterTargets:         nil,
+			setupMocks:             func(_ *backendsmocks.MockBackend) {},
+			registryHasBackend:     true,
+			expectedStatus:         apipb.CONDITION_STATUS_TRUE,
+			expectedClusterStatues: []*v2pb.ClusterTargetStatus{},
 		},
 		{
-			name: "server is not healthy",
+			name:           "server is healthy",
+			clusterTargets: []*v2pb.ClusterTarget{{ClusterId: "c1"}},
 			setupMocks: func(mockBackend *backendsmocks.MockBackend) {
-				mockBackend.EXPECT().
-					IsHealthy(
-						gomock.Any(),
-						gomock.Any(),
-						gomock.Any(),
-						"test-server",
-						"test-namespace",
-					).
-					Return(false, nil)
+				mockBackend.EXPECT().IsHealthy(gomock.Any(), gomock.Any(), gomock.Any(), "test-server", "test-namespace").Return(true, nil)
 			},
-			expectedStatus:  apipb.CONDITION_STATUS_FALSE,
-			expectedMessage: "HealthCheckFailed",
-			expectedReason:  "Server is not healthy",
-			expectedErr:     false,
+			registryHasBackend: true,
+			expectedStatus:     apipb.CONDITION_STATUS_TRUE,
+			expectedClusterStatues: []*v2pb.ClusterTargetStatus{
+				{ClusterId: "c1", State: v2pb.INFERENCE_SERVER_STATE_SERVING},
+			},
 		},
 		{
-			name: "health check returns error",
+			name:           "server is not healthy",
+			clusterTargets: []*v2pb.ClusterTarget{{ClusterId: "c1"}},
 			setupMocks: func(mockBackend *backendsmocks.MockBackend) {
-				mockBackend.EXPECT().
-					IsHealthy(
-						gomock.Any(),
-						gomock.Any(),
-						gomock.Any(),
-						"test-server",
-						"test-namespace",
-					).
-					Return(false, errors.New("connection timeout"))
+				mockBackend.EXPECT().IsHealthy(gomock.Any(), gomock.Any(), gomock.Any(), "test-server", "test-namespace").Return(false, nil)
 			},
-			expectedStatus:  apipb.CONDITION_STATUS_FALSE,
-			expectedMessage: "HealthCheckFailed",
-			expectedReason:  "Health check error: connection timeout",
-			expectedErr:     false,
+			registryHasBackend: true,
+			expectedStatus:     apipb.CONDITION_STATUS_FALSE,
+			expectedMessage:    "HealthCheckFailed",
+			expectedReason:     "c1: not healthy",
+			expectedClusterStatues: []*v2pb.ClusterTargetStatus{
+				{ClusterId: "c1", State: v2pb.INFERENCE_SERVER_STATE_CREATING},
+			},
+		},
+		{
+			name:           "health check returns error",
+			clusterTargets: []*v2pb.ClusterTarget{{ClusterId: "c1"}},
+			setupMocks: func(mockBackend *backendsmocks.MockBackend) {
+				mockBackend.EXPECT().IsHealthy(gomock.Any(), gomock.Any(), gomock.Any(), "test-server", "test-namespace").Return(false, errors.New("connection timeout"))
+			},
+			registryHasBackend: true,
+			expectedStatus:     apipb.CONDITION_STATUS_FALSE,
+			expectedMessage:    "HealthCheckFailed",
+			expectedReason:     "c1: connection timeout",
+			expectedClusterStatues: []*v2pb.ClusterTargetStatus{
+				{ClusterId: "c1", State: v2pb.INFERENCE_SERVER_STATE_CREATING, Message: "connection timeout"},
+			},
+		},
+		{
+			name:                "GetClient errors for single cluster",
+			clusterTargets:      []*v2pb.ClusterTarget{{ClusterId: "c1"}},
+			clientFactoryErrors: map[string]error{"c1": errors.New("auth refused")},
+			setupMocks:          func(_ *backendsmocks.MockBackend) {},
+			registryHasBackend:  true,
+			expectedStatus:      apipb.CONDITION_STATUS_FALSE,
+			expectedMessage:     "HealthCheckFailed",
+			expectedReason:      "c1: client error: auth refused",
+			expectedClusterStatues: []*v2pb.ClusterTargetStatus{
+				{ClusterId: "c1", State: v2pb.INFERENCE_SERVER_STATE_CREATING, Message: "auth refused"},
+			},
+		},
+		{
+			name:               "backend not in registry",
+			clusterTargets:     []*v2pb.ClusterTarget{{ClusterId: "c1"}},
+			setupMocks:         func(_ *backendsmocks.MockBackend) {},
+			registryHasBackend: false,
+			expectedStatus:     apipb.CONDITION_STATUS_FALSE,
+			expectedMessage:    "BackendNotFound",
+			expectedReason:     "Failed to get backend: backend not found for type: BACKEND_TYPE_TRITON",
+		},
+		{
+			name: "mixed: serving + not-healthy + IsHealthy err + client err",
+			clusterTargets: []*v2pb.ClusterTarget{
+				{ClusterId: "c-ok"},
+				{ClusterId: "c-unhealthy"},
+				{ClusterId: "c-err"},
+				{ClusterId: "c-noclient"},
+			},
+			clientFactoryErrors: map[string]error{"c-noclient": errors.New("no token")},
+			setupMocks: func(mockBackend *backendsmocks.MockBackend) {
+				gomock.InOrder(
+					mockBackend.EXPECT().IsHealthy(gomock.Any(), gomock.Any(), gomock.Any(), "test-server", "test-namespace").Return(true, nil),
+					mockBackend.EXPECT().IsHealthy(gomock.Any(), gomock.Any(), gomock.Any(), "test-server", "test-namespace").Return(false, nil),
+					mockBackend.EXPECT().IsHealthy(gomock.Any(), gomock.Any(), gomock.Any(), "test-server", "test-namespace").Return(false, errors.New("dial timeout")),
+				)
+			},
+			registryHasBackend: true,
+			expectedStatus:     apipb.CONDITION_STATUS_FALSE,
+			expectedMessage:    "HealthCheckFailed",
+			expectedReason:     "c-unhealthy: not healthy; c-err: dial timeout; c-noclient: client error: no token",
+			expectedClusterStatues: []*v2pb.ClusterTargetStatus{
+				{ClusterId: "c-ok", State: v2pb.INFERENCE_SERVER_STATE_SERVING},
+				{ClusterId: "c-unhealthy", State: v2pb.INFERENCE_SERVER_STATE_CREATING},
+				{ClusterId: "c-err", State: v2pb.INFERENCE_SERVER_STATE_CREATING, Message: "dial timeout"},
+				{ClusterId: "c-noclient", State: v2pb.INFERENCE_SERVER_STATE_CREATING, Message: "no token"},
+			},
 		},
 	}
 
@@ -95,11 +141,15 @@ func TestHealthCheckActor_Retrieve(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockBackend := backendsmocks.NewMockBackend(ctrl)
-			registry := createHealthCheckTestRegistry(mockBackend)
+			registry := backends.NewRegistry()
+			if tt.registryHasBackend {
+				registry = createHealthCheckTestRegistry(mockBackend)
+			}
 
 			tt.setupMocks(mockBackend)
 
-			actor := NewHealthCheckActor(nil, registry, zap.NewNop())
+			factory := newClientFactoryDispatching(ctrl, tt.clientFactoryErrors)
+			actor := NewHealthCheckActor(factory, registry, zap.NewNop())
 
 			resource := &v2pb.InferenceServer{
 				ObjectMeta: metav1.ObjectMeta{
@@ -107,7 +157,8 @@ func TestHealthCheckActor_Retrieve(t *testing.T) {
 					Namespace: "test-namespace",
 				},
 				Spec: v2pb.InferenceServerSpec{
-					BackendType: v2pb.BACKEND_TYPE_TRITON,
+					BackendType:    v2pb.BACKEND_TYPE_TRITON,
+					ClusterTargets: tt.clusterTargets,
 				},
 			}
 
@@ -117,14 +168,21 @@ func TestHealthCheckActor_Retrieve(t *testing.T) {
 
 			result, err := actor.Retrieve(context.Background(), resource, condition)
 
-			if tt.expectedErr {
-				assert.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tt.expectedStatus, result.Status)
-				assert.Equal(t, tt.expectedReason, result.Reason)
-				assert.Equal(t, tt.expectedMessage, result.Message)
-				assert.Equal(t, "TritonHealthCheck", result.Type)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedStatus, result.Status)
+			assert.Equal(t, tt.expectedReason, result.Reason)
+			assert.Equal(t, tt.expectedMessage, result.Message)
+			assert.Equal(t, "TritonHealthCheck", result.Type)
+
+			// Status.ClusterStatuses is only populated when the backend is found.
+			if tt.registryHasBackend {
+				require.Equal(t, len(tt.expectedClusterStatues), len(resource.Status.ClusterStatuses))
+				for i, want := range tt.expectedClusterStatues {
+					got := resource.Status.ClusterStatuses[i]
+					assert.Equal(t, want.GetClusterId(), got.GetClusterId(), "cluster_id at index %d", i)
+					assert.Equal(t, want.GetState(), got.GetState(), "state for cluster %s", want.GetClusterId())
+					assert.Equal(t, want.GetMessage(), got.GetMessage(), "message for cluster %s", want.GetClusterId())
+				}
 			}
 		})
 	}
