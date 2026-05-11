@@ -5,23 +5,23 @@ import { buildWrapper } from '#core/test/wrappers/build-wrapper';
 import { getRouterWrapper } from '#core/test/wrappers/get-router-wrapper';
 import { useUrlTableState } from '../use-url-table-state';
 
-const VALID_IDS = ['name', 'status', 'updatedAt'];
-
-function renderUrlTableState(search: string, options?: Parameters<typeof useUrlTableState>[0]) {
-  return renderHook(
-    () =>
-      useUrlTableState(
-        options ?? {
-          tableSettingsId: 'users',
-          validColumnIds: VALID_IDS,
-        }
-      ),
-    buildWrapper([getRouterWrapper({ location: `/${search}` })])
-  );
-}
-
 describe('useUrlTableState', () => {
   describe('urlState', () => {
+    const VALID_IDS = ['name', 'status', 'updatedAt'];
+
+    function renderUrlTableState(search: string, options?: Parameters<typeof useUrlTableState>[0]) {
+      return renderHook(
+        () =>
+          useUrlTableState(
+            options ?? {
+              tableSettingsId: 'users',
+              validColumnIds: VALID_IDS,
+            }
+          ),
+        buildWrapper([getRouterWrapper({ location: `/${search}` })])
+      );
+    }
+
     it('returns null when no matching params are in the URL', () => {
       const { result } = renderUrlTableState('');
       expect(result.current.urlState).toBeNull();
@@ -106,6 +106,21 @@ describe('useUrlTableState', () => {
   });
 
   describe('buildShareUrl', () => {
+    const VALID_IDS = ['name', 'status', 'updatedAt'];
+
+    function renderUrlTableState(search: string, options?: Parameters<typeof useUrlTableState>[0]) {
+      return renderHook(
+        () =>
+          useUrlTableState(
+            options ?? {
+              tableSettingsId: 'users',
+              validColumnIds: VALID_IDS,
+            }
+          ),
+        buildWrapper([getRouterWrapper({ location: `/${search}` })])
+      );
+    }
+
     it('returns a string URL', () => {
       const { result } = renderUrlTableState('');
       const url = result.current.buildShareUrl({ globalFilter: 'test' });

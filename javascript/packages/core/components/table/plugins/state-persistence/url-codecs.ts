@@ -4,27 +4,9 @@ import type {
   SortingState,
   TableState,
 } from '#core/components/table/types/table-types';
+import type { RawUrlTableState, UrlFiltersConfig, UrlScope } from './types';
 
-export type UrlScope =
-  | 'globalFilter'
-  | 'columnFilters'
-  | 'sorting'
-  | 'columnVisibility'
-  | 'columnOrder';
-
-export type UrlFiltersConfig = {
-  enabled?: boolean;
-  scope?: UrlScope[];
-  paramPrefix?: string;
-};
-
-export type RawUrlTableState = {
-  gf?: string;
-  cf?: string;
-  so?: string;
-  cv?: string;
-  co?: string;
-};
+export type { RawUrlTableState, UrlFiltersConfig, UrlScope };
 
 const SUPPORTED_OPERATORS = new Set([
   'eq',

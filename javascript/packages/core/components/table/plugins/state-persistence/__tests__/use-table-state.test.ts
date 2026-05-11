@@ -6,8 +6,6 @@ import { buildWrapper } from '#core/test/wrappers/build-wrapper';
 import { getRouterWrapper } from '#core/test/wrappers/get-router-wrapper';
 import { useTableState } from '../use-table-state';
 
-const VALID_COLUMN_IDS = ['name', 'department', 'status'];
-
 describe('useTableState', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -15,6 +13,8 @@ describe('useTableState', () => {
   });
 
   describe('without urlFilters', () => {
+    const VALID_COLUMN_IDS = ['name', 'department', 'status'];
+
     it('always exposes buildShareUrl as a callable function', () => {
       const { result } = renderHook(
         () => useTableState({ tableSettingsId: 'test-table' }),
@@ -52,6 +52,8 @@ describe('useTableState', () => {
   });
 
   describe('with urlFilters.enabled = true', () => {
+    const VALID_COLUMN_IDS = ['name', 'department', 'status'];
+
     it('bypasses localStorage and reads from URL when URL params are present', () => {
       localStorage.setItem(
         TABLE_LOCAL_STORAGE_KEY,

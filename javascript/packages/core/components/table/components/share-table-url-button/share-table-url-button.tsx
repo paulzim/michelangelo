@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Button, KIND, SIZE } from 'baseui/button';
 import { useStyletron } from 'baseui';
+import { Button, KIND, SIZE } from 'baseui/button';
 
 import { Icon } from '#core/components/icon/icon';
 

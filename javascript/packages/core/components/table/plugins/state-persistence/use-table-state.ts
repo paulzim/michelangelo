@@ -1,11 +1,10 @@
 import { useState } from 'react';
 
 import { TABLE_STATE_DEFAULTS } from '#core/components/table/constants';
-import { useLocalStorageTableState } from './use-local-storage-table-state';
 import { DEFAULT_PARAM_PREFIX, DEFAULT_URL_SCOPE } from './url-codecs';
+import { useLocalStorageTableState } from './use-local-storage-table-state';
 import { useUrlTableState } from './use-url-table-state';
 
-import type { UrlFiltersConfig, UrlScope } from './url-codecs';
 import type {
   ColumnFilter,
   ColumnVisibilityState,
@@ -14,6 +13,7 @@ import type {
   SortingState,
   TableState,
 } from '#core/components/table/types/table-types';
+import type { UrlFiltersConfig, UrlScope } from './types';
 
 export type { UrlFiltersConfig, UrlScope };
 

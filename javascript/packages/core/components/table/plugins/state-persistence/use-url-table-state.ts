@@ -2,9 +2,9 @@ import { useMemo } from 'react';
 import { useLocation } from 'react-router-dom-v5-compat';
 
 import {
+  buildTableUrlParams,
   DEFAULT_PARAM_PREFIX,
   DEFAULT_URL_SCOPE,
-  buildTableUrlParams,
   extractTableUrlParams,
   parseColumnFilters,
   parseColumnVisibility,
@@ -12,21 +12,8 @@ import {
   parseSorting,
 } from './url-codecs';
 
-import type { UrlScope } from './url-codecs';
 import type { TableState } from '#core/components/table/types/table-types';
-
-type UseUrlTableStateOptions = {
-  tableSettingsId: string;
-  validColumnIds: string[];
-  scope?: UrlScope[];
-  paramPrefix?: string;
-};
-
-type UseUrlTableStateResult = {
-  urlState: Partial<TableState> | null;
-  hasUrlState: boolean;
-  buildShareUrl: (currentState: Partial<TableState>) => string;
-};
+import type { UseUrlTableStateOptions, UseUrlTableStateResult } from './types';
 
 export function useUrlTableState({
   tableSettingsId,
