@@ -37,9 +37,10 @@ go_test(
     srcs = ["client_test.go"],
     embed = [":go_default_library"],
     deps = [
-        "//go/components/jobs/client/k8sengine:go_default_library",
         "//go/components/jobs/common/constants:go_default_library",
         "//go/components/jobs/common/secrets:go_default_library",
+        "//go/components/jobs/common/types:go_default_library",
+        "//go/components/jobs/common/types/typesmocks:go_default_library",
         "//go/components/jobs/compute:go_default_library",
         "//go/components/jobs/compute/computemocks:go_default_library",
         "//proto/api:go_default_library",

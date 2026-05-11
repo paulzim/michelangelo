@@ -1,31 +1,58 @@
 package k8sengine
 
 import (
+	"bytes"
 	"fmt"
+	"text/template"
 
 	"github.com/michelangelo-ai/michelangelo/go/components/jobs/common/types"
 	v2pb "github.com/michelangelo-ai/michelangelo/proto-go/api/v2"
 	rayv1 "github.com/ray-project/kuberay/ray-operator/apis/ray/v1"
+	"go.uber.org/config"
 	"go.uber.org/fx"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // Mapper helps to map global to local crds and vice versa
-type Mapper struct{}
+type Mapper struct {
+	LogPersistence LogPersistenceConfig
+	logURLTemplate *template.Template
+}
 
 // MapperResult has Mapper result
 type MapperResult struct {
 	fx.Out
 
-	Mapper MapperInterface `name:"k8sengineMapper"`
+	Mapper types.Mapper `name:"k8sengineMapper"`
 }
 
 const _mapperName = "k8sengineMapper"
 
-// NewMapper constructs the Mapper
-func NewMapper() MapperResult {
+const logPersistenceConfigKey = "jobs.k8sengine.mapper.logPersistence"
+
+// NewLogPersistenceConfig loads LogPersistenceConfig from YAML config provider.
+func NewLogPersistenceConfig(provider config.Provider) (LogPersistenceConfig, error) {
+	conf := LogPersistenceConfig{}
+	err := provider.Get(logPersistenceConfigKey).Populate(&conf)
+	if err != nil {
+		// Config is optional — return zero-value (disabled) if not present
+		return LogPersistenceConfig{}, nil
+	}
+	return conf, nil
+}
+
+// NewMapper constructs the Mapper. Panics if LogURLFormat is set but does not
+// parse as a valid Go text/template — config errors should fail at startup.
+func NewMapper(logPersistence LogPersistenceConfig) MapperResult {
+	var tmpl *template.Template
+	if logPersistence.Enabled && logPersistence.LogURLFormat != "" {
+		tmpl = template.Must(template.New("logURL").Parse(logPersistence.LogURLFormat))
+	}
 	return MapperResult{
-		Mapper: Mapper{},
+		Mapper: Mapper{
+			LogPersistence: logPersistence,
+			logURLTemplate: tmpl,
+		},
 	}
 }
 
@@ -94,6 +121,7 @@ func (m Mapper) MapLocalClusterStatusToGlobal(localClusterObject runtime.Object)
 	switch obj := localClusterObject.(type) {
 	case *rayv1.RayCluster:
 		v2Status := convertRayV1ClusterStatusToV2(obj)
+		v2Status.LogUrl = m.buildLogURL(obj.GetName())
 		reason := obj.Status.Reason
 		return &types.JobClusterStatus{
 			Ray:    v2Status,
@@ -102,6 +130,33 @@ func (m Mapper) MapLocalClusterStatusToGlobal(localClusterObject runtime.Object)
 	default:
 		return nil, fmt.Errorf("unsupported cluster object type: %T", localClusterObject)
 	}
+}
+
+// buildLogURL renders LogPersistenceConfig.LogURLFormat against the per-cluster
+// values (Bucket, PathPrefix, ClusterName, RayLocalNamespace). Returns "" when
+// log persistence is disabled or no format is configured. RayLocalNamespace is
+// the compute-cluster Ray namespace (where pods actually run), not the v2
+// RayCluster CR's control-plane namespace.
+func (m Mapper) buildLogURL(clusterName string) string {
+	if m.logURLTemplate == nil {
+		return ""
+	}
+	var buf bytes.Buffer
+	err := m.logURLTemplate.Execute(&buf, struct {
+		Bucket            string
+		PathPrefix        string
+		ClusterName       string
+		RayLocalNamespace string
+	}{
+		Bucket:            m.LogPersistence.Bucket,
+		PathPrefix:        m.LogPersistence.PathPrefix,
+		ClusterName:       clusterName,
+		RayLocalNamespace: RayLocalNamespace,
+	})
+	if err != nil {
+		return ""
+	}
+	return buf.String()
 }
 
 // MapLocalJobStatusToGlobal converts a local (Kubernetes) job status object

@@ -8,12 +8,10 @@ const (
 	configKey = "controllers.rayCluster"
 )
 
-type (
-	Config struct {
-		QPS   float32 `yaml:"k8sQps"`
-		Burst int     `yaml:"k8sBurst"`
-	}
-)
+type Config struct {
+	QPS   float32 `yaml:"k8sQps"`
+	Burst int     `yaml:"k8sBurst"`
+}
 
 func newConfig(provider config.Provider) (Config, error) {
 	conf := Config{}

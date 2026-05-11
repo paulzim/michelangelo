@@ -287,3 +287,37 @@ func TestMapper_GetLocalName(t *testing.T) {
 		})
 	}
 }
+
+func TestMapper_MapLocalJobStatusToGlobal(t *testing.T) {
+	m := Mapper{}
+
+	mkRayV1 := func(jobStatus rayv1.JobStatus) *rayv1.RayJob {
+		r := &rayv1.RayJob{}
+		r.Status.JobStatus = jobStatus
+		return r
+	}
+
+	tests := []struct {
+		name         string
+		job          k8sruntime.Object
+		expectStatus string
+		expectMsg    string
+	}{
+		{
+			name:         "running RayJob -> RUNNING",
+			job:          mkRayV1(rayv1.JobStatusRunning),
+			expectStatus: string(rayv1.JobStatusRunning),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			js, err := m.MapLocalJobStatusToGlobal(tt.job)
+			require.NoError(t, err)
+			require.NotNil(t, js)
+			require.NotNil(t, js.Ray)
+			assert.Equal(t, tt.expectStatus, js.Ray.JobStatus)
+			assert.Equal(t, tt.expectMsg, js.Ray.Message)
+		})
+	}
+}

@@ -12,7 +12,7 @@ workflowClient:
   # taskList is a used as a fallback if project.Metatdata.Annotations["michelangelo/worker_queue"] is empty
   taskList: default # TODO(#934): MaCTL support for adding project.Metatdata.Annotations["michelangelo/worker_queue"] to project CRD
   executionUrlFormat: http://localhost:8088/namespaces/{{.Domain}}/workflows/{{.ExecutionID}}
-    
+
 k8s:
   qps: 300
   burst: 600
@@ -23,6 +23,27 @@ controllers:
   rayCluster:
     k8sQps: 300
     k8sBurst: 600
+
+# k8sengine mapper config — consumed by go/components/jobs/client/k8sengine.
+# logPersistence drives both the collector-sidecar injection (mapRayCluster)
+# and the human-browsable log_url computation (MapLocalClusterStatusToGlobal).
+jobs:
+  k8sengine:
+    mapper:
+      logPersistence:
+        enabled: true
+        storageEndpoint: "k3d-michelangelo-sandbox-agent-0:30007"
+        bucket: ray-history
+        pathPrefix: log
+        region: us-east-1
+        credentialsSecret: minio-credentials
+        collectorImage: kuberay-collector:v0.1.0
+        s3DisableSSL: true
+        # logURLFormat is a Go text/template that builds the human-browsable
+        # log URL. Available vars: {{.Bucket}}, {{.PathPrefix}}, {{.ClusterName}},
+        # {{.RayLocalNamespace}}. Sandbox default points at the in-cluster MinIO
+        # console; production overlays point at OCI Object Storage / S3 console.
+        logURLFormat: "http://localhost:9090/browser/{{.Bucket}}/{{.PathPrefix}}/{{.ClusterName}}_{{.RayLocalNamespace}}/"
 
 minio:
   awsRegion: us-east-1
