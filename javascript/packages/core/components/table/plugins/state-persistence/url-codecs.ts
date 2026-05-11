@@ -81,6 +81,12 @@ export function serializeColumnVisibility(visibility: ColumnVisibilityState): st
 
 // --- Parse ---
 
+/** Coerces a URL string token back to a number when the value is purely numeric. */
+function coerceValue(raw: string): string | number {
+  const num = Number(raw);
+  return raw.trim() !== '' && Number.isFinite(num) ? num : raw;
+}
+
 export function parseGlobalFilter(raw: string | undefined): string | null {
   if (!raw) return null;
   if (raw.length > MAX_PARAM_BYTES) return null;
@@ -113,7 +119,8 @@ export function parseColumnFilters(
     if (!validIdSet.has(id)) continue;
     if (!SUPPORTED_OPERATORS.has(op as Parameters<typeof SUPPORTED_OPERATORS.has>[0])) continue;
 
-    const value = op === 'in' ? rawValue.split('|') : rawValue;
+    const value =
+      op === 'in' ? rawValue.split('|').map(coerceValue) : coerceValue(rawValue);
     filters.push({ id, value });
   }
 

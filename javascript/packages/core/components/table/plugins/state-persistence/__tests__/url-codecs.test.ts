@@ -91,6 +91,26 @@ describe('serializeColumnFilters / parseColumnFilters', () => {
     expect(parseColumnFilters(raw, VALID_IDS)).toBeNull();
   });
 
+  it('round-trips a numeric eq filter value', () => {
+    const filters: ColumnFilter[] = [{ id: 'status', value: 42 }];
+    const raw = serializeColumnFilters(filters);
+    expect(parseColumnFilters(raw, VALID_IDS)).toEqual(filters);
+  });
+
+  it('round-trips an in filter with numeric values', () => {
+    const filters: ColumnFilter[] = [{ id: 'status', value: [1, 2, 3] }];
+    const raw = serializeColumnFilters(filters);
+    expect(parseColumnFilters(raw, VALID_IDS)).toEqual(filters);
+  });
+
+  it('preserves string values that are not numeric', () => {
+    const filters: ColumnFilter[] = [{ id: 'status', value: 'active' }];
+    const raw = serializeColumnFilters(filters);
+    const result = parseColumnFilters(raw, VALID_IDS);
+    expect(result?.[0].value).toBe('active');
+    expect(typeof result?.[0].value).toBe('string');
+  });
+
   it('returns null for undefined input', () => {
     expect(parseColumnFilters(undefined, VALID_IDS)).toBeNull();
   });

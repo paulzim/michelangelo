@@ -42,7 +42,7 @@ export interface TableActionBarConfig {
    * Indicates whether a "Copy link" button is rendered that copies a shareable
    * URL encoding the current table state to the clipboard.
    * Requires `validColumnIds` and `urlFilters: { enabled: true }` to be configured
-   * on the `useLocalStorageTableState` hook.
+   * on the `useTableState` hook.
    *
    * @default false
    */
