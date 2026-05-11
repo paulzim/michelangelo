@@ -473,7 +473,7 @@ describe('useLocalStorageTableState', () => {
   });
 
   describe('urlFilters', () => {
-    it('returns buildShareUrl as a function when urlFilters is not configured', () => {
+    it('always exposes buildShareUrl as a callable function, even when urlFilters is not configured', () => {
       const { result } = renderHook(
         () => useLocalStorageTableState({ tableSettingsId: 'test-table' }),
         buildWrapper([getRouterWrapper()])

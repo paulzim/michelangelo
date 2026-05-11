@@ -57,6 +57,22 @@ export type { UrlFiltersConfig, UrlScope };
  *   tableSettingsId: 'projects-table',
  * });
  *
+ * // Project-specific filters (recommended for project-scoped data)
+ * const tableState = useLocalStorageTableState({
+ *   tableSettingsId: 'user-dashboard-table',
+ *   filterSettingsId: `user-dashboard-table.project-${projectId}`,
+ * });
+ *
+ * // With initial state (e.g., hidden columns from schema)
+ * const tableState = useLocalStorageTableState({
+ *   tableSettingsId: 'user-dashboard-table',
+ *   filterSettingsId: `user-dashboard-table.project-${projectId}`,
+ *   initialState: {
+ *     columnVisibility: { hiddenColumnId: false },
+ *     sorting: [{ id: 'name', desc: false }],
+ *   },
+ * });
+ *
  * // With URL sharing enabled
  * const tableState = useLocalStorageTableState({
  *   tableSettingsId: 'users-table',

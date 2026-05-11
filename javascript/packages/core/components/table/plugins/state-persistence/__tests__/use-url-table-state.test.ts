@@ -65,12 +65,18 @@ describe('useUrlTableState', () => {
     });
 
     it('ignores params for a different tableSettingsId', () => {
-      const { result } = renderUrlTableState('?tb.other.gf=hello');
+      const { result } = renderUrlTableState('?tb.other.gf=hello', {
+        tableSettingsId: 'users',
+        validColumnIds: VALID_IDS,
+      });
       expect(result.current.urlState).toBeNull();
     });
 
     it('silently drops invalid column IDs in filters', () => {
-      const { result } = renderUrlTableState('?tb.users.cf=ghost:eq:x,status:eq:active');
+      const { result } = renderUrlTableState('?tb.users.cf=ghost:eq:x,status:eq:active', {
+        tableSettingsId: 'users',
+        validColumnIds: VALID_IDS,
+      });
       expect(result.current.urlState?.columnFilters).toEqual([
         { id: 'status', value: 'active' },
       ]);
@@ -79,13 +85,13 @@ describe('useUrlTableState', () => {
     it('silently drops invalid column IDs in columnOrder', () => {
       const { result } = renderUrlTableState('?tb.users.co=status,ghost,name', {
         tableSettingsId: 'users',
-        validColumnIds: VALID_IDS,
+        validColumnIds: ['status', 'name', 'some-other-column-id'],
         scope: ['columnOrder'],
       });
       expect(result.current.urlState?.columnOrder).toEqual(['status', 'name']);
     });
 
-    it('only parses pieces included in scope', () => {
+    it('excludes fields from urlState when they are not in scope', () => {
       const { result } = renderUrlTableState(
         '?tb.users.gf=hello&tb.users.so=name:asc',
         {
@@ -123,7 +129,8 @@ describe('useUrlTableState', () => {
     it('replaces existing tb.* params for this tableSettingsId', () => {
       const { result } = renderUrlTableState('?tb.users.gf=old');
       const url = result.current.buildShareUrl({ globalFilter: 'new' });
-      expect(url).toContain('tb.users.gf=new');
+      expect(new URL(url).searchParams.get('tb.users.gf')).toBe('new');
+      expect(new URL(url).searchParams.has('tb.users.gf')).toBe(true);
       expect(url).not.toContain('old');
     });
 
