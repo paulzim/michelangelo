@@ -24,6 +24,7 @@ class LightningTrainerParam:
     batch_size: int
     num_epochs: int
     lightning_trainer_kwargs: Optional[dict[str, Any]] = None
+    batch_transform: Optional[Callable[[dict], dict]] = None
 
     def __post_init__(self):
         """Initialize lightning_trainer_kwargs if not provided."""
@@ -68,7 +69,7 @@ class LightningTrainer:
             val_dataset = train.get_dataset_shard("validation")
 
             # Convert to PyTorch datasets
-            def ray_dataset_to_torch(ray_ds, batch_size):
+            def ray_dataset_to_torch(ray_ds, batch_size, batch_transform=None):
                 """Convert Ray dataset to PyTorch DataLoader."""
                 from torch.utils.data import DataLoader
                 from torch.utils.data import Dataset as TorchDataset
@@ -94,15 +95,38 @@ class LightningTrainer:
                         return len(self.data)
 
                     def __getitem__(self, idx):
+                        import numpy as np
                         item = self.data[idx]
-                        return {
-                            k: (
-                                torch.tensor(v, dtype=torch.long)
-                                if isinstance(v, list)
-                                else v
-                            )
-                            for k, v in item.items()
-                        }
+                        result = {}
+                        for k, v in item.items():
+                            if isinstance(v, torch.Tensor):
+                                result[k] = v
+                                continue
+                            if isinstance(v, (list, np.ndarray)):
+                                arr = np.asarray(v)
+                                if arr.dtype.kind == "O":
+                                    try:
+                                        arr = np.stack(arr.tolist())
+                                    except Exception:
+                                        continue
+                                if arr.dtype.kind in ("U", "S"):
+                                    continue
+                                if arr.dtype.kind == "f":
+                                    result[k] = torch.tensor(arr, dtype=torch.float32)
+                                else:
+                                    result[k] = torch.tensor(arr, dtype=torch.long)
+                            elif isinstance(v, np.integer):
+                                result[k] = torch.tensor(int(v), dtype=torch.long)
+                            elif isinstance(v, np.floating):
+                                result[k] = torch.tensor(float(v), dtype=torch.float32)
+                            elif isinstance(v, int):
+                                result[k] = torch.tensor(v, dtype=torch.long)
+                            elif isinstance(v, float):
+                                result[k] = torch.tensor(v, dtype=torch.float32)
+                            # skip strings and other non-numeric types
+                        if batch_transform is not None:
+                            result = batch_transform(result)
+                        return result
 
                 torch_dataset = RayTorchDataset(ray_ds)
                 return DataLoader(
@@ -113,9 +137,9 @@ class LightningTrainer:
                 )
 
             train_dataloader = ray_dataset_to_torch(
-                train_dataset, self.param.batch_size
+                train_dataset, self.param.batch_size, self.param.batch_transform
             )
-            val_dataloader = ray_dataset_to_torch(val_dataset, self.param.batch_size)
+            val_dataloader = ray_dataset_to_torch(val_dataset, self.param.batch_size, self.param.batch_transform)
 
             # Setup trainer kwargs - let Ray handle MLflow logging
             trainer_kwargs = {
@@ -129,9 +153,11 @@ class LightningTrainer:
             if "strategy" in trainer_kwargs:
                 # Keep the strategy as-is (e.g., RayFSDPStrategy)
                 pass
-            else:
-                # Default to Ray DDP strategy
+            elif torch.cuda.is_available():
+                # Default to Ray DDP strategy only when CUDA is available (not MPS)
                 trainer_kwargs["strategy"] = RayDDPStrategy()
+            else:
+                trainer_kwargs["accelerator"] = "cpu"
 
             # Create Lightning trainer
             trainer = pl.Trainer(**trainer_kwargs)

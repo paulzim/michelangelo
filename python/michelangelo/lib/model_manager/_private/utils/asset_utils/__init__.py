@@ -1,4 +1,4 @@
 """Asset utilities for model manager."""
 
 # flake8: noqa:F401
-from .download import download_assets
+from .download import download_assets, upload_assets
