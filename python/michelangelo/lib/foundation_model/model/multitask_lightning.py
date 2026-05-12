@@ -13,7 +13,6 @@ import os
 
 import numpy as np
 import torch
-import torch.nn as nn
 
 from michelangelo.lib.model_manager.interface.custom_model import Model
 from michelangelo.lib.sequence.lightning.base import BaseSequenceLightning
@@ -36,6 +35,10 @@ _TASK_NAME_TO_PRED_OUTPUT: dict[str, str] = {
     "time_to_next_event": "pred_time_to_next_event_bucket_logits",
 }
 _PRED_OUTPUT_TO_TASK: dict[str, str] = {v: k for k, v in _TASK_NAME_TO_PRED_OUTPUT.items()}
+
+# Keys captured from each val batch/output for the eval callback
+_VAL_BATCH_KEYS = ("derived_event_type_indexed", "derived_sequence_length", "response_next_event_type_indexed", "response_churned")
+_VAL_OUTPUT_KEYS = ("next_event_type", "churn")
 
 
 class MultitaskSequenceLightning(BaseSequenceLightning):
@@ -150,8 +153,7 @@ class MultitaskSequenceLightning(BaseSequenceLightning):
             batch = kwargs
 
         encoded = self.encoder(batch)
-        S = encoded.size(1)
-        src_key_padding_mask = self._compute_attention_mask(batch["derived_sequence_length"].flatten())[:, :S]
+        src_key_padding_mask = self._compute_attention_mask(batch["derived_sequence_length"].flatten())[:, :encoded.size(1)]
         transformer_out = self.transformer(encoded, src_key_padding_mask=src_key_padding_mask)
 
         # Extract last non-padded token embedding per sequence
@@ -235,14 +237,12 @@ class MultitaskSequenceLightning(BaseSequenceLightning):
             if n != "pred_embedding"
         }
 
-        _BATCH_KEYS = ("derived_event_type_indexed", "derived_sequence_length", "response_next_event_type_indexed", "response_churned")
-        _OUTPUT_KEYS = ("next_event_type", "churn")
         if prefix == "val" and self._should_eval_this_epoch:
-            self._val_batches.append({k: v.detach().cpu() for k, v in batch.items() if k in _BATCH_KEYS})
-            self._val_outputs.append({k: v.detach().cpu() for k, v in outputs.items() if k in _OUTPUT_KEYS})
+            self._val_batches.append({k: v.detach().cpu() for k, v in batch.items() if k in _VAL_BATCH_KEYS})
+            self._val_outputs.append({k: v.detach().cpu() for k, v in outputs.items() if k in _VAL_OUTPUT_KEYS})
 
         masks = self._derive_masks(batch["derived_sequence_length"])
-        total_loss = torch.tensor(0.0, device=self.device, requires_grad=True)
+        total_loss: torch.Tensor | None = None
 
         for task_name, cfg in self.task_config.items():
             logits = outputs[task_name]
@@ -255,11 +255,12 @@ class MultitaskSequenceLightning(BaseSequenceLightning):
 
             task_loss = self._compute_masked_task_loss(task_name, logits, targets, mask)
             weighted_loss = self.task_weights[task_name] * task_loss
-            total_loss = total_loss + weighted_loss
+            total_loss = weighted_loss if total_loss is None else total_loss + weighted_loss
 
             sync_dist = prefix == "val"
             self.log(f"{prefix}_{task_name}_loss", task_loss, on_step=True, on_epoch=True, sync_dist=sync_dist)
 
+        assert total_loss is not None  # task_config is non-empty
         sync_dist = prefix == "val"
         self.log(f"{prefix}_loss", total_loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=sync_dist)
         return total_loss

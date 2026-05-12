@@ -5,7 +5,6 @@ features, plus positional encodings and a MultiModalEncoder that combines them a
 """
 
 import math
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -27,7 +26,7 @@ class CategoricalEmbedding(nn.Module):
         FloatTensor of shape ``(*, embedding_dim)``.
     """
 
-    def __init__(self, vocab_size: int, embedding_dim: int, padding_idx: Optional[int] = 0):
+    def __init__(self, vocab_size: int, embedding_dim: int, padding_idx: int | None = 0):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=padding_idx)
 
@@ -54,7 +53,7 @@ class NumericalMLPEmbedding(nn.Module):
         FloatTensor of shape ``(*, output_dim)``.
     """
 
-    def __init__(self, hidden_dim: int, output_dim: int, num_features: Optional[int] = None, dropout: float = 0.1):
+    def __init__(self, hidden_dim: int, output_dim: int, num_features: int | None = None, dropout: float = 0.1):
         super().__init__()
         first_layer = nn.LazyLinear(hidden_dim) if num_features is None else nn.Linear(num_features, hidden_dim)
         self.mlp = nn.Sequential(
@@ -88,7 +87,7 @@ class GeoMLPEmbedding(nn.Module):
         FloatTensor of shape ``(*, output_dim)``.
     """
 
-    def __init__(self, hidden_dim: int, output_dim: int, num_geo_features: Optional[int] = None, dropout: float = 0.1):
+    def __init__(self, hidden_dim: int, output_dim: int, num_geo_features: int | None = None, dropout: float = 0.1):
         super().__init__()
         first_layer = nn.LazyLinear(hidden_dim) if num_geo_features is None else nn.Linear(num_geo_features, hidden_dim)
         self.mlp = nn.Sequential(
@@ -214,8 +213,6 @@ class MultiModalEncoder(nn.Module):
         pos_encoding: str = "sinusoidal",
     ):
         super().__init__()
-        self.embedding_config = embedding_config
-        self.d_model = d_model
 
         total_embed_dim = 0
 

@@ -148,29 +148,6 @@ class BaseSequenceLightning(pl.LightningModule):
         return masked_loss.sum() / num_valid.clamp(min=1)
 
     @torch.jit.unused
-    def _step(self, batch: dict[str, torch.Tensor], prefix: str) -> torch.Tensor:
-        outputs = self.forward(batch)
-        masks = self._derive_masks(batch["derived_sequence_length"])
-        total_loss = torch.tensor(0.0, device=self.device, requires_grad=True)
-
-        for task_name, cfg in self.task_config.items():
-            logits = outputs[task_name]
-            targets = batch[cfg["target_key"]]
-            mask = masks[cfg["mask_type"]]
-
-            task_loss = self._compute_masked_task_loss(task_name, logits, targets, mask)
-            weighted_loss = self.task_weights[task_name] * task_loss
-
-            total_loss = total_loss + weighted_loss
-
-            sync_dist = prefix == "val"
-            self.log(f"{prefix}_{task_name}_loss", task_loss, on_step=False, on_epoch=True, sync_dist=sync_dist)
-
-        sync_dist = prefix == "val"
-        self.log(f"{prefix}_loss", total_loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=sync_dist)
-        return total_loss
-
-    @torch.jit.unused
     def on_train_epoch_end(self) -> None:
         """Fail fast if the epoch loss is NaN — avoids wasting remaining epochs."""
         train_loss = self.trainer.callback_metrics.get("train_loss")

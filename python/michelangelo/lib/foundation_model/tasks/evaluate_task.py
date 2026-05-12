@@ -132,11 +132,6 @@ def evaluate_task(
     task_predictions: dict[str, list[np.ndarray]] = {t: [] for t in config["task_config"]}
     task_targets: dict[str, list[np.ndarray]] = {t: [] for t in config["task_config"]}
 
-    from michelangelo.lib.trainer.torch.pytorch_lightning.lightning_trainer import (
-        LightningTrainerParam,
-    )
-    import numpy as np_local
-
     # Reuse __getitem__ conversion logic by iterating over batches directly
     for batch_np in val_data.value.iter_batches(batch_format="numpy", batch_size=256):
         # Convert numpy batch to tensors (mirrors RayTorchDataset.__getitem__)
