@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	baseconfig "github.com/michelangelo-ai/michelangelo/go/base/config"
-	"github.com/michelangelo-ai/michelangelo/go/components/ingester"
 	"github.com/michelangelo-ai/michelangelo/go/storage"
 	mysqlstorage "github.com/michelangelo-ai/michelangelo/go/storage/mysql"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -24,15 +23,6 @@ func provideMetadataStorage(
 	}
 
 	return mysqlstorage.NewMetadataStorage(mysqlConfig.ToMySQLConfig(), scheme, nil)
-}
-
-func provideIngesterConfig(config baseconfig.IngesterConfig) ingester.Config {
-	return ingester.Config{
-		ConcurrentReconciles:    config.ConcurrentReconciles,
-		RequeuePeriod:           config.RequeuePeriod,
-		ConcurrentReconcilesMap: config.ConcurrentReconcilesMap,
-		RequeuePeriodMap:        config.RequeuePeriodMap,
-	}
 }
 
 func mysqlConfigEnabled(config baseconfig.MySQLConfig) bool {

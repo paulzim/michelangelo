@@ -9,7 +9,7 @@ spec:
   containers:
     - name: app
       image: ghcr.io/michelangelo-ai/controllermgr:main
-      imagePullPolicy: IfNotPresent
+      imagePullPolicy: Always
       envFrom:
         - secretRef:
             name: minio-credentials
