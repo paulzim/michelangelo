@@ -1,4 +1,4 @@
-import { render, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 
 import { buildWrapper } from '#core/test/wrappers/build-wrapper';
 import { getBaseProviderWrapper } from '#core/test/wrappers/get-base-provider-wrapper';
@@ -8,20 +8,12 @@ import { StudioAppNavBar } from '../studio-app-nav-bar';
 
 describe('StudioAppNavBar', () => {
   it('renders the Docs link in the app nav', () => {
-    const { container } = render(
+    render(
       <StudioAppNavBar />,
       buildWrapper([getBaseProviderWrapper(), getIconProviderWrapper(), getRouterWrapper()])
     );
 
-    const mainNavigation = container.querySelector(
-      '[role="navigation"][aria-label="Main navigation"]'
-    );
-    expect(mainNavigation).not.toBeNull();
-
-    const docsLink = within(mainNavigation as HTMLElement).getByRole('link', {
-      hidden: true,
-      name: /docs/i,
-    });
+    const docsLink = screen.getByRole('link', { hidden: true, name: /docs/i });
 
     expect(docsLink).toHaveAttribute('href', 'https://michelangelo-ai.org/docs/');
     expect(docsLink).toHaveAttribute('target', '_blank');

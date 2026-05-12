@@ -11,20 +11,14 @@ const MAIN_NAV_ITEMS: NavItem[] = [DOCS_NAV_ITEM];
 function mapMainNavItemToNode(item: NavItem) {
   if (item.label === DOCS_NAV_ITEM.label) {
     return (
-      <Link
+      <a
         href={DOCS_URL}
-        overrides={{
-          Link: {
-            style: {
-              color: 'inherit',
-              ':hover': { color: 'inherit' },
-              ':visited': { color: 'inherit' },
-            },
-          },
-        }}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: 'inherit', textDecoration: 'none' }}
       >
-        Docs
-      </Link>
+        {item.label}
+      </a>
     );
   }
 
