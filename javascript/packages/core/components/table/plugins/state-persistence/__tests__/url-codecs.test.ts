@@ -70,7 +70,13 @@ describe('url-codecs', () => {
           { id: 'status', value: 'active' },
           {
             id: 'metadata.creationTimestamp.seconds',
-            value: { operation: 'today', range: [new Date()], selection: [], description: 'Today', exclude: false },
+            value: {
+              operation: 'today',
+              range: [new Date()],
+              selection: [],
+              description: 'Today',
+              exclude: false,
+            },
           },
         ];
         const raw = serializeColumnFilters(filters);

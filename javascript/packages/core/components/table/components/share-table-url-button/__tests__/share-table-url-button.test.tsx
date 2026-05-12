@@ -51,7 +51,9 @@ describe('ShareTableUrlButton', () => {
 
     it('reverts back to "Share" after 2 seconds', async () => {
       vi.useFakeTimers();
-      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) as (ms: number) => void });
+      const user = userEvent.setup({
+        advanceTimers: vi.advanceTimersByTime.bind(vi) as (ms: number) => void,
+      });
       renderButton();
 
       await user.click(screen.getByRole('button', { name: /share/i }));

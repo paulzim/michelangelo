@@ -77,9 +77,7 @@ describe('useUrlTableState', () => {
         tableSettingsId: 'users',
         validColumnIds: VALID_IDS,
       });
-      expect(result.current.urlState?.columnFilters).toEqual([
-        { id: 'status', value: 'active' },
-      ]);
+      expect(result.current.urlState?.columnFilters).toEqual([{ id: 'status', value: 'active' }]);
     });
 
     it('silently drops invalid column IDs in columnOrder', () => {
@@ -92,14 +90,11 @@ describe('useUrlTableState', () => {
     });
 
     it('excludes fields from urlState when they are not in scope', () => {
-      const { result } = renderUrlTableState(
-        '?tb.users.gf=hello&tb.users.so=name:asc',
-        {
-          tableSettingsId: 'users',
-          validColumnIds: VALID_IDS,
-          scope: ['globalFilter'],
-        }
-      );
+      const { result } = renderUrlTableState('?tb.users.gf=hello&tb.users.so=name:asc', {
+        tableSettingsId: 'users',
+        validColumnIds: VALID_IDS,
+        scope: ['globalFilter'],
+      });
       expect(result.current.urlState?.globalFilter).toBe('hello');
       expect(result.current.urlState?.sorting).toBeUndefined();
     });

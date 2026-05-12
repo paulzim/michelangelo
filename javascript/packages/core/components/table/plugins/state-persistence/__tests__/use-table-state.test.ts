@@ -34,7 +34,10 @@ describe('useTableState', () => {
       });
 
       expect(result.current.globalFilter).toBe('hello');
-      const stored = JSON.parse(localStorage.getItem(TABLE_LOCAL_STORAGE_KEY)!) as Record<string, Record<string, string>>;
+      const stored = JSON.parse(localStorage.getItem(TABLE_LOCAL_STORAGE_KEY)!) as Record<
+        string,
+        Record<string, string>
+      >;
       expect(stored['test-table'].globalFilter).toBe('hello');
     });
 
@@ -184,7 +187,10 @@ describe('useTableState', () => {
       });
 
       // localStorage remains unchanged
-      const stored = JSON.parse(localStorage.getItem(TABLE_LOCAL_STORAGE_KEY)!) as Record<string, Record<string, string>>;
+      const stored = JSON.parse(localStorage.getItem(TABLE_LOCAL_STORAGE_KEY)!) as Record<
+        string,
+        Record<string, string>
+      >;
       expect(stored['test-table'].globalFilter).toBe('fromlocal');
       expect(result.current.globalFilter).toBe('usertyped');
     });

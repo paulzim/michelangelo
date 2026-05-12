@@ -66,8 +66,7 @@ export function useUrlTableState({
   const buildShareUrl = (currentState: Partial<TableState>): string => {
     // Use window.location.origin + router location as the base so that both
     // production (BrowserRouter) and test (MemoryRouter) environments work correctly.
-    const base =
-      typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+    const base = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
     const url = new URL(location.pathname, base);
 
     // Preserve existing search params from the router location

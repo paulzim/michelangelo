@@ -89,16 +89,22 @@ export function useTableState({
   const urlActive = (urlFilters?.enabled ?? false) && hasUrlState;
 
   const [memGlobalFilter, setMemGlobalFilter] = useState<string>(
-    urlActive ? (urlState?.globalFilter ?? TABLE_STATE_DEFAULTS.globalFilter) : localState.globalFilter
+    urlActive
+      ? (urlState?.globalFilter ?? TABLE_STATE_DEFAULTS.globalFilter)
+      : localState.globalFilter
   );
   const [memColumnFilters, setMemColumnFilters] = useState<ColumnFilter[]>(
-    urlActive ? (urlState?.columnFilters ?? TABLE_STATE_DEFAULTS.columnFilters) : localState.columnFilters
+    urlActive
+      ? (urlState?.columnFilters ?? TABLE_STATE_DEFAULTS.columnFilters)
+      : localState.columnFilters
   );
   const [memSorting, setMemSorting] = useState<SortingState>(
     urlActive ? (urlState?.sorting ?? TABLE_STATE_DEFAULTS.sorting) : localState.sorting
   );
   const [memColumnVisibility, setMemColumnVisibility] = useState<ColumnVisibilityState>(
-    urlActive ? (urlState?.columnVisibility ?? TABLE_STATE_DEFAULTS.columnVisibility) : localState.columnVisibility
+    urlActive
+      ? (urlState?.columnVisibility ?? TABLE_STATE_DEFAULTS.columnVisibility)
+      : localState.columnVisibility
   );
 
   return {
@@ -114,4 +120,3 @@ export function useTableState({
     buildShareUrl,
   };
 }
-

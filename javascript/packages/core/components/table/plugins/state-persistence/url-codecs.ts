@@ -101,8 +101,7 @@ export function parseColumnFilters(
     if (!validIdSet.has(id)) continue;
     if (!SUPPORTED_OPERATORS.has(op as Parameters<typeof SUPPORTED_OPERATORS.has>[0])) continue;
 
-    const value =
-      op === 'in' ? rawValue.split('|').map(coerceValue) : coerceValue(rawValue);
+    const value = op === 'in' ? rawValue.split('|').map(coerceValue) : coerceValue(rawValue);
     filters.push({ id, value });
   }
 
