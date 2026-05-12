@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 import fsspec
+import pydantic
 
 from michelangelo.uniflow.core.decorator import (
     TaskFunction,
@@ -57,6 +58,27 @@ from michelangelo.uniflow.core.utils import (
 )
 
 log = logging.getLogger(__name__)
+
+
+def _obj_to_ast(v: Any) -> ast.expr:
+    """Convert a Python value to an AST literal node for inlining into Starlark.
+
+    Supports Pydantic models, dicts, lists, tuples, str, int, float, bool, None.
+    Raises TypeError for unsupported types.
+    """
+    if isinstance(v, pydantic.BaseModel):
+        return _obj_to_ast(v.model_dump())
+    if isinstance(v, dict):
+        return ast.Dict(
+            keys=[ast.Constant(value=k) for k in v],
+            values=[_obj_to_ast(val) for val in v.values()],
+        )
+    if isinstance(v, (list, tuple)):
+        elts = [_obj_to_ast(item) for item in v]
+        return ast.List(elts=elts, ctx=ast.Load())
+    if isinstance(v, (str, int, float, bool)) or v is None:
+        return ast.Constant(value=v)
+    raise TypeError(f"Cannot inline type {type(v).__name__} as AST literal")
 
 
 def main(args=None):
@@ -720,7 +742,7 @@ class FunctionTransformer(ast.NodeTransformer):
             self.deps.add_py_function(node.id, v)
             return node
 
-        if issubclass(v, TaskConfig):
+        if isinstance(v, type) and issubclass(v, TaskConfig):
             config_binding = v.get_config_binding()
             self.deps.add_star_attribute(
                 config_binding.export,
@@ -729,6 +751,13 @@ class FunctionTransformer(ast.NodeTransformer):
             )
             ast_node = ast.Name(id=config_binding.export, ctx=ast.Load())
             return ast_node
+
+        # Handle serializable Python objects (Pydantic models, dicts, primitives)
+        # by inlining them as AST literal nodes so Starlark can represent them.
+        try:
+            return _obj_to_ast(v)
+        except TypeError:
+            pass
 
         raise NameError(f"unsupported global variable: {self._module} {node.id}")
 

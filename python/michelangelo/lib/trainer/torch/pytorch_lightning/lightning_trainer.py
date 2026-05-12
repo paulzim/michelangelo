@@ -24,7 +24,6 @@ class LightningTrainerParam:
     batch_size: int
     num_epochs: int
     lightning_trainer_kwargs: Optional[dict[str, Any]] = None
-    batch_transform: Optional[Callable[[dict], dict]] = None
 
     def __post_init__(self):
         """Initialize lightning_trainer_kwargs if not provided."""
@@ -69,7 +68,7 @@ class LightningTrainer:
             val_dataset = train.get_dataset_shard("validation")
 
             # Convert to PyTorch datasets
-            def ray_dataset_to_torch(ray_ds, batch_size, batch_transform=None):
+            def ray_dataset_to_torch(ray_ds, batch_size):
                 """Convert Ray dataset to PyTorch DataLoader."""
                 from torch.utils.data import DataLoader
                 from torch.utils.data import Dataset as TorchDataset
@@ -124,8 +123,6 @@ class LightningTrainer:
                             elif isinstance(v, float):
                                 result[k] = torch.tensor(v, dtype=torch.float32)
                             # skip strings and other non-numeric types
-                        if batch_transform is not None:
-                            result = batch_transform(result)
                         return result
 
                 torch_dataset = RayTorchDataset(ray_ds)
@@ -137,9 +134,9 @@ class LightningTrainer:
                 )
 
             train_dataloader = ray_dataset_to_torch(
-                train_dataset, self.param.batch_size, self.param.batch_transform
+                train_dataset, self.param.batch_size
             )
-            val_dataloader = ray_dataset_to_torch(val_dataset, self.param.batch_size, self.param.batch_transform)
+            val_dataloader = ray_dataset_to_torch(val_dataset, self.param.batch_size)
 
             # Setup trainer kwargs - let Ray handle MLflow logging
             trainer_kwargs = {

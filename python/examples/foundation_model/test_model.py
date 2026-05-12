@@ -18,7 +18,7 @@ import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from michelangelo.lib.foundation_model.models.multitask_lightning import MultitaskSequenceLightning
+from michelangelo.lib.foundation_model.model.multitask_lightning import MultitaskSequenceLightning
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)

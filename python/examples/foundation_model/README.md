@@ -61,5 +61,5 @@ michelangelo/lib/sequence/
 
 1. Add a key to `TRAIN_CONFIG.task_config` in `config.py`.
 2. Add the corresponding `pred_<name>_logits` entry to `_TASK_NAME_TO_PRED_OUTPUT`
-   in `michelangelo/lib/foundation_model/models/multitask_lightning.py`.
+   in `michelangelo/lib/foundation_model/model/multitask_lightning.py`.
 3. Add the target column to the feature prep output in `tasks/feature_prep_task.py`.
