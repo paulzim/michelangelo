@@ -3,6 +3,8 @@ package trigger
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/cadence-workflow/starlark-worker/activity"
 	"github.com/cadence-workflow/starlark-worker/workflow"
@@ -231,4 +233,51 @@ func cropPipelineRun(pr *v2pb.PipelineRun) *v2pb.PipelineRun {
 	// Remove input data to reduce size
 	res.Spec.Input = nil
 	return res
+}
+
+// GetLastExecutionTimestamp returns the execution timestamp of the most recent pipeline run
+// for the given trigger and pipeline, or nil if no previous run exists.
+// This is used by the trigger workflow to pass the last execution time to the next pipeline run
+// via os.environ["LAST_EXECUTION_TIMESTAMP"] so Starlark workflows can compute the gap.
+func (r *activities) GetLastExecutionTimestamp(ctx context.Context, namespace, triggerName, pipelineName string) (*time.Time, error) {
+	logger := activity.GetLogger(ctx)
+
+	resp, err := r.pipelineRunService.ListPipelineRun(ctx, &v2pb.ListPipelineRunRequest{
+		Namespace: namespace,
+		ListOptions: &v1.ListOptions{
+			LabelSelector: fmt.Sprintf(
+				"pipelinerun.michelangelo/triggered-by=%s,pipelinerun.michelangelo/pipeline-name=%s",
+				triggerName, pipelineName,
+			),
+			Limit: 1,
+		},
+	})
+	if err != nil {
+		logger.Error("failed to list pipeline runs for last execution timestamp",
+			zap.String("trigger", triggerName),
+			zap.String("pipeline", pipelineName),
+			zap.Error(err))
+		return nil, err
+	}
+
+	if resp == nil || resp.PipelineRunList == nil || len(resp.PipelineRunList.Items) == 0 {
+		return nil, nil
+	}
+
+	pr := resp.PipelineRunList.Items[0]
+	tsStr, ok := pr.Labels["pipelinerun.michelangelo/execution-timestamp"]
+	if !ok || tsStr == "" {
+		return nil, nil
+	}
+
+	secs, err := strconv.ParseInt(tsStr, 10, 64)
+	if err != nil {
+		logger.Error("failed to parse execution timestamp label",
+			zap.String("value", tsStr),
+			zap.Error(err))
+		return nil, nil
+	}
+
+	t := time.Unix(secs, 0)
+	return &t, nil
 }

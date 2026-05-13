@@ -5,6 +5,8 @@ Acceptability (CoLA) task from the GLUE benchmark.
 Support workflow parameters via dict or Starlark-compatible parameters.
 """
 
+import os
+
 import michelangelo.uniflow.core as uniflow
 from examples.bert_cola.data import load_data
 from examples.bert_cola.train import train
@@ -17,6 +19,15 @@ def train_workflow(path="nyu-mll/glue", name="cola", tokenizer_max_length=128):
     print("[train_workflow] Starting with config:")
     print("  - Dataset: " + path + "/" + name)
     print("  - Tokenizer max length: " + str(tokenizer_max_length))
+
+    # When this workflow is triggered by a cron TriggerRun, the trigger injects
+    # LAST_EXECUTION_TIMESTAMP (unix seconds) so the pipeline can process only
+    # data since the last run rather than reprocessing everything.
+    last_ts = os.environ.get("LAST_EXECUTION_TIMESTAMP")
+    if last_ts is not None:
+        print("[train_workflow] Incremental run — processing data since last execution: " + last_ts)
+    else:
+        print("[train_workflow] Full run — no previous execution timestamp found")
 
     # Load data using configuration
     train_data, validation_data, test_data = load_data(

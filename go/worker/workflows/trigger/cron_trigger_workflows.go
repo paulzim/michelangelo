@@ -230,8 +230,21 @@ func runPipeline(ctx workflow.Context, triggerRun *v2pb.TriggerRun, param parame
 	paramID := param.GetParameterID()
 	executionTimestamp := param.GetExecutionTimestamp(logicalTs)
 
+	// Fetch the last execution timestamp so the pipeline run can compute the gap via os.environ
+	var lastTs *time.Time
+	if err := workflow.ExecuteActivity(ctx, trigger.Activities.GetLastExecutionTimestamp,
+		triggerRun.Namespace,
+		triggerRun.Name,
+		triggerRun.Spec.Pipeline.Name,
+	).Get(ctx, &lastTs); err != nil {
+		log.Warn("failed to get last execution timestamp, proceeding without it",
+			zap.String("trigger", triggerRun.Name),
+			zap.Error(err))
+		lastTs = nil
+	}
+
 	// Generate pipeline run request
-	createRequest, err := generatePipelineRunRequest(triggerRun, paramID, name, executionTimestamp)
+	createRequest, err := generatePipelineRunRequest(triggerRun, paramID, name, executionTimestamp, lastTs)
 	if err != nil {
 		log.Error("failed to generate pipeline run request",
 			zap.String("operation", "run_pipeline"),
@@ -293,6 +306,7 @@ func runPipelineAsync(ctx workflow.Context, triggerRun *v2pb.TriggerRun, param p
 // generatePipelineRunRequest generates a pipeline run request due to trigger run, parameter id and execution timestamp
 func generatePipelineRunRequest(
 	triggerRun *v2pb.TriggerRun, paramID string, pipelineRunName string, ts time.Time,
+	lastTs *time.Time,
 ) (v2pb.CreatePipelineRunRequest, error) {
 	labels := map[string]string{
 		PipelineRunExecutionTimestampLabel: fmt.Sprintf("%d", ts.Unix()),
@@ -320,6 +334,17 @@ func generatePipelineRunRequest(
 		} else {
 			return v2pb.CreatePipelineRunRequest{}, fmt.Errorf("invalid parameter id: %s", paramID)
 		}
+	}
+	if lastTs != nil {
+		if pbStruct == nil {
+			pbStruct = &pbtypes.Struct{Fields: make(map[string]*pbtypes.Value)}
+		}
+		if pbStruct.Fields["environ"] == nil {
+			pbStruct.Fields["environ"] = utils.NewStructValue(&pbtypes.Struct{Fields: make(map[string]*pbtypes.Value)})
+		}
+		pbStruct.Fields["environ"].GetStructValue().Fields["LAST_EXECUTION_TIMESTAMP"] = utils.NewStringValue(
+			fmt.Sprintf("%d", lastTs.Unix()),
+		)
 	}
 	pr := &v2pb.PipelineRun{
 		ObjectMeta: v1.ObjectMeta{
