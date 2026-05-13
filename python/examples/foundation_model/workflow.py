@@ -30,9 +30,9 @@ columns) so the full transform → train code path matches production.
 import michelangelo.uniflow.core as uniflow
 from michelangelo.uniflow.core.decorator import workflow
 from michelangelo.workflow.variables import DatasetVariable
-from michelangelo.lib.foundation_model.tasks.native_transform_task import native_transform_task
-from michelangelo.lib.foundation_model.tasks.train_task import train_task
-from michelangelo.lib.foundation_model.tasks.upload_task import upload_task
+from examples.foundation_model.tasks.native_transform_task import native_transform_task
+from examples.foundation_model.tasks.train_task import train_task
+from examples.foundation_model.tasks.upload_task import upload_task
 
 from examples.foundation_model.config import NATIVE_TRANSFORM_CONFIG, TRAIN_CONFIG, MAX_LEN
 
