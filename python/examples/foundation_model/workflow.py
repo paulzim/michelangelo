@@ -32,7 +32,6 @@ from michelangelo.uniflow.core.decorator import workflow
 from michelangelo.workflow.variables import DatasetVariable
 from michelangelo.lib.foundation_model.tasks.native_transform_task import native_transform_task
 from michelangelo.lib.foundation_model.tasks.train_task import train_task
-from michelangelo.lib.foundation_model.tasks.evaluate_task import evaluate_task
 from michelangelo.lib.foundation_model.tasks.upload_task import upload_task
 
 from examples.foundation_model.config import NATIVE_TRANSFORM_CONFIG, TRAIN_CONFIG, MAX_LEN
@@ -40,7 +39,7 @@ from examples.foundation_model.config import NATIVE_TRANSFORM_CONFIG, TRAIN_CONF
 
 @workflow()
 def train_workflow(train_data: DatasetVariable, val_data: DatasetVariable):
-    """Native transform → train → evaluate → upload."""
+    """Native transform → train → upload."""
     # Step 1: Apply native transforms (LogTransform, Normalization, Stack, etc.)
     transformed = native_transform_task(
         config=NATIVE_TRANSFORM_CONFIG,
@@ -48,26 +47,14 @@ def train_workflow(train_data: DatasetVariable, val_data: DatasetVariable):
         val_data=val_data,
     )
 
-    # Step 2: Train MultitaskSequenceLightning
+    # Step 2: Train MultitaskSequenceLightning (evaluation handled by callbacks)
     trained = train_task(
         config=TRAIN_CONFIG,
         train_data=transformed["train_dataset"],
         val_data=transformed["val_dataset"],
     )
 
-    # Step 3: Post-training evaluation on val set
-    evaluate_task(
-        config={
-            "embedding_config": TRAIN_CONFIG.embedding_config,
-            "architecture_config": TRAIN_CONFIG.architecture_config,
-            "task_config": TRAIN_CONFIG.task_config,
-            "forward_output_fields": TRAIN_CONFIG.forward_output_fields,
-        },
-        train_result=trained,
-        val_data=transformed["val_dataset"],
-    )
-
-    # Step 4: Upload checkpoint
+    # Step 3: Upload checkpoint
     upload_task(config={"train_config": TRAIN_CONFIG}, train_result=trained)
 
 

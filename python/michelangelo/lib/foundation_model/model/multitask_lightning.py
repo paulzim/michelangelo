@@ -15,7 +15,7 @@ import numpy as np
 import torch
 
 from michelangelo.lib.model_manager.interface.custom_model import Model
-from michelangelo.lib.sequence.lightning.base import BaseSequenceLightning
+from michelangelo.lib.foundation_model.model.sequence.lightning.base import BaseSequenceLightning
 from michelangelo.lib.foundation_model.model.encoders import MultiModalEncoder
 from michelangelo.lib.foundation_model.model.task_heads import build_task_heads
 from michelangelo.lib.foundation_model.model.transformers.decoder_only import DecoderOnlyTransformer
