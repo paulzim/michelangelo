@@ -17,7 +17,7 @@ metadataStorage:
   rootPassword: root
 
 objectStorage:
-  endpoint: minio:9000
+  endpoint: minio:9091
   secure: false
   region: us-east-1
   bucket: michelangelo
@@ -29,7 +29,7 @@ workflow:
   # Cadence gRPC frontend. Source: michelangelo-worker.yaml:42 and
   # michelangelo-controllermgr.yaml:101 both use port 7833. Port 7933 is the
   # TChannel endpoint used by the Cadence CLI, not by the worker.
-  endpoint: cadence:7833
+  endpoint: michelangelo-cadence-frontend:7833
   domain: default
 
 images:
@@ -57,6 +57,24 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
+# Ray cluster log persistence — enabled for sandbox to wire up the KubeRay
+# History Server. The collector sidecar uses the in-cluster MinIO endpoint
+# (minio:9091) and the chart-managed object-storage-credentials Secret.
+# The collector image is pulled from GHCR automatically (no local build needed).
+controllermgr:
+  jobs:
+    k8sengine:
+      mapper:
+        logPersistence:
+          enabled: true
+          # storageEndpoint defaults to objectStorage.endpoint (minio:9091) — no override needed
+          bucket: ray-history
+          pathPrefix: log
+          s3DisableSSL: true
+          logURLFormat: "http://localhost:9090/browser/{{.Bucket}}/{{.PathPrefix}}/{{.ClusterName}}_{{.RayLocalNamespace}}/"
+
+
+
 # Looser security context for sandbox — ingester writes to /tmp and some
 # debug images need privilege escalation. Production keeps the chart defaults.
 podSecurityContext:
@@ -69,14 +87,96 @@ securityContext:
     drop: []
 
 # -----------------------------------------------------------------------------
-# Cadence subchart — explicitly disabled for the sandbox.
+# Cadence subchart — bundled workflow engine for the local sandbox.
 #
-# The local sandbox provisions its own Cadence outside the chart (via
-# `sandbox.py` -> `helm install` of the upstream cadence chart), and points
-# `workflow.endpoint` at the in-cluster `cadence:7833` Service it created.
+# The sandbox installs Cadence as a subchart of the michelangelo release so
+# everything comes up under one helm install. Backed by the sandbox MySQL pod
+# (mysql:3306, root/root). The cadence and cadence_visibility databases are
+# auto-created by the schema-server Job.
 #
-# Setting cadence.enabled=true here would install a SECOND Cadence cluster
-# inside the same k3d node and rapidly exhaust memory. Keep it false.
+# The frontend Service stays ClusterIP (upstream chart hardcodes it).
+# In-cluster consumers use michelangelo-cadence-frontend:7833.
+# Host access for the cadence CLI uses kubectl port-forward in sandbox.py.
 # -----------------------------------------------------------------------------
 cadence:
+  enabled: true
+
+  config:
+    persistence:
+      database:
+        driver: mysql
+        sql:
+          hosts: mysql
+          port: 3306
+          user: root
+          password: root
+          dbname: cadence
+          visibilityDbname: cadence_visibility
+
+  # Disable backends we are not using — the upstream chart defaults
+  # cassandra.enabled=true which would pull in a Bitnami pod.
+  cassandra:
+    enabled: false
+  mysql:
+    enabled: false
+  postgresql:
+    enabled: false
+
+  # Cadence Web UI exposed via NodePort 30004 → host port 8088.
+  web:
+    enabled: true
+    service:
+      type: NodePort
+      nodePort: 30004
+
+# -----------------------------------------------------------------------------
+# Temporal subchart — bundled workflow engine for --workflow temporal.
+#
+# Disabled by default; enabled dynamically by sandbox.py when
+# --workflow temporal is passed. The schema-server Job creates both
+# `temporal` and `temporal_visibility` databases automatically.
+#
+# IMPORTANT: driver must be "mysql8" (not "mysql") — Temporal uses a
+# different driver string from Cadence.
+# -----------------------------------------------------------------------------
+temporal:
   enabled: false
+
+  server:
+    config:
+      persistence:
+        default:
+          driver: sql
+          sql:
+            driver: mysql8
+            host: mysql
+            port: 3306
+            database: temporal
+            user: root
+            password: root
+        visibility:
+          driver: sql
+          sql:
+            driver: mysql8
+            host: mysql
+            port: 3306
+            database: temporal_visibility
+            user: root
+            password: root
+
+  # Disable unused backends.
+  cassandra:
+    enabled: false
+  mysql:
+    enabled: false
+  postgresql:
+    enabled: false
+  elasticsearch:
+    enabled: false
+
+  # Temporal Web UI exposed via NodePort 30005 → host port 8080.
+  web:
+    enabled: true
+    service:
+      type: NodePort
+      nodePort: 30005
