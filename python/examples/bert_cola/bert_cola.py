@@ -8,7 +8,7 @@ Support workflow parameters via dict or Starlark-compatible parameters.
 import michelangelo.uniflow.core as uniflow
 from examples.bert_cola.data import load_data
 from examples.bert_cola.train import train
-from michelangelo.uniflow.core.lib.os import getenv
+from michelangelo.uniflow.core.lib.os import environ
 from michelangelo.uniflow.plugins.ray import UF_PLUGIN_RAY_USE_FSSPEC
 
 
@@ -22,7 +22,7 @@ def train_workflow(path="nyu-mll/glue", name="cola", tokenizer_max_length=128):
     # When triggered by a cron TriggerRun, LAST_EXECUTION_TIMESTAMP (unix seconds)
     # is injected so the pipeline processes only data since the previous scheduled
     # run rather than reprocessing everything. None on first run or manual runs.
-    last_ts = getenv("LAST_EXECUTION_TIMESTAMP")
+    last_ts = environ.get("LAST_EXECUTION_TIMESTAMP")
 
     # Load data using configuration
     train_data, validation_data, test_data = load_data(
