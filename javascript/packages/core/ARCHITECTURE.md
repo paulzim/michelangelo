@@ -1,19 +1,29 @@
 # `@michelangelo-ai/core` — Architecture
 
-This is a working summary of the architectural direction for `@michelangelo-ai/core`. It describes where the package is going. The codebase is in motion toward this picture; not every section reflects current state in full.
+This is a working summary of the architectural direction for `@michelangelo-ai/core`. It describes where the package is going — not every section reflects current state in full.
 
-For coding conventions (file naming, imports, testing, styling), see `CLAUDE.md` in this directory and in `javascript/`. Architecture and conventions are kept separate on purpose.
+For coding conventions, see `CLAUDE.md` in this directory and in `javascript/`.
 
-## 1. Components and configuration
+## 1. Domain model
+
+Studio organizes around three concepts. Most of this document — and most configuration — is expressed in terms of them.
+
+- **Project** — the top-level workspace; everything else is typically scoped to one. Maps to `:projectId` in the URL and to `namespace` in API requests.
+- **Phase** — a stage in the ML lifecycle (e.g. `data`, `train`, `deploy`). Phases group related entity types.
+- **Entity** — a kind of resource within a phase (e.g. a `pipeline` or `deployment`). Most entities have list, detail, and form views, and a set of actions attached to them.
+
+When this document refers to "an entity," it means one of these resources. When it refers to "a configuration," it usually means a description of an entity's shape — its views, its actions, its forms.
+
+## 2. Components and configuration
 
 `@michelangelo-ai/core` provides two API surfaces:
 
-- **Components** — standard React primitives. Props, composition, TypeScript interfaces. Usable standalone.
+- **Components** — standard React primitives. Props, composition, TypeScript interfaces.
 - **Configuration** — declarative orchestrators that compose primitives based on configs.
 
-The two are **complementary**. Configuration is the natural fit for well-defined API surfaces — entity tables, CRUD forms, action menus — where many things share the same shape and repetition would be costly. Components are the natural fit for bespoke UI, novel interactions, and anything that doesn't earn the configuration overhead.
+The two are **complementary**. Configuration is the natural fit for most **entities** — resources whose lifecycle follows a declarative CRUD pattern (list, view one, create, update, act). One runtime renders them all from configs rather than each being implemented by hand. Components handle the rest: bespoke UI, app-wide or cross-project resources that don't fit the project hierarchy, and entities that need enough custom logic that bending them to the engine would be costlier than just writing them.
 
-Component-driven authoring is just standard React. The configuration-driven side has more machinery and is covered in § Configuration system.
+The configuration engine is deliberately kept lightweight. When a use case doesn't fit, the answer is an escape hatch (§ Customization escape hatches), not more complexity in the engine.
 
 ### Configurations live in consumer packages
 
@@ -21,14 +31,14 @@ Component-driven authoring is just standard React. The configuration-driven side
 
 Today the reference configurations live in `javascript/app/`. Consumers building their own apps on top of `@michelangelo-ai/core` provide their own. `core` does not ship a default set of entities; it ships the machinery to render them.
 
-## 2. Configuration system
+## 3. Configuration system
 
 A configuration is a declarative description of a view, action, or form, expressed as a TypeScript object. The `core` runtime walks the configuration and renders the right components. Configurations nest:
 
 - A **`PhaseConfig`** describes a phase (e.g. _train_, _deploy_) and lists the entities it contains.
 - An **`EntityConfig`** describes an entity (e.g. _pipeline_, _deployment_) and lists its views and actions.
 - A **`ViewConfig`** describes a view of an entity — `list`, `detail`, or `form` — and specifies the columns, tabs, or fields it renders.
-- An **`ActionConfig`** describes an action (button, menu item) attached to an entity. Component-driven actions ship a React component; mutation and route action variants are declarative.
+- An **`ActionConfig`** describes an action (button, menu item) attached to an entity. It composes *what* the action does (call a mutation or navigate to a route) with *how* the user invokes it (immediately, with a confirmation step, or via a custom React component for bespoke flows).
 - A **`FormConfig`** describes a form — fields, layout, validation, submission — for create and update flows.
 - A **`TableConfig`** describes a table view's columns, sorting, filtering, and action wiring.
 
@@ -36,7 +46,7 @@ A configuration is a declarative description of a view, action, or form, express
 
 Configurations are not a flat catalog. They compose:
 
-- **`QueryConfig`** is the shared descriptor for a backend call — endpoint, service, options. Anything that loads or mutates data references a `QueryConfig`: a `TableConfig`'s row source, a `FormConfig`'s submission, an `ActionConfig`'s mutation. The same shape feeds both `useStudioQuery` and `useStudioMutation`.
+- **`QueryConfig` and `MutationConfig`** are parallel descriptors for backend calls — `QueryConfig` for reads (consumed by `useStudioQuery`), `MutationConfig` for writes (consumed by `useStudioMutation`). Anything that loads or mutates data references one of these: a `TableConfig`'s row source uses a `QueryConfig`; an `ActionConfig`'s mutation and a `FormConfig`'s submission use a `MutationConfig`.
 - **`FormConfig` embeds inside other configs.** An `ActionConfig` can embed a `FormConfig` to render a form when the action is triggered (e.g. "Create Pipeline"); a `ViewConfig` for a form view wraps it directly; a detail view can embed one as a tab.
 
 ### Customization escape hatches
@@ -45,7 +55,7 @@ The configuration runtime is the path of least resistance. Most customization ha
 
 - **Detail view tabs** — a tab can render a custom React component while the standard page chrome and tab navigation stay in place.
 - **Forms** — when an interaction is bespoke, swap the entire form for a custom React component.
-- **Actions** — ship a React component (`ComponentActionConfig`) instead of a declarative action when execution is custom.
+- **Actions** — mount a custom React component when an action's flow doesn't fit the declarative mutation-or-navigate-with-optional-confirmation patterns.
 
 ### Interpolation
 
@@ -75,7 +85,7 @@ The interpolation engine is pure — it knows nothing about Uber, ML, or any spe
 
 `useInterpolationResolver` resolves a config object on demand, walking the structure recursively so any leaf can be interpolatable. Higher-level wrappers like `InterpolatableActionsPopover` apply it per-row before delegating to the rendering component, so most call sites don't touch the resolver directly.
 
-## 3. Customization via providers
+## 4. Customization via providers
 
 `core` is framework-agnostic by design. Integrations and consumer-specific data — RPC clients, registries, contextual values — are injected at the application boundary through React context providers, never imported directly inside `core`. Consumers wrap the app in a provider, pass implementations or values, and components inside consume them through hooks.
 
@@ -110,7 +120,7 @@ declare module '@michelangelo-ai/core' {
 
 After this augmentation, interpolated configs reference `user` and `project` with full type inference. Removing the augmentation surfaces type errors at every consumer site.
 
-## 4. Styling
+## 5. Styling
 
 `core` uses Styletron and BaseUI as its styling stack. Both are injected at the application boundary (`StyletronProvider`, `ThemeProvider`). Consumers customize the visual layer through theme tokens.
 
@@ -121,9 +131,9 @@ Components in `core` come in two styling shapes:
 
 For specific styling conventions — when to use `useStyletron()` inline, when to extract a `styled-components.ts`, theme-token usage — see the project's CLAUDE files and related skills.
 
-## 5. Routing
+## 6. Routing
 
-Studio organizes its URLs around the structure of an ML platform:
+Studio's URL structure mirrors the domain model from § 1:
 
 ```
 /                                              project list
@@ -134,15 +144,9 @@ Studio organizes its URLs around the structure of an ML platform:
 /:projectId/:phase/:entity/:entityId/update    update form view
 ```
 
-Three concepts shape the hierarchy:
-
-- **Project** — the top-level workspace; everything else is scoped to one. Maps to `:projectId` in the URL and to `namespace` in API requests.
-- **Phase** — a stage in the ML lifecycle (e.g. `data`, `train`, `deploy`). Phases group related entity types.
-- **Entity** — a kind of resource within a phase (e.g. a `pipeline` or `deployment`). Each entity has one or more views — typically `list`, `detail`, and `form`.
-
 Views read URL state through `useStudioParams`, which is typed by view kind: `useStudioParams('list')` returns `{ projectId, phase, entity }`; `useStudioParams('detail')` adds `entityId` and `entityTab`; `useStudioParams('form')` exposes form-specific fields. Components and configuration both consume this hook — there is no parallel routing system inside `core`.
 
-## 6. Testing
+## 7. Testing
 
 Tests render against real providers, not mocks. The `test/wrappers/` directory exposes per-provider wrapper helpers (`getServiceProviderWrapper`, `getRouterWrapper`, `getInterpolationProviderWrapper`, …) that wrap the production providers; `buildWrapper([...])` composes the ones a test needs.
 
@@ -159,7 +163,7 @@ render(<MyComponent />, buildWrapper([getServiceProviderWrapper({ request }), ge
 
 Avoid mocking core's hooks (e.g. `vi.mock('#core/hooks/use-studio-mutation', …)`). Mocking the hook bypasses the real query client, the real provider wiring, and the real error normalization — the exact things an integration test should exercise. Mock at the boundary, not the abstraction.
 
-## 7. Package layout
+## 8. Package layout
 
 | Package                 | Purpose                                                   |
 | ----------------------- | --------------------------------------------------------- |
@@ -168,7 +172,7 @@ Avoid mocking core's hooks (e.g. `vi.mock('#core/hooks/use-studio-mutation', …
 
 `core` does not depend on `rpc`. It declares the contracts (e.g. the shape of a `request` function); consumers provide implementations.
 
-## 8. Where to look next
+## 9. Where to look next
 
 - **Coding conventions** — `CLAUDE.md` in this directory (testing patterns) and `javascript/CLAUDE.md` (package layout, scripts, available skills)
 - **Reference application** — `javascript/app/` is a complete integration: it imports from `@michelangelo-ai/core`, wires `@michelangelo-ai/rpc` into `<CoreApp dependencies={...}>`, and supplies a configuration tree
