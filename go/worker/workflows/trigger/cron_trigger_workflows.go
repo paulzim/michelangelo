@@ -496,17 +496,16 @@ func prevScheduledTime(t *v2pb.Trigger, executionTimestamp time.Time) *time.Time
 		// search that needs at most 2-3 Next() calls in the common case.
 		approxPeriod := schedule.Next(executionTimestamp).Sub(executionTimestamp)
 		candidate := schedule.Next(executionTimestamp.Add(-2 * approxPeriod))
-		var prev time.Time
+		if !candidate.Before(executionTimestamp) {
+			return nil
+		}
+		prev := candidate
 		for {
-			next := schedule.Next(candidate)
+			next := schedule.Next(prev)
 			if !next.Before(executionTimestamp) {
 				break
 			}
 			prev = next
-			candidate = next
-		}
-		if prev.IsZero() {
-			return nil
 		}
 		return &prev
 

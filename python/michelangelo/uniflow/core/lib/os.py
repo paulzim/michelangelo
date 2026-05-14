@@ -1,7 +1,5 @@
 import os as _os
 
-from michelangelo.uniflow.core import star_plugin
-
 
 class _Environ:
     """Dict-like access to OS environment variables for local workflow runs.
@@ -53,31 +51,3 @@ class _Environ:
 
 
 environ = _Environ()
-
-
-@star_plugin("os.getenv")
-def getenv(key: str, default=None):
-    """Return the value for *key* from the pipeline run environ, or *default* if absent.
-
-    When running remotely, reads from the environ dict injected by the starlark-worker
-    ``os`` plugin (populated from ``spec.input.environ`` of the PipelineRun).
-    On local runs, falls back to the real OS environment.
-
-    Usage in a workflow::
-
-        from michelangelo.uniflow.core.lib.os import getenv
-
-        @workflow()
-        def my_workflow():
-            last_ts = getenv("LAST_EXECUTION_TIMESTAMP")
-            region = getenv("AWS_REGION", "us-east-1")
-
-    Parameters:
-        key (str): Key to look up in the environ dict.
-        default: Value to return when *key* is absent. Defaults to None.
-
-    Returns:
-        str | None
-    """
-    return _os.environ.get(key, default)
-
