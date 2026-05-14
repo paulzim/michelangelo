@@ -25,8 +25,8 @@ Today the reference configurations live in `javascript/app/`. Consumers building
 
 A configuration is a declarative description of a view, action, or form, expressed as a TypeScript object. The `core` runtime walks the configuration and renders the right components. Configurations nest:
 
-- A **`PhaseConfig`** describes a phase (e.g. *train*, *deploy*) and lists the entities it contains.
-- An **`EntityConfig`** describes an entity (e.g. *pipeline*, *deployment*) and lists its views and actions.
+- A **`PhaseConfig`** describes a phase (e.g. _train_, _deploy_) and lists the entities it contains.
+- An **`EntityConfig`** describes an entity (e.g. _pipeline_, _deployment_) and lists its views and actions.
 - A **`ViewConfig`** describes a view of an entity — `list`, `detail`, or `form` — and specifies the columns, tabs, or fields it renders.
 - An **`ActionConfig`** describes an action (button, menu item) attached to an entity. Component-driven actions ship a React component; mutation and route action variants are declarative.
 - A **`FormConfig`** describes a form — fields, layout, validation, submission — for create and update flows.
@@ -54,9 +54,7 @@ Configurations are static data by default. Interpolation makes them dynamic: a c
 ```ts
 const action: DeepInterpolatable<ActionConfig> = {
   display: { label: 'Resume', icon: 'play' },
-  hierarchy: interpolate(({ data }) =>
-    data.state === 'PAUSED' ? 'primary' : 'tertiary'
-  ),
+  hierarchy: interpolate(({ data }) => (data.state === 'PAUSED' ? 'primary' : 'tertiary')),
   disabled: interpolate('${data.state == "TERMINATED"}'),
 };
 ```
@@ -152,24 +150,21 @@ A test exercises the real integration path — the actual `<ServiceProvider>`, t
 
 ```tsx
 const request = createQueryMockRouter({
-  'GetPipelineRun': { pipelineRun: { name: 'test' } },
-  'ListPipelineRun': { pipelineRunList: { items: [] } },
+  GetPipelineRun: { pipelineRun: { name: 'test' } },
+  ListPipelineRun: { pipelineRunList: { items: [] } },
 });
 
-render(<MyComponent />, buildWrapper([
-  getServiceProviderWrapper({ request }),
-  getRouterWrapper(),
-]));
+render(<MyComponent />, buildWrapper([getServiceProviderWrapper({ request }), getRouterWrapper()]));
 ```
 
 Avoid mocking core's hooks (e.g. `vi.mock('#core/hooks/use-studio-mutation', …)`). Mocking the hook bypasses the real query client, the real provider wiring, and the real error normalization — the exact things an integration test should exercise. Mock at the boundary, not the abstraction.
 
 ## 7. Package layout
 
-| Package | Purpose |
-|---|---|
+| Package                 | Purpose                                                   |
+| ----------------------- | --------------------------------------------------------- |
 | `@michelangelo-ai/core` | UI rendering engine: components and configuration runtime |
-| `@michelangelo-ai/rpc` | Optional ConnectRPC/gRPC-Web client |
+| `@michelangelo-ai/rpc`  | Optional ConnectRPC/gRPC-Web client                       |
 
 `core` does not depend on `rpc`. It declares the contracts (e.g. the shape of a `request` function); consumers provide implementations.
 
