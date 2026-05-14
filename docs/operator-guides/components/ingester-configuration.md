@@ -23,7 +23,7 @@ The ingester maintains consistency between Kubernetes and MySQL:
 
 Every CRD object created through the API Server is automatically synced to MySQL. When deleted, the ingester ensures MySQL is updated before the object is removed from Kubernetes.
 
-For schema terminology, table naming, indexed fields, and common query patterns, see the [SQL Key Concepts](sql-key-concepts-and-terms.md) reference — in particular [Extracted Columns and SQL Indexes](sql-key-concepts-and-terms.md#extracted-columns-and-sql-indexes) and [Query Patterns](sql-key-concepts-and-terms.md#query-patterns).
+For schema terminology, table naming, indexed fields, and common query patterns, see the [SQL Key Concepts](../sql-key-concepts-and-terms.md) reference — in particular [Extracted Columns and SQL Indexes](../sql-key-concepts-and-terms.md#extracted-columns-and-sql-indexes) and [Query Patterns](../sql-key-concepts-and-terms.md#query-patterns).
 
 ## MySQL Storage
 
@@ -363,6 +363,6 @@ When the ingester is correctly enabled:
 
 Once the ingester is running, verify steady-state behavior: all 13 CRD kinds appear in MySQL, object counts match etcd, and `update_time` advances on changes. Then:
 
-- **Monitor**: Set up alerting on requeue errors — elevated `workqueue_retries_total` for ingester controllers indicates MySQL connectivity issues. See [Monitoring](monitoring.md).
+- **Monitor**: Set up alerting on requeue errors — elevated `workqueue_retries_total` for ingester controllers indicates MySQL connectivity issues. See [Monitoring](../operations/monitoring.md).
 - **Restrict deletes**: Enforce all CRD deletes through the Michelangelo API Server (not raw `kubectl delete`) to prevent orphan rows from pre-existing objects.
-- **Review internals**: See [Ingester Internals](../contributing/ingester-internals.md) for developer documentation on extending the ingester or adding new CRD kinds.
+- **Review internals**: See [Ingester Internals](../../contributing/ingester-internals.md) for developer documentation on extending the ingester or adding new CRD kinds.
