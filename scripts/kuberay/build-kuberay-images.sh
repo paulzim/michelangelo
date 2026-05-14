@@ -33,7 +33,7 @@ set -euo pipefail
 KUBERAY_DIR="${KUBERAY_DIR:-$HOME/Code/kuberay}"
 KUBERAY_REF="${KUBERAY_REF:-v1.6.1}"
 IMAGE_TAG="${IMAGE_TAG:-v0.1.0}"
-K3D_CLUSTERS="${K3D_CLUSTERS:-michelangelo-sandbox michelangelo-compute-0 michelangelo-compute-1}"
+K3D_CLUSTERS="${K3D_CLUSTERS:-michelangelo-sandbox michelangelo-compute-0}"
 SKIP_IMPORT="${SKIP_IMPORT:-0}"
 
 # 1. Clone or update kuberay
