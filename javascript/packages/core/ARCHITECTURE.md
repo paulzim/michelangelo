@@ -38,7 +38,7 @@ A configuration is a declarative description of a view, action, or form, express
 - A **`PhaseConfig`** describes a phase (e.g. _train_, _deploy_) and lists the entities it contains.
 - An **`EntityConfig`** describes an entity (e.g. _pipeline_, _deployment_) and lists its views and actions.
 - A **`ViewConfig`** describes a view of an entity — `list`, `detail`, or `form` — and specifies the columns, tabs, or fields it renders.
-- An **`ActionConfig`** describes an action (button, menu item) attached to an entity. It composes *what* the action does (call a mutation or navigate to a route) with *how* the user invokes it (immediately, with a confirmation step, or via a custom React component for bespoke flows).
+- An **`ActionConfig`** describes an action (button, menu item) attached to an entity. It composes _what_ the action does (call a mutation or navigate to a route) with _how_ the user invokes it (immediately, with a confirmation step, or via a custom React component for bespoke flows).
 - A **`FormConfig`** describes a form — fields, layout, validation, submission — for create and update flows.
 - A **`TableConfig`** describes a table view's columns, sorting, filtering, and action wiring.
 
