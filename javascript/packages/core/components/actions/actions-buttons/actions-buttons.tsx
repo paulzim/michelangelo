@@ -1,13 +1,15 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom-v5-compat';
 import { useStyletron } from 'baseui';
 import { Button, KIND, SHAPE, SIZE } from 'baseui/button';
 import { PLACEMENT } from 'baseui/popover';
 
+import { ActionDispatcher } from '#core/components/actions/action-dispatcher';
 import { ActionsPopover } from '#core/components/actions/actions-popover';
 import { Icon } from '#core/components/icon/icon';
 import { partitionActions } from './utils';
 
-import type { ActionConfig, Data, SelectedAction } from '#core/components/actions/types';
+import type { ActionConfig, Data } from '#core/components/actions/types';
 
 type ActionsButtonsProps<T extends Data = Data> = {
   actions: ActionConfig<T>[];
@@ -27,12 +29,20 @@ export function ActionsButtons<T extends Data>({
   loading,
 }: ActionsButtonsProps<T>) {
   const [css, theme] = useStyletron();
-  const [selectedAction, setSelectedAction] = useState<SelectedAction | null>(null);
+  const [activeAction, setActiveAction] = useState<ActionConfig<T> | null>(null);
+  const navigate = useNavigate();
 
   if (actions.length === 0) return null;
 
   const { primary, secondary, tertiary } = partitionActions(actions);
-  const ActiveComponent = selectedAction?.component;
+
+  const onSelect = (action: ActionConfig<T>) => {
+    if (action.modal) {
+      setActiveAction(action);
+    } else if (action.action?.type === 'route') {
+      navigate(action.action.route);
+    }
+  };
 
   return (
     <>
@@ -54,7 +64,7 @@ export function ActionsButtons<T extends Data>({
                   )
                 : undefined
             }
-            onClick={() => setSelectedAction({ component: primary.component, record })}
+            onClick={() => onSelect(primary)}
           >
             {primary.display.label}
           </Button>
@@ -73,7 +83,7 @@ export function ActionsButtons<T extends Data>({
                   )
                 : undefined
             }
-            onClick={() => setSelectedAction({ component: action.component, record })}
+            onClick={() => onSelect(action)}
           >
             {action.display.label}
           </Button>
@@ -86,11 +96,11 @@ export function ActionsButtons<T extends Data>({
           />
         )}
       </div>
-      {selectedAction && ActiveComponent && (
-        <ActiveComponent
-          record={selectedAction.record}
-          isOpen
-          onClose={() => setSelectedAction(null)}
+      {activeAction && (
+        <ActionDispatcher
+          action={activeAction}
+          record={record}
+          onClose={() => setActiveAction(null)}
         />
       )}
     </>

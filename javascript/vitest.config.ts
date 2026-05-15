@@ -19,6 +19,9 @@ export default defineConfig({
           name: 'core',
           environment: 'jsdom', // Simulate a browser environment for React components
           include: ['packages/core/**/__tests__/**/*.{ts,tsx}'],
+          // *.test-d.ts files are type-level assertions validated by tsc, not runtime tests.
+          // dist/ contains tsc's emitted declaration files — never source tests.
+          exclude: ['**/*.test-d.ts', '**/dist/**'],
           setupFiles: ['./packages/core/test-setup.ts'],
           deps: {
             optimizer: {
