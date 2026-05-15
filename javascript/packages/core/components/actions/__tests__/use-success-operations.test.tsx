@@ -105,6 +105,40 @@ describe('useSuccessOperations', () => {
       expect(spy).toHaveBeenNthCalledWith(1, { queryKey: ['ListPipelineRun'] });
       expect(spy).toHaveBeenNthCalledWith(2, { queryKey: ['GetPipelineRun'] });
     });
+
+    it('delayMs defers the invalidate by the given number of ms', () => {
+      vi.useFakeTimers();
+      try {
+        const operations: SuccessOperation[] = [
+          { type: 'invalidate', targets: ['ListPipelineRun'], delayMs: 2000 },
+        ];
+        const { result } = renderHook(
+          () => ({
+            run: useSuccessOperations(operations),
+            queryClient: useQueryClient(),
+          }),
+          buildWrapper([
+            getBaseProviderWrapper(),
+            getRouterWrapper(),
+            getServiceProviderWrapper({ request: vi.fn() }),
+            getSnackbarProviderWrapper(),
+            getIconProviderWrapper(),
+          ])
+        );
+        const spy = vi.spyOn(result.current.queryClient, 'invalidateQueries');
+
+        result.current.run({});
+        expect(spy).not.toHaveBeenCalled();
+
+        vi.advanceTimersByTime(1999);
+        expect(spy).not.toHaveBeenCalled();
+
+        vi.advanceTimersByTime(1);
+        expect(spy).toHaveBeenCalledWith({ queryKey: ['ListPipelineRun'] });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe('toast', () => {
