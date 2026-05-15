@@ -59,6 +59,77 @@
   }
 }
 
+/* Stats Bar */
+.statsBar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #0f0f0f;
+  padding: 48px 24px;
+}
+
+.statsHeadline {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0 0 36px;
+}
+
+.statsRow {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0;
+  width: 100%;
+}
+
+.statItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 48px;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.statItem:last-child {
+  border-right: none;
+}
+
+.statValue {
+  font-size: 2.75rem;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.statLabel {
+  margin-top: 8px;
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.55);
+  text-align: center;
+  letter-spacing: 0.01em;
+}
+
+@media (max-width: 768px) {
+  .statItem {
+    padding: 20px 24px;
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    width: 50%;
+  }
+
+  .statItem:nth-child(odd) {
+    border-right: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .statItem:last-child {
+    border-bottom: none;
+  }
+}
+
 /* Hero Section */
 .hero {
   min-height: calc(100vh - 60px);
@@ -275,11 +346,32 @@
   color: #ffffff;
 }
 
+.featureTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .featureTitle {
   font-size: 1.25rem;
   font-weight: 600;
-  margin-bottom: 0.75rem;
+  margin: 0;
   color: var(--ifm-font-color-base);
+}
+
+.comingSoonBadge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ifm-color-primary);
+  border: 1px solid var(--ifm-color-primary);
+  border-radius: 4px;
+  padding: 2px 6px;
+  white-space: nowrap;
+  opacity: 0.8;
 }
 
 .featureDescription {

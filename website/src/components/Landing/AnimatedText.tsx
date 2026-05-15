@@ -2,10 +2,10 @@ import React, {useState, useEffect} from 'react';
 import styles from '../../css/landing.module.css';
 
 const phrases = [
-  'Feature Management',
-  'Model Training',
-  'Model Deployment',
-  'Production Monitoring',
+  'Python-native.',
+  'Ship faster.',
+  'Plug in anything.',
+  'Uber-proven.',
 ];
 
 export default function AnimatedText(): React.ReactElement {
