@@ -56,7 +56,12 @@ jobs:
       # controllermgr). Infrastructure (MySQL, Cadence, MinIO, Grafana, Prometheus)
       # is kept running between runs — no re-init overhead.
       - name: Sync sandbox
-        run: $HOME/.local/bin/poetry run ma sandbox sync --workflow cadence
+        run: |
+          $HOME/.local/bin/poetry run ma sandbox sync --workflow cadence \
+            --set apiserver.metadataStorage.enable=true \
+            --set controllermgr.metadataStorage.enable=true \
+            --set controllermgr.jobs.k8sengine.mapper.logPersistence.enabled=false \
+            --set objectStorage.existingSecret=minio-credentials
 
       - name: Check out integration-test repo
         uses: actions/checkout@v4
@@ -90,6 +95,20 @@ jobs:
           MA_API_SERVER: localhost:15566
           GIT_REF: main
           PYTHONPATH: ${{ github.workspace }}/integration-test
+
+      - name: Wait for worker to connect to Cadence
+        run: |
+          echo "Waiting for worker to establish Cadence connection..."
+          for i in $(seq 1 30); do
+            if kubectl logs deployment/michelangelo-worker --since=120s 2>/dev/null \
+                | grep -q "Started Activity Worker"; then
+              echo "Worker connected to Cadence."
+              exit 0
+            fi
+            echo "  attempt $i/30, retrying in 5s..."
+            sleep 5
+          done
+          echo "WARNING: worker did not confirm Cadence connection after 150s, proceeding anyway"
 
       - name: Run CLI e2e tests
         run: |

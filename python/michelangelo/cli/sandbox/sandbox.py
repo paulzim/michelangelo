@@ -179,6 +179,14 @@ def init_arguments(p: argparse.ArgumentParser):
         nargs="+",
         default=[],
     )
+    sync_p.add_argument(
+        "--set",
+        dest="helm_set",
+        metavar="KEY=VALUE",
+        action="append",
+        default=[],
+        help="Pass arbitrary --set KEY=VALUE flags through to helm upgrade/install.",
+    )
 
     demo_p = sp.add_parser(
         "demo", help="Create demo project and pipelines in the sandbox cluster."
@@ -307,19 +315,25 @@ def _sync(ns: argparse.Namespace):
 
     # Upgrade or install the control plane via Helm.
     # Infrastructure (mysql, cadence, minio, grafana, prometheus) is left running.
-    release_exists = (
-        subprocess.run(
-            ["helm", "status", "michelangelo"],
-            capture_output=True,
-        ).returncode
-        == 0
-    )
 
     _refresh_mysql_schema()
 
-    if release_exists:
-        _ensure_credentials_secret()
-        helm_args = _build_helm_set_args(ns)
+    _ensure_credentials_secret()
+    _helm_ensure_repos()
+    helm_args = _build_helm_set_args(ns)
+
+    # Check if there is a healthy deployed release we can upgrade.
+    status_result = subprocess.run(
+        ["helm", "status", "michelangelo", "-o", "json"],
+        capture_output=True,
+        text=True,
+    )
+    release_healthy = (
+        status_result.returncode == 0 and '"status":"deployed"' in status_result.stdout
+    )
+
+    if release_healthy:
+        # Healthy release: upgrade in-place, keeping infra running.
         _exec(
             "helm",
             "upgrade",
@@ -327,12 +341,69 @@ def _sync(ns: argparse.Namespace):
             str(_chart_dir),
             "-f",
             str(_chart_dir / "values-k3d.yaml"),
+            "--dependency-update",
             "--reuse-values",
             *helm_args,
         )
-        _helm_wait(ns)
+        # Force-restart app deployments so they always pick up the latest
+        # configmap values (helm upgrade only restarts pods when the pod
+        # template spec changes, but values-only changes may not alter it).
+        for deploy in (
+            "michelangelo-apiserver",
+            "michelangelo-controllermgr",
+            "michelangelo-worker",
+        ):
+            subprocess.run(
+                [
+                    "kubectl",
+                    "rollout",
+                    "restart",
+                    f"deployment/{deploy}",
+                    "-n",
+                    "default",
+                ],
+                capture_output=True,
+            )
+        # Wait for the restarted rollouts to complete before proceeding.
+        for deploy in (
+            "michelangelo-apiserver",
+            "michelangelo-controllermgr",
+            "michelangelo-worker",
+        ):
+            subprocess.run(
+                [
+                    "kubectl",
+                    "rollout",
+                    "status",
+                    f"deployment/{deploy}",
+                    "-n",
+                    "default",
+                    "--timeout=300s",
+                ],
+                capture_output=False,
+            )
     else:
-        _deploy_app_services(ns)
+        # Missing or broken release: uninstall cleanly, then reinstall from scratch.
+        subprocess.run(
+            ["helm", "uninstall", "michelangelo", "--ignore-not-found", "--wait"],
+            capture_output=False,
+        )
+        # After uninstall, force-delete any remaining Services from the chart
+        # to free their NodePorts before reinstalling.
+        _helm_delete_services(helm_args)
+        _helm_adopt_orphaned_resources(helm_args)
+        _exec(
+            "helm",
+            "install",
+            "michelangelo",
+            str(_chart_dir),
+            "-f",
+            str(_chart_dir / "values-k3d.yaml"),
+            "--dependency-update",
+            *helm_args,
+        )
+
+    _helm_wait(ns)
 
 
 def _refresh_mysql_schema():
@@ -381,17 +452,183 @@ def _refresh_mysql_schema():
     )
 
 
+def _helm_ensure_repos():
+    """Add cadence and temporal helm repos if not already present."""
+    try:
+        helm_existing_repos = subprocess.check_output(["helm", "repo", "list"]).decode()
+    except subprocess.CalledProcessError:
+        helm_existing_repos = ""
+    if "cadence-workflow" not in helm_existing_repos:
+        _exec(
+            "helm",
+            "repo",
+            "add",
+            "cadence-workflow",
+            "https://cadence-workflow.github.io/cadence-charts",
+        )
+    if "temporal" not in helm_existing_repos:
+        _exec("helm", "repo", "add", "temporal", "https://go.temporal.io/helm-charts")
+
+
+def _helm_delete_services(helm_args: list[str]):
+    """Delete Services that would conflict with the chart's NodePorts.
+
+    After helm uninstall, old Services (possibly with different names from
+    a previous install structure) can still hold NodePorts. We scan all
+    Services in the cluster for conflicting NodePorts and delete them.
+    """
+    # Collect the NodePorts the chart wants to allocate.
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            "michelangelo",
+            str(_chart_dir),
+            "-f",
+            str(_chart_dir / "values-k3d.yaml"),
+            *helm_args,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    wanted_ports: set[int] = set()
+    if result.returncode == 0:
+        for doc in yaml.safe_load_all(result.stdout):
+            if not doc or doc.get("kind") != "Service":
+                continue
+            for port in (doc.get("spec") or {}).get("ports") or []:
+                if np := port.get("nodePort"):
+                    wanted_ports.add(int(np))
+
+    if not wanted_ports:
+        return
+
+    # Find any Services in the cluster using those NodePorts and delete them.
+    _jsonpath = (
+        "{range .items[*]}"
+        "{.metadata.namespace}/{.metadata.name}"
+        ":{.spec.ports[*].nodePort} {end}"
+    )
+    all_svcs = subprocess.run(
+        [
+            "kubectl",
+            "get",
+            "service",
+            "--all-namespaces",
+            "-o",
+            f"jsonpath={_jsonpath}",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    for entry in all_svcs.stdout.split():
+        if ":" not in entry:
+            continue
+        ns_name, ports_str = entry.split(":", 1)
+        namespace, name = ns_name.split("/", 1)
+        for p in ports_str.split():
+            try:
+                if int(p) in wanted_ports:
+                    print(
+                        f"[sandbox] deleting conflicting service"
+                        f" {namespace}/{name} (NodePort {p})"
+                    )
+                    subprocess.run(
+                        [
+                            "kubectl",
+                            "delete",
+                            "service",
+                            name,
+                            "-n",
+                            namespace,
+                            "--ignore-not-found=true",
+                        ],
+                        capture_output=True,
+                    )
+                    break
+            except ValueError:
+                pass
+
+
+def _helm_adopt_orphaned_resources(helm_args: list[str]):
+    """Clean up resources that would block helm upgrade --install.
+
+    Helm 3 refuses to manage resources missing its ownership annotations.
+    We render the chart manifests and for each resource that exists in the
+    cluster WITHOUT Helm ownership labels, we delete it so the install can
+    recreate it cleanly. Resources already managed by Helm (correct labels)
+    are left untouched.
+    """
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            "michelangelo",
+            str(_chart_dir),
+            "-f",
+            str(_chart_dir / "values-k3d.yaml"),
+            *helm_args,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return
+    for doc in yaml.safe_load_all(result.stdout):
+        if not doc:
+            continue
+        kind = doc.get("kind", "")
+        name = (doc.get("metadata") or {}).get("name", "")
+        namespace = (doc.get("metadata") or {}).get("namespace", "default")
+        if not kind or not name:
+            continue
+        # Check if this resource exists and lacks Helm ownership annotations.
+        get_result = subprocess.run(
+            [
+                "kubectl",
+                "get",
+                f"{kind.lower()}/{name}",
+                "-n",
+                namespace,
+                "-o",
+                "jsonpath={.metadata.annotations.meta\\.helm\\.sh/release-name}",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if get_result.returncode != 0:
+            continue  # resource doesn't exist — no action needed
+        if get_result.stdout.strip() == "michelangelo":
+            continue  # already owned by this release — leave it
+        # Resource exists but is not owned by Helm — delete it so Helm can recreate.
+        subprocess.run(
+            [
+                "kubectl",
+                "delete",
+                f"{kind.lower()}/{name}",
+                "-n",
+                namespace,
+                "--ignore-not-found=true",
+            ],
+            capture_output=True,
+        )
+
+
 def _deploy_app_services(ns: argparse.Namespace):
     """Install the Michelangelo control plane via Helm."""
     _ensure_credentials_secret()
+    _helm_ensure_repos()
     helm_args = _build_helm_set_args(ns)
+    _helm_adopt_orphaned_resources(helm_args)
     _exec(
         "helm",
-        "install",
+        "upgrade",
+        "--install",
         "michelangelo",
         str(_chart_dir),
         "-f",
         str(_chart_dir / "values-k3d.yaml"),
+        "--dependency-update",
         *helm_args,
     )
     _helm_wait(ns)
@@ -479,6 +716,10 @@ def _build_helm_set_args(ns: argparse.Namespace) -> list[str]:
     # envoy is paired with ui — disable both together
     if "ui" in getattr(ns, "exclude", []):
         args += ["--set", "envoy.enabled=false"]
+
+    # Arbitrary --set passthrough from the caller (e.g. CI workflow)
+    for kv in getattr(ns, "helm_set", []):
+        args += ["--set", kv]
 
     return args
 
