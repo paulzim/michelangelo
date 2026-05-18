@@ -27,7 +27,6 @@ _job_demo_dir = _dir / "demo" / "job"
 _job_kueue_demo_dir = _job_demo_dir / "kueue"
 
 _KUEUE_VERSION = "v0.9.1"
-_KUEUE_MANIFESTS_URL = f"https://github.com/kubernetes-sigs/kueue/releases/download/{_KUEUE_VERSION}/manifests.yaml"
 
 _michelangelo_sandbox_kube_cluster_name = "michelangelo-sandbox"
 _kube_ports = [
@@ -100,7 +99,7 @@ def init_arguments(p: argparse.ArgumentParser):
     create_p.add_argument(
         "--install-kueue",
         action="store_true",
-        help="Install Kueue for job queuing. When combined with --create-compute-cluster, sets up MultiKueue across clusters.",
+        help="Install Kueue for job queuing on the sandbox cluster.",
     )
     create_p.add_argument(
         "--compute-cluster-name",
@@ -175,9 +174,8 @@ def init_arguments(p: argparse.ArgumentParser):
     _ = job_sp.add_parser(
         "kueue",
         help=(
-            "Extend the job demo with Kueue: install Kueue on the sandbox and "
-            "both compute clusters, and wire up MultiKueue for distributed "
-            "job scheduling."
+            "Extend the job demo with Kueue: install Kueue on each compute cluster "
+            "for local quota enforcement on Ray workloads."
         ),
     )
 
@@ -625,72 +623,24 @@ def _create_bucket_setup(bucket_names):
 
 
 def _install_kueue(helm_existing_repos, links, ns):
-    """Install Kueue on the control-plane cluster via Helm and apply queue config.
-
-    When --create-compute-cluster is also set, installs Kueue on the compute
-    cluster as a MultiKueue worker and wires up MultiKueue between the two clusters.
-    """
+    """Install Kueue on the sandbox cluster via Helm."""
     _kueue_repo = "https://charts.kueue.x-k8s.io"
     if "kueue" not in helm_existing_repos:
         _exec("helm", "repo", "add", "kueue", _kueue_repo)
         _exec("helm", "repo", "update")
 
-    # Install Kueue on the control-plane (MultiKueue manager)
     _exec(
         "helm", "upgrade", "--install", "kueue", "kueue/kueue",
         "--namespace", "kueue-system",
         "--create-namespace",
+        "--version", _KUEUE_VERSION,
         "--set", "manageJobsWithoutQueueName=false",
+        "--set", "integrations.frameworks={ray.io/v1/RayCluster}",
+        "--wait",
+        "--timeout", "5m",
     )
 
-    create_compute = getattr(ns, "create_compute_cluster", False)
-    compute_cluster_name = getattr(ns, "compute_cluster_name", _default_compute_kube_cluster_name)
-    kube_compute_ctx = f"k3d-{compute_cluster_name}"
-
-    if create_compute:
-        # Apply manager-side queue config (includes MultiKueue admission check)
-        _kube_apply(_scripts_kueue_dir / "compute-0-kueue.yaml")
-
-        # Install Kueue on the compute cluster (MultiKueue worker)
-        _exec(
-            "helm", "upgrade", "--install", "kueue", "kueue/kueue",
-            "--kube-context", kube_compute_ctx,
-            "--namespace", "kueue-system",
-            "--create-namespace",
-            "--set", "manageJobsWithoutQueueName=false",
-        )
-
-        # Apply worker-side queue config
-        _exec(
-            "kubectl", "--context", kube_compute_ctx,
-            "apply", "-f", str(_scripts_kueue_dir / "compute-1-kueue.yaml"),
-        )
-
-        # Create MultiKueue kubeconfig secret on the control plane
-        compute_kubeconfig = subprocess.check_output(
-            ["k3d", "kubeconfig", "get", compute_cluster_name]
-        ).decode()
-        secret_manifest = subprocess.check_output([
-            "kubectl", "create", "secret", "generic",
-            f"multikueue-{compute_cluster_name}-kubeconfig",
-            "--from-literal", f"kubeconfig={compute_kubeconfig}",
-            "--namespace", "kueue-system",
-            "--dry-run=client", "-o", "yaml",
-        ]).decode()
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            f.write(secret_manifest)
-            secret_path = f.name
-        _exec("kubectl", "apply", "-f", secret_path)
-        import os
-        os.unlink(secret_path)
-
-        # Apply MultiKueue config (MultiKueueCluster + MultiKueueConfig + AdmissionCheck)
-        _kube_apply(_scripts_kueue_dir / "multikueue.yaml")
-
-        print(f"✅ MultiKueue configured: control-plane → {compute_cluster_name}")
-    else:
-        # Single-cluster mode: simple queue on the sandbox itself
-        _kube_apply(_scripts_kueue_dir / "compute-0-kueue.yaml")
+    _kube_apply(_scripts_kueue_dir / "compute-0-kueue.yaml")
 
     if "grafana" not in ns.exclude:
         links.append((
@@ -2082,66 +2032,23 @@ def _create_job_compute_clusters():
     print("Run 'ma sandbox demo job kueue' to add Kueue job scheduling on top.")
 
 
-def _install_kueue_on_cluster(context: str):
-    """Install Kueue on the given cluster by applying the GitHub release manifests."""
-    import urllib.request
+def _install_kueue_on_cluster(context: str, helm_existing_repos: str = ""):
+    """Install Kueue on a compute cluster via Helm with RayCluster integration enabled."""
+    _kueue_repo = "https://charts.kueue.x-k8s.io"
+    if "kueue" not in helm_existing_repos:
+        _exec("helm", "repo", "add", "kueue", _kueue_repo)
+        _exec("helm", "repo", "update")
 
-    print(f"  Downloading Kueue {_KUEUE_VERSION} manifests...")
-    with tempfile.NamedTemporaryFile(mode="wb", suffix=".yaml", delete=False) as f:
-        with urllib.request.urlopen(_KUEUE_MANIFESTS_URL) as resp:
-            f.write(resp.read())
-        manifests_path = f.name
-    try:
-        _exec(
-            "kubectl", "--context", context,
-            "apply", "--server-side", "-f", manifests_path,
-        )
-    finally:
-        import os as _os
-        _os.unlink(manifests_path)
-
-    # Wait for all Kueue CRDs to be established before callers apply queue config
-    for crd in [
-        "resourceflavors.kueue.x-k8s.io",
-        "clusterqueues.kueue.x-k8s.io",
-        "localqueues.kueue.x-k8s.io",
-    ]:
-        _exec(
-            "kubectl", "--context", context,
-            "wait", "--for=condition=established",
-            f"crd/{crd}",
-            "--timeout=120s",
-        )
-
-    # The kube-rbac-proxy sidecar in Kueue v0.9.x uses gcr.io/kubebuilder images that
-    # are no longer available. Remove it — the sandbox demo only needs the main manager.
-    import json as _json
-    try:
-        containers = subprocess.check_output([
-            "kubectl", "--context", context,
-            "get", "deployment", "kueue-controller-manager",
-            "-n", "kueue-system",
-            "-o", "jsonpath={range .spec.template.spec.containers[*]}{.name}{'\\n'}{end}",
-        ], stderr=subprocess.DEVNULL).decode().strip().splitlines()
-        if "kube-rbac-proxy" in containers:
-            idx = containers.index("kube-rbac-proxy")
-            patch = _json.dumps([{"op": "remove", "path": f"/spec/template/spec/containers/{idx}"}])
-            _exec(
-                "kubectl", "--context", context,
-                "patch", "deployment", "kueue-controller-manager",
-                "-n", "kueue-system",
-                "--type=json", f"-p={patch}",
-            )
-    except subprocess.CalledProcessError:
-        pass
-
-    # Wait for the controller-manager (and its webhook) to be ready
     _exec(
-        "kubectl", "--context", context,
-        "wait", "--for=condition=available",
-        "deployment/kueue-controller-manager",
-        "-n", "kueue-system",
-        "--timeout=120s",
+        "helm", "upgrade", "--install", "kueue", "kueue/kueue",
+        "--kube-context", context,
+        "--namespace", "kueue-system",
+        "--create-namespace",
+        "--version", _KUEUE_VERSION,
+        "--set", "manageJobsWithoutQueueName=false",
+        "--set", "integrations.frameworks={ray.io/v1/RayCluster}",
+        "--wait",
+        "--timeout", "5m",
     )
 
 
@@ -2150,19 +2057,22 @@ def _create_job_demo_crs():
 
     Assumes _create_job_compute_clusters() has already run (or clusters already exist).
     After this runs:
-    - Kueue is installed on each compute cluster with a ClusterQueue + LocalQueue
-    - MA job controller routes jobs directly to a compute cluster via Cluster CRs
-    - Local Kueue on each cluster enforces quota
-    - Set KUEUE_QUEUE_NAME=user-queue in michelangelo-config to enable queuing.
+    - Kueue is installed on each compute cluster with RayCluster integration enabled
+    - A ClusterQueue 'cluster-queue' and LocalQueue 'user-queue' exist on each cluster
+    - Set KUEUE_QUEUE_NAME=user-queue in michelangelo-config to enable queuing
     """
-    # Ensure compute clusters exist first
     _create_job_compute_clusters()
+
+    try:
+        helm_existing_repos = subprocess.check_output(["helm", "repo", "list"]).decode()
+    except subprocess.CalledProcessError:
+        helm_existing_repos = ""
 
     cluster_names = [name for name, _ in _demo_compute_clusters]
 
     for cluster_name, kueue_yaml in _demo_compute_clusters:
-        print(f"\n  📦 Installing Kueue on {cluster_name}...")
-        _install_kueue_on_cluster(f"k3d-{cluster_name}")
+        print(f"\n📦 Installing Kueue on {cluster_name}...")
+        _install_kueue_on_cluster(f"k3d-{cluster_name}", helm_existing_repos)
         _exec(
             "kubectl", "--context", f"k3d-{cluster_name}",
             "apply", "-f", str(kueue_yaml),
@@ -2172,11 +2082,8 @@ def _create_job_demo_crs():
     print("📋 What was set up:")
     print(f"  • Kueue installed on: {', '.join(cluster_names)}")
     print("  • Each cluster has a ClusterQueue 'cluster-queue' and LocalQueue 'user-queue'")
-    print("  • Set KUEUE_QUEUE_NAME=user-queue in michelangelo-config to enable job queuing")
-
-
-
-def _create_pipeline_demo_crs():
+    print("  • RayCluster integration enabled — queue label is enforced on Ray workloads")
+    print("  • Set KUEUE_QUEUE_NAME=user-queue in michelangelo-config to enable queuing")
     """Create a pipeline demo for the sandbox cluster for demo purposes."""
     pipeline_demo_dir = _dir / "demo" / "pipeline"
     for yaml_file in pipeline_demo_dir.glob("*.yaml"):

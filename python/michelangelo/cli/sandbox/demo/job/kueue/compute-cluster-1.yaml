@@ -1,14 +1,14 @@
-# Kueue worker queue configuration for michelangelo-compute-1.
-# Applied to the compute-1 cluster when running: ma sandbox demo job kueue
-# No AdmissionCheck — jobs arrive via MultiKueue from the sandbox manager.
+# Kueue queue configuration applied to michelangelo-compute-1.
+# Each compute cluster enforces its own quota independently (no MultiKueue).
+# Jobs with label kueue.x-k8s.io/queue-name=user-queue are admitted here.
 ---
-apiVersion: kueue.x-k8s.io/v1beta1
+apiVersion: kueue.x-k8s.io/v1beta2
 kind: ResourceFlavor
 metadata:
   name: default-flavor
 spec: {}
 ---
-apiVersion: kueue.x-k8s.io/v1beta1
+apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
 metadata:
   name: cluster-queue
@@ -25,7 +25,7 @@ spec:
       - name: memory
         nominalQuota: 8Gi
 ---
-apiVersion: kueue.x-k8s.io/v1beta1
+apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue
 metadata:
   name: user-queue
