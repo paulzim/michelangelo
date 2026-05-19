@@ -180,6 +180,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 //   - done=true: TTL has elapsed; annotation was set (or was already set).
 //   - done=false: TTL has not elapsed yet; caller should requeue after requeueAfter.
 func (r *Reconciler) markImmutableIfExpired(ctx context.Context, logger *zap.Logger, pipelineRun *v2pb.PipelineRun) (time.Duration, bool) {
+	// TTLDays == 0 means eviction is disabled.
+	if r.config.TTLDays == 0 {
+		return 0, true
+	}
+
 	var lastUpdate time.Time
 	if endTime := pipelineRun.Status.GetEndTime(); endTime != nil {
 		lastUpdate = time.Unix(endTime.Seconds, int64(endTime.Nanos))
