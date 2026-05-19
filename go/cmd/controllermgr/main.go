@@ -15,9 +15,9 @@ import (
 	"github.com/michelangelo-ai/michelangelo/go/base/env"
 	"github.com/michelangelo-ai/michelangelo/go/base/workflowclient"
 	"github.com/michelangelo-ai/michelangelo/go/base/zapfx"
+	"github.com/michelangelo-ai/michelangelo/go/components/common/routing/gatewayapi"
 	"github.com/michelangelo-ai/michelangelo/go/components/deployment"
 	deploymentOSSPlugin "github.com/michelangelo-ai/michelangelo/go/components/deployment/plugins/oss"
-	"github.com/michelangelo-ai/michelangelo/go/components/deployment/route"
 	"github.com/michelangelo-ai/michelangelo/go/components/inferenceserver"
 	"github.com/michelangelo-ai/michelangelo/go/components/inferenceserver/backends"
 	"github.com/michelangelo-ai/michelangelo/go/components/inferenceserver/modelconfig"
@@ -102,11 +102,11 @@ func options() fx.Option {
 		pipeline.Module,
 		pipelinerun.Module,
 		controllermgr.Module,
-		route.Module,
 		deploymentOSSPlugin.Module,
 		deployment.Module,
 		backends.Module,
 		modelconfig.Module,
+		gatewayapi.Module,
 		inferenceserverOSSPlugin.Module,
 		inferenceserver.Module,
 		scheduler.Module,

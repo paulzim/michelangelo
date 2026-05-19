@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "go_default_library",
     srcs = [
+        "discovery_routing_actor.go",
         "model_cleanup_actor.go",
         "rolling_rollout_actor.go",
         "traffic_routing_actor.go",
@@ -12,15 +13,15 @@ go_library(
     deps = [
         "//go/base/conditions/interfaces:go_default_library",
         "//go/base/conditions/utils:go_default_library",
+        "//go/components/common/routing:go_default_library",
         "//go/components/deployment/plugins/oss/common:go_default_library",
-        "//go/components/deployment/route:go_default_library",
         "//go/components/inferenceserver/backends:go_default_library",
         "//go/components/inferenceserver/clientfactory:go_default_library",
+        "//go/components/inferenceserver/common/routenames:go_default_library",
         "//go/components/inferenceserver/modelconfig:go_default_library",
         "//proto/api:go_default_library",
         "//proto/api/v2:go_default_library",
         "@io_k8s_client_go//dynamic:go_default_library",
-        "@io_k8s_sigs_controller_runtime//pkg/client:go_default_library",
         "@org_uber_go_zap//:go_default_library",
     ],
 )
@@ -28,17 +29,20 @@ go_library(
 go_test(
     name = "go_default_test",
     srcs = [
+        "discovery_routing_actor_test.go",
         "model_cleanup_actor_test.go",
         "rolling_rollout_actor_test.go",
         "traffic_routing_actor_test.go",
     ],
     embed = [":go_default_library"],
     deps = [
+        "//go/components/common/routing:go_default_library",
+        "//go/components/common/routing/routingmocks:go_default_library",
         "//go/components/deployment/plugins/oss/common:go_default_library",
-        "//go/components/deployment/route/routemocks:go_default_library",
         "//go/components/inferenceserver/backends:go_default_library",
         "//go/components/inferenceserver/backends/backendsmocks:go_default_library",
         "//go/components/inferenceserver/clientfactory/clientfactorymocks:go_default_library",
+        "//go/components/inferenceserver/common/routenames:go_default_library",
         "//go/components/inferenceserver/modelconfig:go_default_library",
         "//go/components/inferenceserver/modelconfig/modelconfigmocks:go_default_library",
         "//proto/api:go_default_library",
