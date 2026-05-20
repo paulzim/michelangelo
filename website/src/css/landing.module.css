@@ -28,27 +28,23 @@
 }
 
 .gradientBlob1 {
-  width: 600px;
-  height: 600px;
-  background: var(--landing-gradient-1);
-  top: -200px;
-  left: -100px;
+  width: 800px;
+  height: 400px;
+  background: radial-gradient(ellipse at center, rgba(39, 110, 241, 0.2) 0%, transparent 70%);
+  top: -100px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 1;
 }
 
 .gradientBlob2 {
-  width: 500px;
-  height: 500px;
-  background: var(--landing-gradient-2);
-  top: 200px;
-  right: -150px;
+  display: none;
 }
 
 .gradientBlob3 {
-  width: 400px;
-  height: 400px;
-  background: var(--landing-gradient-3);
-  bottom: -100px;
-  left: 30%;
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -61,6 +57,7 @@
 
 /* Hero Section */
 .hero {
+  background: #000000;
   min-height: calc(100vh - 60px);
   display: flex;
   align-items: center;
@@ -103,14 +100,14 @@
 
 .heroSubtitle {
   font-size: clamp(1.1rem, 3vw, 1.5rem);
-  color: var(--ifm-font-color-secondary);
+  color: rgba(255, 255, 255, 0.75);
   margin-bottom: 2rem;
   line-height: 1.5;
 }
 
 .heroTagline {
   font-size: clamp(1rem, 2.5vw, 1.25rem);
-  color: var(--ifm-font-color-secondary);
+  color: rgba(255, 255, 255, 0.6);
   margin-bottom: 3rem;
   min-height: 2em;
 }
@@ -160,11 +157,7 @@
   font-size: 1.1rem;
   font-weight: 600;
   color: #ffffff;
-  background: linear-gradient(
-    135deg,
-    var(--landing-gradient-text-1),
-    var(--landing-gradient-text-2)
-  );
+  background: #276ef1;
   border-radius: 8px;
   text-decoration: none;
   transition:
@@ -174,7 +167,7 @@
 
 .ctaPrimary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(39, 110, 241, 0.3);
+  box-shadow: 0 8px 25px rgba(39, 110, 241, 0.4);
   color: #ffffff;
   text-decoration: none;
 }
@@ -186,9 +179,9 @@
   padding: 0.875rem 2rem;
   font-size: 1.1rem;
   font-weight: 600;
-  color: var(--ifm-font-color-base);
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid var(--ifm-color-emphasis-300);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
   text-decoration: none;
   transition:
@@ -198,15 +191,15 @@
 
 .ctaSecondary:hover {
   transform: translateY(-2px);
-  background: rgba(255, 255, 255, 0.15);
-  color: var(--ifm-font-color-base);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
   text-decoration: none;
 }
 
 /* Features Section */
 .features {
   padding: 6rem 2rem;
-  background: var(--ifm-background-surface-color);
+  background: #0a0a0a;
 }
 
 .featuresContainer {
@@ -219,7 +212,7 @@
   font-weight: 700;
   text-align: center;
   margin-bottom: 4rem;
-  color: var(--ifm-font-color-base);
+  color: #ffffff;
 }
 
 .featuresGrid {
@@ -230,8 +223,8 @@
 
 .featureCard {
   padding: 2rem;
-  background: var(--ifm-background-color);
-  border: 1px solid var(--ifm-color-emphasis-200);
+  background: #111111;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   opacity: 0;
   transform: translateY(30px);
@@ -247,8 +240,8 @@
 }
 
 .featureCard:hover {
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
-  border-color: var(--landing-accent);
+  box-shadow: 0 10px 40px rgba(39, 110, 241, 0.2);
+  border-color: #276ef1;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -266,31 +259,29 @@
   width: 56px;
   height: 56px;
   margin-bottom: 1.25rem;
-  background: linear-gradient(
-    135deg,
-    var(--landing-gradient-text-1),
-    var(--landing-gradient-text-2)
-  );
+  background: rgba(39, 110, 241, 0.15);
+  border: 1px solid rgba(39, 110, 241, 0.3);
   border-radius: 12px;
-  color: #ffffff;
+  color: #276ef1;
 }
 
 .featureTitle {
   font-size: 1.25rem;
   font-weight: 600;
   margin-bottom: 0.75rem;
-  color: var(--ifm-font-color-base);
+  color: #ffffff;
 }
 
 .featureDescription {
   font-size: 0.95rem;
   line-height: 1.6;
-  color: var(--ifm-font-color-secondary);
+  color: rgba(255, 255, 255, 0.65);
   margin: 0;
 }
 
 /* Code Example Section */
 .codeExample {
+  background: #000000;
   padding: 6rem 2rem;
 }
 
@@ -304,13 +295,13 @@
   font-weight: 700;
   text-align: center;
   margin-bottom: 0.75rem;
-  color: var(--ifm-font-color-base);
+  color: #ffffff;
 }
 
 .codeExampleSubtitle {
   font-size: 1.1rem;
   text-align: center;
-  color: var(--ifm-font-color-secondary);
+  color: rgba(255, 255, 255, 0.65);
   margin-bottom: 3rem;
 }
 
