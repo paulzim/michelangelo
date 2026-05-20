@@ -2,6 +2,7 @@ import { CellType } from '#core/components/cell/constants';
 import { TASK_STATE } from '#core/components/views/execution/constants';
 import {
   DEPLOYMENT_CONDITION_STATUS,
+  DEPLOYMENT_STAGE,
   DEPLOYMENT_STAGE_CELL,
   DEPLOYMENT_STATE_CELL,
 } from './shared';
@@ -26,7 +27,15 @@ export const DEPLOYMENT_DETAIL_CONFIG: DetailViewConfig = {
         description: 'Stages will appear here when a deployment rollout is in progress',
       },
       tasks: {
-        accessor: 'status.conditions',
+        accessor: (data: {
+          status?: { stage?: number; conditions?: object[]; conditionsSnapshot?: object[] };
+        }) => {
+          const conditions =
+            data?.status?.stage === DEPLOYMENT_STAGE.ROLLOUT_FAILED
+              ? data?.status?.conditionsSnapshot
+              : data?.status?.conditions;
+          return conditions ?? [];
+        },
         header: {
           heading: 'type',
           metadata: [
