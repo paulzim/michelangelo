@@ -75,7 +75,7 @@ The InferenceServer controller creates/deletes the model config, while the Deplo
 
 The `RouteProvider` manages traffic routing to deployed models.
 
-**Interface:** [`go/components/deployment/route/interface.go`](../../../go/components/deployment/route/interface.go)
+**Interface:** [`go/components/deployment/route/interface.go`](https://github.com/michelangelo-ai/michelangelo/blob/main/go/components/deployment/route/interface.go)
 
 ```go
 type RouteProvider interface {
@@ -86,7 +86,7 @@ type RouteProvider interface {
 }
 ```
 
-**Reference Implementation:** [`go/components/deployment/route/httproute.go`](../../../go/components/deployment/route/httproute.go)
+**Reference Implementation:** [`go/components/deployment/route/httproute.go`](https://github.com/michelangelo-ai/michelangelo/blob/main/go/components/deployment/route/httproute.go)
 
 ### Default Behavior
 
