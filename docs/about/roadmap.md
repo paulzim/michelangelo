@@ -5,7 +5,7 @@ sidebar_label: "Roadmap"
 
 # Roadmap
 
-Michelangelo is under active development. This page captures the current state of the platform and the direction we're headed — it is intentionally not a detailed spec or a delivery commitment. Things will shift as priorities evolve and the community gives feedback.
+Michelangelo is under active development. This page captures the current state of the platform and the direction we're headed. Things will shift as priorities evolve and the community gives feedback.
 
 ## Available Now
 
@@ -73,7 +73,7 @@ These features are actively being built and will land in upcoming releases.
 
 ## On the Radar
 
-These are areas we expect Michelangelo to grow into. None of them are committed features yet — they signal direction, not a fixed schedule.
+These are planned enhancencements that we are working towards adding down the road.
 
 **Generative AI & LLM**
 - GenAI service deployment: first-class support for deploying and managing LLM-backed services within the Michelangelo lifecycle.
