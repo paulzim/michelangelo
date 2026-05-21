@@ -229,13 +229,13 @@ class TestPusherPluginConfigPostInit(TestCase):
     """Tests for PusherPluginConfig.__post_init__ paired validation."""
 
     def test_raises_when_plugin_name_set_without_plugin_config(self):
-        """It raises ConfigurationError when plugin_name is set but plugin_config is None."""
+        """It raises when plugin_name is set but plugin_config is None."""
         with self.assertRaises(ConfigurationError) as ctx:
             PusherPluginConfig(name="x", plugin_name="hive_plugin")
         self.assertIn("plugin_name and plugin_config", str(ctx.exception))
 
     def test_raises_when_plugin_config_set_without_plugin_name(self):
-        """It raises ConfigurationError when plugin_config is set but plugin_name is None."""
+        """It raises when plugin_config is set but plugin_name is None."""
         with self.assertRaises(ConfigurationError) as ctx:
             PusherPluginConfig(name="x", plugin_config={"table": "ml_runs"})
         self.assertIn("plugin_name and plugin_config", str(ctx.exception))
@@ -260,7 +260,7 @@ class TestResolvedPluginConfigExtensionPluginMissingConfig(TestCase):
     """Tests for resolved_plugin_config() when plugin_config is not provided."""
 
     def test_raises_when_extension_plugin_config_is_none(self):
-        """It raises ConfigurationError (not silently return None) for extension plugins."""
+        """It raises ConfigurationError (not None) when plugin_config is missing."""
         # __post_init__ enforces the pair, so we must bypass it to test B1 directly.
         cfg = PusherPluginConfig(
             name="x",
