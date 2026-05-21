@@ -14,6 +14,15 @@ from typing import Any, ClassVar
 
 from michelangelo.workflow.schema.exceptions import ConfigurationError
 
+__all__ = [
+    "DatasetFormat",
+    "DatasetPluginConfig",
+    "EvalReportPluginConfig",
+    "ModelPluginConfig",
+    "PusherConfig",
+    "PusherPluginConfig",
+]
+
 
 class DatasetFormat(Enum):
     """Supported output formats for ``DatasetPusherPlugin``.
@@ -262,9 +271,12 @@ class PusherConfig:
 
     def __post_init__(self) -> None:
         """Validate that artifact names within the config are unique."""
-        names = [item.name for item in self.items]
         seen: set[str] = set()
-        dupes = [n for n in names if n in seen or seen.add(n)]  # type: ignore[func-returns-value]
+        dupes: list[str] = []
+        for n in (item.name for item in self.items):
+            if n in seen:
+                dupes.append(n)
+            seen.add(n)
         if dupes:
             raise ConfigurationError(
                 f"Duplicate artifact names in PusherConfig: {sorted(set(dupes))}. "

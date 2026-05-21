@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest import TestCase
 
-from michelangelo.workflow.tasks.pusher.exceptions import ConfigurationError
+from michelangelo.workflow.schema.exceptions import ConfigurationError
 from michelangelo.workflow.tasks.pusher.registry import PluginRegistry, default_registry
 
 

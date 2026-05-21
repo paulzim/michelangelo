@@ -100,3 +100,18 @@ class TestPusherPluginError(TestCase):
             raise PusherPluginError("art", "plug") from original
         except PusherPluginError as e:
             self.assertIs(e.__cause__, original)
+
+
+class TestExceptionsShimIdentity(TestCase):
+    """Tests that pusher/exceptions.py re-exports ConfigurationError correctly."""
+
+    def test_configuration_error_is_same_object_as_schema(self):
+        """ConfigurationError re-exported from shim is identical to schema class."""
+        from michelangelo.workflow.schema.exceptions import (
+            ConfigurationError as SchemaConfigurationError,
+        )
+        from michelangelo.workflow.tasks.pusher.exceptions import (
+            ConfigurationError as ShimConfigurationError,
+        )
+
+        self.assertIs(ShimConfigurationError, SchemaConfigurationError)

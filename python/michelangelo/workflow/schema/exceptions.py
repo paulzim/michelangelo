@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__all__ = ["ConfigurationError"]
+
 
 class ConfigurationError(Exception):
     """Raised when a workflow task config dataclass fails validation.
@@ -10,9 +12,12 @@ class ConfigurationError(Exception):
     ``PusherPluginConfig``, ``PusherConfig``) and by resolved-name/config
     helpers when the configuration is ambiguous or incomplete.
 
-    This exception is intentionally defined at the schema layer rather than
-    inside a specific task package so that ``workflow/schema/`` remains
-    independent of any task implementation.
+    This exception is defined at the schema layer and is intentionally *not*
+    a subclass of ``PusherError``. Configuration errors occur at construction
+    time, before any push execution begins. Callers that previously caught
+    ``PusherError`` to handle all pusher-related failures should also catch
+    ``ConfigurationError`` separately if they construct config objects inside
+    the same ``try`` block.
 
     Args:
         message: Human-readable description of the configuration problem.
