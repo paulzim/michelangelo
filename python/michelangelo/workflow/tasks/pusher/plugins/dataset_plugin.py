@@ -89,11 +89,26 @@ class DatasetPusherPlugin(PusherPluginBase):
             )
 
     def execute(self) -> dict[str, Any]:
-        """Convert the artifact to pandas and write to the configured destination.
+        """Write the dataset artifact to the configured destination path.
 
-        Calls ``artifact.to_pandas()`` to obtain a ``pandas.DataFrame``, then
-        writes it to disk. The output file is named ``data.<format>`` inside
-        ``destination_path``, which is created if absent.
+        In this Phase 1 implementation the plugin calls ``artifact.to_pandas()``
+        to materialise the data before writing to a local file. This is the
+        correct path for the built-in ``LocalFileSink`` (development / small
+        data use cases). **It is not appropriate for large-scale Spark datasets.**
+
+        In PR4, ``execute()`` will delegate directly to each ``DataSink`` via
+        ``sink.write(artifact)`` — passing the ``DatasetArtifact`` in full so
+        that each sink can choose the most efficient extraction path:
+
+        - ``LocalFileSink.write(artifact)`` → calls ``artifact.to_pandas()``
+        - ``UberHiveSink.write(artifact)`` → accesses ``artifact.value`` as a
+          native Spark DataFrame and calls ``save_data_sink()`` directly,
+          **without collecting to the driver**
+        - ``S3Sink.write(artifact)`` → uses native Ray/Spark write-to-S3 if
+          available, falls back to ``artifact.to_pandas()`` otherwise
+
+        This mirrors the internal implementation:
+        ``for sink in config.sinks: save_data_sink(sink, var.value)``.
 
         Returns:
             A dict with exactly three keys:
@@ -108,6 +123,8 @@ class DatasetPusherPlugin(PusherPluginBase):
             IOError: If the destination path is not writable.
             TypeError: If the artifact value cannot be converted to pandas.
         """
+        # PR3: materialise to pandas for local file writes.
+        # PR4: this line moves inside LocalFileSink.write(artifact).
         df = self._artifact.to_pandas()
         dest = self._config.destination_path
         fmt = self._config.format
