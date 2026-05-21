@@ -7,6 +7,26 @@ sidebar_label: "Roadmap"
 
 Michelangelo is under active development. This page captures the current state of the platform and the direction we're headed. Things will shift as priorities evolve and the community gives feedback.
 
+## Release Milestones
+
+The OSS release is staged so each version makes a specific, scoped promise rather than trying to be everything at once.
+
+| Version | Target | Focus |
+|---|---|---|
+| **0.1.2** | June 2026 | Core pipeline platform — UniFlow, Ray, pipeline and run management, MA CLI and Studio |
+| **1.0** | July 2026 | End-to-end LLM model management — fine-tuning, model registry, progressive serving, full lineage |
+| **1.1** | Q3 2026 | Agent + LLM Gateway — K8s-native containerized agent jobs, deployment-aware LLM routing |
+
+## Versioning Policy
+
+Michelangelo follows [Semantic Versioning 2.0.0](https://semver.org/) with stability declared per component, not per repository.
+
+| Tier | Guarantee |
+|---|---|
+| **stable** | Backwards-compatible across all minor and patch versions within a major. Breaking changes only at the next major. |
+| **beta** | API may change between minor versions. Migration notes required in CHANGELOG. Breaking changes called out explicitly. |
+| **alpha** | Anything goes. Use for experiments and previews. May be removed without deprecation notice. |
+
 ## Available Now
 
 These capabilities are shipped and available in the current release.
