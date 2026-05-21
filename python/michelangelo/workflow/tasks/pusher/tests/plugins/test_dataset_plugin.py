@@ -40,13 +40,13 @@ class TestDatasetPusherPluginInit(TestCase):
     """Tests for DatasetPusherPlugin.__init__() validation."""
 
     def test_raises_when_destination_path_none(self):
-        """It raises ConfigurationError when destination_path is None."""
+        """It raises ConfigurationError when neither destination_path nor sinks is set."""
         with self.assertRaises(ConfigurationError) as ctx:
             DatasetPusherPlugin(
                 config=DatasetPluginConfig(destination_path=None),
                 artifact=[],
             )
-        self.assertIn("destination_path", str(ctx.exception))
+        self.assertIn("destination", str(ctx.exception))
 
 
 class TestDatasetPusherPluginExecute(TestCase):

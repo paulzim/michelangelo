@@ -1,4 +1,12 @@
-"""DatasetPusherPlugin — writes a dataset to a local file sink."""
+"""DatasetPusherPlugin — writes a dataset to one or more configured sinks.
+
+In Phase 1 (this PR) the plugin writes to a local file via ``destination_path``.
+In PR4 this is superseded by a pluggable ``DataSink`` abstraction (see
+``michelangelo.workflow.schema.data_sink``) that allows provider layers such
+as Uber to extend with ``UberHiveSink``, ``UberTerrablobSink``, and the
+community to add ``S3Sink``, ``GCSSink``, ``BigQuerySink``, etc. without
+modifying this plugin.
+"""
 
 from __future__ import annotations
 
@@ -20,23 +28,24 @@ class DatasetPusherPlugin(PusherPluginBase):
     the ``destination_path`` specified in the config. Supported formats: CSV,
     Parquet, and JSON Lines.
 
-    ``destination_path`` must not be ``None`` — it is validated at construction
-    time so that missing config is caught with an actionable error rather than
-    a ``FileNotFoundError`` deep in the write path.
-
-    Provider layers that need Spark or remote sinks should subclass this plugin
-    and override ``execute()`` to call their own sink function.
+    **Extension path (PR4):** ``DatasetPluginConfig`` will gain a
+    ``sinks: list[DataSink]`` field. Provider layers (Uber, community) supply
+    their own ``DataSink`` implementations — ``UberHiveSink``,
+    ``UberTerrablobSink``, ``S3Sink``, etc. — without subclassing this plugin.
+    The ``destination_path`` shorthand will auto-create a ``LocalFileSink``
+    for backwards compatibility.
 
     Args:
         config: ``DatasetPluginConfig`` specifying ``destination_path``,
             ``format``, and optional ``partition_by`` columns.
         artifact: A ``list[dict[str, Any]]`` representing the dataset records.
         storage_backend: Unused by this built-in implementation. Available for
-            subclasses that add a remote upload step after writing.
+            provider sink subclasses that compose with a StorageBackend.
         registry_client: Unused by this built-in implementation.
 
     Raises:
-        ConfigurationError: If ``config.destination_path`` is ``None``.
+        ConfigurationError: If neither ``destination_path`` nor ``sinks`` is
+            set (PR4 will use ``sinks``; PR3 requires ``destination_path``).
 
     Example::
 
@@ -58,12 +67,16 @@ class DatasetPusherPlugin(PusherPluginBase):
         storage_backend: Any = None,
         registry_client: Any = None,
     ) -> None:
-        """Validate destination_path then store dependencies."""
+        """Validate that a write destination is configured, then store dependencies."""
         super().__init__(config, artifact, storage_backend, registry_client)
-        if config.destination_path is None:
+        # PR4 will add config.sinks — validate the combined state so that
+        # introducing sinks does not require changing this guard.
+        has_sinks = bool(getattr(config, "sinks", []))
+        if not has_sinks and config.destination_path is None:
             raise ConfigurationError(
-                "DatasetPusherPlugin requires destination_path to be set. "
-                "Pass a local directory path in DatasetPluginConfig.destination_path."
+                "DatasetPusherPlugin requires a destination. "
+                "Set DatasetPluginConfig(destination_path=...) or, in PR4+, "
+                "pass an explicit sinks=[LocalFileSink(...)] list."
             )
 
     def execute(self) -> dict[str, Any]:
