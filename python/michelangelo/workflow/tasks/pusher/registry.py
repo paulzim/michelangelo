@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+# Guard avoids circular import: plugins.base imports PluginRegistry at runtime.
 if TYPE_CHECKING:
     from michelangelo.workflow.tasks.pusher.plugins.base import PusherPluginBase
 

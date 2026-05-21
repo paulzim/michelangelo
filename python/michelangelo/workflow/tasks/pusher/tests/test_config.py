@@ -58,9 +58,9 @@ class TestDatasetPluginConfig(TestCase):
     """Tests for DatasetPluginConfig defaults and field storage."""
 
     def test_defaults(self):
-        """It defaults destination_path to empty string, format to PARQUET."""
+        """It defaults destination_path to None, format to PARQUET."""
         cfg = DatasetPluginConfig()
-        self.assertEqual(cfg.destination_path, "")
+        self.assertIsNone(cfg.destination_path)
         self.assertEqual(cfg.format, DatasetFormat.PARQUET)
         self.assertEqual(cfg.partition_by, [])
 
@@ -141,6 +141,7 @@ class TestPusherPluginConfigResolvedPluginName(TestCase):
             name="m",
             model_plugin=ModelPluginConfig(),
             plugin_name="custom",
+            plugin_config={"key": "val"},
         )
         with self.assertRaises(ConfigurationError) as ctx:
             cfg.resolved_plugin_name()
@@ -207,3 +208,67 @@ class TestPusherConfig(TestCase):
         cfg = PusherConfig(items=[item])
         self.assertEqual(len(cfg.items), 1)
         self.assertEqual(cfg.items[0].name, "m")
+
+    def test_raises_on_duplicate_artifact_names(self):
+        """It raises ConfigurationError when two items share the same name."""
+        item_a = PusherPluginConfig(name="model", model_plugin=ModelPluginConfig())
+        item_b = PusherPluginConfig(name="model", model_plugin=ModelPluginConfig())
+        with self.assertRaises(ConfigurationError) as ctx:
+            PusherConfig(items=[item_a, item_b])
+        self.assertIn("model", str(ctx.exception))
+
+    def test_accepts_items_with_unique_names(self):
+        """It does not raise when all artifact names are unique."""
+        a = PusherPluginConfig(name="m", model_plugin=ModelPluginConfig())
+        b = PusherPluginConfig(name="d", dataset_plugin=DatasetPluginConfig())
+        cfg = PusherConfig(items=[a, b])
+        self.assertEqual(len(cfg.items), 2)
+
+
+class TestPusherPluginConfigPostInit(TestCase):
+    """Tests for PusherPluginConfig.__post_init__ paired validation."""
+
+    def test_raises_when_plugin_name_set_without_plugin_config(self):
+        """It raises ConfigurationError when plugin_name is set but plugin_config is None."""
+        with self.assertRaises(ConfigurationError) as ctx:
+            PusherPluginConfig(name="x", plugin_name="hive_plugin")
+        self.assertIn("plugin_name and plugin_config", str(ctx.exception))
+
+    def test_raises_when_plugin_config_set_without_plugin_name(self):
+        """It raises ConfigurationError when plugin_config is set but plugin_name is None."""
+        with self.assertRaises(ConfigurationError) as ctx:
+            PusherPluginConfig(name="x", plugin_config={"table": "ml_runs"})
+        self.assertIn("plugin_name and plugin_config", str(ctx.exception))
+
+    def test_accepts_both_plugin_name_and_plugin_config(self):
+        """It does not raise when both plugin_name and plugin_config are set."""
+        cfg = PusherPluginConfig(
+            name="x",
+            plugin_name="hive_plugin",
+            plugin_config={"table": "ml_runs"},
+        )
+        self.assertEqual(cfg.plugin_name, "hive_plugin")
+
+    def test_accepts_neither_plugin_name_nor_plugin_config(self):
+        """It does not raise when both plugin_name and plugin_config are None."""
+        cfg = PusherPluginConfig(name="x", model_plugin=ModelPluginConfig())
+        self.assertIsNone(cfg.plugin_name)
+        self.assertIsNone(cfg.plugin_config)
+
+
+class TestResolvedPluginConfigExtensionPluginMissingConfig(TestCase):
+    """Tests for resolved_plugin_config() when plugin_config is not provided."""
+
+    def test_raises_when_extension_plugin_config_is_none(self):
+        """It raises ConfigurationError (not silently return None) for extension plugins."""
+        # __post_init__ enforces the pair, so we must bypass it to test B1 directly.
+        cfg = PusherPluginConfig(
+            name="x",
+            plugin_name="hive_plugin",
+            plugin_config={"table": "ml"},
+        )
+        # Simulate misconfiguration by nulling plugin_config after construction.
+        cfg.plugin_config = None
+        with self.assertRaises(ConfigurationError) as ctx:
+            cfg.resolved_plugin_config()
+        self.assertIn("plugin_config is None", str(ctx.exception))

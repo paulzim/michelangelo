@@ -37,7 +37,12 @@ class ModelPluginConfig:
         description: Optional human-readable description stored in the
             registry alongside the model.
         extra_metadata: Additional string key-value pairs forwarded to
-            the registry at registration time.
+            the registry at registration time as free-form tags (e.g.
+            ``{"team": "pricing", "region": "us-east"}``). These are
+            push-time registry labels and are separate from
+            ``ModelArtifact.metadata``, which carries typed artifact
+            properties (framework, deployable flag, etc.) set by the
+            assembler.
 
     Example:
         >>> cfg = ModelPluginConfig(model_name="boston-xgb")
@@ -70,7 +75,7 @@ class DatasetPluginConfig:
         <DatasetFormat.PARQUET: 'parquet'>
     """
 
-    destination_path: str = ""
+    destination_path: str | None = None
     format: DatasetFormat = DatasetFormat.PARQUET
     partition_by: list[str] = field(default_factory=list)
 
@@ -140,6 +145,16 @@ class PusherPluginConfig:
         "eval_report_plugin",
     )
 
+    def __post_init__(self) -> None:
+        """Validate that plugin_name and plugin_config are set together."""
+        has_name = self.plugin_name is not None
+        has_cfg = self.plugin_config is not None
+        if has_name != has_cfg:
+            raise ConfigurationError(
+                f"Artifact '{self.name}': plugin_name and plugin_config must "
+                "both be set or both be None."
+            )
+
     def resolved_plugin_name(self) -> str:
         """Return the name of the active plugin.
 
@@ -208,7 +223,14 @@ class PusherPluginConfig:
         """
         plugin = self.resolved_plugin_name()
         typed = getattr(self, plugin, None)
-        return typed if typed is not None else self.plugin_config
+        if typed is not None:
+            return typed
+        if self.plugin_config is not None:
+            return self.plugin_config
+        raise ConfigurationError(
+            f"Artifact '{self.name}': plugin_name='{self.plugin_name}' is set "
+            "but plugin_config is None. Provide a config dict via plugin_config."
+        )
 
 
 @dataclass
@@ -231,3 +253,14 @@ class PusherConfig:
     """
 
     items: list[PusherPluginConfig] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Validate that artifact names within the config are unique."""
+        names = [item.name for item in self.items]
+        seen: set[str] = set()
+        dupes = [n for n in names if n in seen or seen.add(n)]  # type: ignore[func-returns-value]
+        if dupes:
+            raise ConfigurationError(
+                f"Duplicate artifact names in PusherConfig: {sorted(set(dupes))}. "
+                "Each artifact name must be unique."
+            )
