@@ -13,10 +13,10 @@ These capabilities are shipped and available in the current release.
 
 **Project & Pipeline Management**
 - Project creation and lifecycle management
-- Pipeline authoring in YAML, Python, and ASL/Uniflow
+- Pipeline authoring in YAML, Python, and Uniflow
 - Revision management and versioning
-- Overridable parameters via Terrablob URLs
-- Auto-flip triggers on master branch merge
+- Overridable parameters via S3/GCS URLs
+- Auto-flip triggers on main branch merge
 
 **Pipeline Execution**
 - Pipeline run execution
@@ -26,20 +26,20 @@ These capabilities are shipped and available in the current release.
 
 **Distributed Training**
 - Ray job launch and management
-- Spark job launch on Kubernetes and Peloton
+- Spark job launch on Kubernetes
 - Persistent Ray clusters via RayCluster CRD
-- Federated multi-cluster dispatch and status sync
+- Federated multi-cluster dispatch
 
 **Model Serving**
 - Inference server creation
-- Deployment rollout strategies
+- Deployment rollout strategies (Blast, Rolling, Zonal, Shadow/A-B)
 - Endpoint traffic splitting and shadow routing
 - Training insights
 
 **Infrastructure & Compute**
 - Compute cluster registration
 - Resource pool selection
-- Storage management via Terrablob
+- Storage management via S3/GCS
 
 **Automation & Self-Healing**
 - Revision-gated state transitions
@@ -52,7 +52,7 @@ These features are actively being built and will land in upcoming releases.
 
 **Project Management**
 - GenAI project flavor support
-- Team ownership via uOwn
+- Team ownership via OSS ownership model (CODEOWNERS)
 
 **Pipeline Authoring**
 - Draft-based authoring workflow
@@ -63,26 +63,80 @@ These features are actively being built and will land in upcoming releases.
 - Decommission workflow with no-traffic validation gate
 - DeploymentEvent tracking
 
+**Generative AI & LLM**
+- GenAI service deployment: first-class support for deploying and managing LLM-backed inference endpoints
+
+**Evaluation & Reporting**
+- Experiment reports
+
+**Alerting & Monitoring**
+- Alert-triggered auto rollback
+- Dashboard management via OSS Grafana operator
+- Prometheus-based alerting for decommission gating
+
 **Infrastructure**
 - Notebook (Jupyter) sessions
-- Docker image builds via ImageBuild CRD
+- Docker image builds via Kaniko/BuildKit
 
-**Observability**
-- Dashboard management
-- Experiment reports
+**Automation**
+- Finalizer-based cascade deletion (Pipeline → Revisions; FeatureGroup → Datasets)
 
 ## On the Radar
 
-These are planned enhancencements that we are working towards adding down the road.
+These are planned capabilities we are working towards adding down the road.
+
+**Project Management**
+- Cloud zone annotations for multi-cloud routing
+- Git repository migration allowlist
+- Routing affinity inheritance (parent-to-child annotation propagation)
+
+**Pipeline Authoring & Execution**
+- Concurrent update protection via optimistic locking
+- Canvas release version validation
+- Block dev-branch runs in production (safety gate enforcement)
+
+**Distributed Training**
+- GPU SKU normalization and validation via ConfigMap
+- mTLS injection via cert-manager or OSS SPIFFE
+- Prometheus ConfigMap auto-creation per job
+- Job immutability (15-minute lock after kill)
+- Spark obsolescence enforcement (7-day auto-kill for runaway jobs)
+- Resource usage metrics emission
+
+**Model Deployment**
+- Lockdown self-healing: detect and auto-remediate cluster lockdown conditions
+- Traffic routing via Istio/Envoy OSS gateway
+- Compute lockdown detection
+- Global endpoint name uniqueness (cross-namespace validation)
+
+**Feature Store**
+- Feature and feature group management
+- Online feature store (low-latency feature serving)
+- Offline feature datasets
+- Feature serving groups
+- Feature monitor with drift detection (Wasserstein, KL-divergence, PSI, LOF)
+- Feature quality metrics
+- Lineage event tracking on create/delete via OpenLineage
+- Cascading deletion (FeatureGroup → Dataset)
 
 **Generative AI & LLM**
-- GenAI service deployment: first-class support for deploying and managing LLM-backed services within the Michelangelo lifecycle.
+- AI agent management with declarative agent definitions and LLM registry
+- Prompt template management
+- Guardrail policies (input/output safety filtering, bias detection)
 
-**Evaluation & Experimentation**
-- A structured evaluation framework for comparing training runs, tracking metrics across experiments, and producing shareable experiment reports.
+**Evaluation & Reporting**
+- Structured evaluation reports
+- Model cards
 
 **Alerting & Monitoring**
-- Full uMonitor integration for decommission gating and alert-driven automation across the deployment lifecycle.
+- Alert CRD management
+- Default cron schedules by alert type
+
+**Infrastructure & Compute**
+- Vector dataset management for embedding and RAG/similarity search
+
+**Automation & Self-Healing**
+- Lockdown self-healing: detect and auto-remediate cluster lockdown conditions
 
 ---
 
