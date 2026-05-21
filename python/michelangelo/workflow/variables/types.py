@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from michelangelo.workflow.variables.metadata import ModelMetadata
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 @dataclass
@@ -95,3 +98,109 @@ class PusherResult:
     success: bool
     value: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
+
+
+@dataclass
+class DatasetArtifact:
+    """A dataset artifact flowing between workflow tasks.
+
+    Wraps the underlying tabular data produced by an assembler or trainer task
+    and consumed by the pusher. The ``value`` may be a ``pandas.DataFrame``
+    (always available), ``pyspark.sql.DataFrame`` (optional), or
+    ``ray.data.Dataset`` (optional) — the type depends on the runtime
+    environment.
+
+    ``DatasetPusherPlugin`` extracts the value via ``to_pandas()`` before
+    handing it to a ``DataSink`` implementation. Provider sinks (e.g.
+    ``UberHiveSink``) may bypass ``to_pandas()`` and consume the native
+    Spark DataFrame directly for efficiency.
+
+    Attributes:
+        value: The underlying dataset — a ``pandas.DataFrame``, a
+            ``pyspark.sql.DataFrame``, or a ``ray.data.Dataset``.
+        metadata: Optional free-form key-value metadata describing the dataset
+            (schema version, feature names, etc.).
+
+    Example:
+        >>> import pandas as pd
+        >>> artifact = DatasetArtifact.from_pandas(pd.DataFrame([{"x": 1}]))
+        >>> isinstance(artifact.value, pd.DataFrame)
+        True
+    """
+
+    value: Any  # pd.DataFrame | pyspark.sql.DataFrame | ray.data.Dataset
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_pandas(cls, df: pd.DataFrame) -> DatasetArtifact:
+        """Create a ``DatasetArtifact`` wrapping a pandas DataFrame.
+
+        Args:
+            df: A ``pandas.DataFrame`` containing the dataset records.
+
+        Returns:
+            A ``DatasetArtifact`` whose ``value`` is the provided DataFrame.
+
+        Raises:
+            TypeError: If ``df`` is not a ``pandas.DataFrame``.
+
+        Example:
+            >>> import pandas as pd
+            >>> artifact = DatasetArtifact.from_pandas(pd.DataFrame([{"x": 1}]))
+            >>> len(artifact.value)
+            1
+        """
+        import pandas as pd_rt
+
+        if not isinstance(df, pd_rt.DataFrame):
+            raise TypeError(
+                f"Expected pandas.DataFrame, got {type(df).__name__}. "
+                "Use DatasetArtifact(value=...) directly for Spark or Ray datasets."
+            )
+        return cls(value=df)
+
+    def to_pandas(self) -> pd.DataFrame:
+        """Return the dataset as a ``pandas.DataFrame``.
+
+        Converts from Spark or Ray if necessary. Requires pandas to be installed.
+
+        Returns:
+            A ``pandas.DataFrame`` with one row per record.
+
+        Raises:
+            ImportError: If pandas is not installed.
+            TypeError: If the underlying ``value`` type is not supported.
+
+        Example:
+            >>> import pandas as pd
+            >>> artifact = DatasetArtifact.from_pandas(pd.DataFrame([{"x": 1}]))
+            >>> artifact.to_pandas().shape
+            (1, 1)
+        """
+        import pandas as pd_rt
+
+        if isinstance(self.value, pd_rt.DataFrame):
+            return self.value
+
+        # Lazy Spark conversion
+        try:
+            import pyspark.sql as _ps
+
+            if isinstance(self.value, _ps.DataFrame):
+                return self.value.toPandas()
+        except ModuleNotFoundError:
+            pass
+
+        # Lazy Ray conversion
+        try:
+            import ray.data as _rd
+
+            if isinstance(self.value, _rd.Dataset):
+                return self.value.to_pandas()
+        except ModuleNotFoundError:
+            pass
+
+        raise TypeError(
+            f"Cannot convert {type(self.value).__name__} to pandas.DataFrame. "
+            "Supported: pandas.DataFrame, pyspark.sql.DataFrame, ray.data.Dataset."
+        )

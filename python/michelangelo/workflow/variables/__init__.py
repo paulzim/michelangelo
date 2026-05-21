@@ -8,6 +8,7 @@ import contextlib
 from michelangelo.workflow.variables.metadata import ModelMetadata
 from michelangelo.workflow.variables.types import (
     AssembledModel,
+    DatasetArtifact,
     ModelArtifact,
     PusherResult,
 )

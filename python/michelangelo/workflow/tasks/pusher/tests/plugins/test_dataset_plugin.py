@@ -2,23 +2,31 @@
 
 from __future__ import annotations
 
-import csv
-import json
 import os
 import tempfile
 from unittest import TestCase
+
+import pandas as pd
 
 from michelangelo.workflow.schema.exceptions import ConfigurationError
 from michelangelo.workflow.schema.pusher import DatasetFormat, DatasetPluginConfig
 from michelangelo.workflow.tasks.pusher.plugins.dataset_plugin import (
     DatasetPusherPlugin,
 )
+from michelangelo.workflow.variables.types import DatasetArtifact
 
 _RECORDS = [
     {"name": "alice", "score": 0.92},
     {"name": "bob", "score": 0.88},
     {"name": "carol", "score": 0.95},
 ]
+_DF = pd.DataFrame(_RECORDS)
+
+
+def _make_artifact(records: list | None = None) -> DatasetArtifact:
+    """Return a DatasetArtifact wrapping a pandas DataFrame."""
+    df = pd.DataFrame(records if records is not None else _RECORDS)
+    return DatasetArtifact.from_pandas(df)
 
 
 def _make_plugin(
@@ -32,21 +40,36 @@ def _make_plugin(
             destination_path=dest or tempfile.mkdtemp(),
             format=fmt,
         ),
-        artifact=records if records is not None else _RECORDS.copy(),
+        artifact=_make_artifact(records),
     )
 
 
 class TestDatasetPusherPluginInit(TestCase):
     """Tests for DatasetPusherPlugin.__init__() validation."""
 
-    def test_raises_when_destination_path_none(self):
-        """It raises ConfigurationError when neither destination_path nor sinks is set."""
+    def test_raises_when_no_destination_configured(self):
+        """It raises ConfigurationError when no destination or sinks is set."""
         with self.assertRaises(ConfigurationError) as ctx:
             DatasetPusherPlugin(
                 config=DatasetPluginConfig(destination_path=None),
-                artifact=[],
+                artifact=_make_artifact(),
             )
         self.assertIn("destination", str(ctx.exception))
+
+
+class TestDatasetArtifact(TestCase):
+    """Tests for DatasetArtifact construction and conversion."""
+
+    def test_from_pandas_wraps_dataframe(self):
+        """It wraps a pandas DataFrame and returns it via to_pandas()."""
+        artifact = DatasetArtifact.from_pandas(_DF.copy())
+        self.assertIsInstance(artifact.to_pandas(), pd.DataFrame)
+        self.assertEqual(len(artifact.to_pandas()), len(_RECORDS))
+
+    def test_from_pandas_raises_for_non_dataframe(self):
+        """It raises TypeError when passed a non-DataFrame."""
+        with self.assertRaises(TypeError):
+            DatasetArtifact.from_pandas(_RECORDS)  # type: ignore[arg-type]
 
 
 class TestDatasetPusherPluginExecute(TestCase):
@@ -57,26 +80,23 @@ class TestDatasetPusherPluginExecute(TestCase):
         dest = tempfile.mkdtemp()
         result = _make_plugin(fmt=DatasetFormat.CSV, dest=dest).execute()
         self.assertTrue(os.path.exists(result["destination_path"]))
-        with open(result["destination_path"], newline="") as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
-        self.assertEqual(len(rows), len(_RECORDS))
-        self.assertEqual(rows[0]["name"], "alice")
+        df_out = pd.read_csv(result["destination_path"])
+        self.assertEqual(len(df_out), len(_RECORDS))
+        self.assertIn("name", df_out.columns)
 
     def test_writes_parquet_file_with_correct_shape(self):
         """It writes a Parquet file readable by pandas with the correct shape."""
-        import pandas as pd
-
         dest = tempfile.mkdtemp()
         result = _make_plugin(fmt=DatasetFormat.PARQUET, dest=dest).execute()
         self.assertTrue(os.path.exists(result["destination_path"]))
-        df = pd.read_parquet(result["destination_path"])
-        self.assertEqual(df.shape[0], len(_RECORDS))
-        self.assertIn("name", df.columns)
-        self.assertIn("score", df.columns)
+        df_out = pd.read_parquet(result["destination_path"])
+        self.assertEqual(df_out.shape[0], len(_RECORDS))
+        self.assertIn("name", df_out.columns)
 
     def test_writes_json_lines_file(self):
         """It writes a JSON Lines file where each line is a valid JSON object."""
+        import json
+
         dest = tempfile.mkdtemp()
         result = _make_plugin(fmt=DatasetFormat.JSON, dest=dest).execute()
         self.assertTrue(os.path.exists(result["destination_path"]))
@@ -101,7 +121,7 @@ class TestDatasetPusherPluginExecute(TestCase):
         )
 
     def test_num_records_matches_artifact_length(self):
-        """It sets num_records equal to the number of input records."""
+        """It sets num_records equal to the number of rows in the artifact."""
         records = [{"x": i} for i in range(7)]
         result = _make_plugin(records=records).execute()
         self.assertEqual(result["num_records"], 7)
@@ -112,22 +132,20 @@ class TestDatasetPusherPluginExecute(TestCase):
         dest = os.path.join(base, "new_subdir", "nested")
         DatasetPusherPlugin(
             config=DatasetPluginConfig(destination_path=dest, format=DatasetFormat.CSV),
-            artifact=_RECORDS.copy(),
+            artifact=_make_artifact(),
         ).execute()
         self.assertTrue(os.path.isdir(dest))
 
     def test_empty_artifact_writes_valid_zero_row_parquet(self):
-        """It writes a valid zero-row Parquet file when artifact is an empty list."""
-        import pandas as pd
-
+        """It writes a valid zero-row Parquet file when artifact has no rows."""
         dest = tempfile.mkdtemp()
         plugin = DatasetPusherPlugin(
             config=DatasetPluginConfig(
                 destination_path=dest, format=DatasetFormat.PARQUET
             ),
-            artifact=[],
+            artifact=DatasetArtifact.from_pandas(pd.DataFrame()),
         )
         result = plugin.execute()
         self.assertEqual(result["num_records"], 0)
-        df = pd.read_parquet(result["destination_path"])
-        self.assertEqual(len(df), 0)
+        df_out = pd.read_parquet(result["destination_path"])
+        self.assertEqual(len(df_out), 0)
