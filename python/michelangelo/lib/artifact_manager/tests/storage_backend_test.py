@@ -45,7 +45,8 @@ class TestLocalStorageBackendFileUpload(TestCase):
             src = f.name
         uri = self._backend.upload(src, "files/test.bin")
 
-        dest = tempfile.mktemp()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as tmp:
+            dest = tmp.name
         self._backend.download(uri, dest)
 
         with open(dest, "rb") as fh:
@@ -70,7 +71,8 @@ class TestLocalStorageBackendFileUpload(TestCase):
         self._backend.upload(src1, "artifact.bin")
         uri = self._backend.upload(src2, "artifact.bin")
 
-        dest = tempfile.mktemp()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as tmp:
+            dest = tmp.name
         self._backend.download(uri, dest)
         with open(dest, "rb") as fh:
             self.assertEqual(fh.read(), b"v2")
@@ -109,6 +111,38 @@ class TestLocalStorageBackendDirectoryUpload(TestCase):
         self.assertTrue(uri.startswith(self._store_dir))
         self.assertTrue(os.path.isdir(uri))
 
+    def test_upload_directory_replaces_existing(self):
+        """It replaces an existing directory artifact at the same key."""
+        src_v1 = tempfile.mkdtemp()
+        with open(os.path.join(src_v1, "file.txt"), "w") as f:
+            f.write("v1")
+        src_v2 = tempfile.mkdtemp()
+        with open(os.path.join(src_v2, "file.txt"), "w") as f:
+            f.write("v2")
+
+        self._backend.upload(src_v1, "models/cls")
+        uri = self._backend.upload(src_v2, "models/cls")
+
+        dest_dir = tempfile.mkdtemp()
+        self._backend.download(uri, dest_dir)
+        with open(os.path.join(dest_dir, "file.txt")) as fh:
+            self.assertEqual(fh.read(), "v2")
+
+    def test_upload_directory_cleans_up_tmp_on_failure(self):
+        """It removes the temp artifact and re-raises when copytree fails."""
+        from unittest.mock import patch
+
+        src_dir = tempfile.mkdtemp()
+        with (
+            patch("shutil.copytree", side_effect=OSError("disk full")),
+            self.assertRaises(OSError),
+        ):
+            self._backend.upload(src_dir, "models/v1")
+
+        # No stray .__tmp_ directories should remain under base_dir
+        leftovers = [name for name in os.listdir(self._store_dir) if ".__tmp_" in name]
+        self.assertEqual(leftovers, [])
+
 
 class TestLocalStorageBackendDownloadErrors(TestCase):
     """Tests for LocalStorageBackend download error handling."""
@@ -127,3 +161,29 @@ class TestLocalStorageBackendDownloadErrors(TestCase):
 
         self.assertIn("not managed by this LocalStorageBackend", str(ctx.exception))
         self.assertIn(backend_b._base_dir, str(ctx.exception))
+
+    def test_raises_value_error_for_sibling_directory_uri(self):
+        """It rejects a URI whose path shares a prefix but is a sibling directory."""
+        import os
+
+        store_dir = tempfile.mkdtemp()
+        # Create a sibling dir whose name starts with store_dir
+        sibling_dir = store_dir + "_sibling"
+        os.makedirs(sibling_dir, exist_ok=True)
+        backend = LocalStorageBackend(base_dir=store_dir)
+
+        foreign_uri = os.path.join(sibling_dir, "artifact.bin")
+        with open(foreign_uri, "w") as f:
+            f.write("foreign")
+
+        with self.assertRaises(ValueError):
+            backend.download(foreign_uri, tempfile.mktemp())
+
+    def test_upload_raises_for_empty_destination_key(self):
+        """It raises ValueError when destination_key is an empty string."""
+        backend = LocalStorageBackend(base_dir=tempfile.mkdtemp())
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            src = f.name
+        with self.assertRaises(ValueError) as ctx:
+            backend.upload(src, "")
+        self.assertIn("non-empty", str(ctx.exception))
