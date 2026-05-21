@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from michelangelo.workflow.tasks.pusher.plugins.base import PusherPluginBase
 
-from michelangelo.workflow.tasks.pusher.exceptions import ConfigurationError
+from michelangelo.workflow.schema.exceptions import ConfigurationError
 
 
 class PluginRegistry:

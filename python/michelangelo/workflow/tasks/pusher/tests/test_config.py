@@ -1,10 +1,11 @@
-"""Tests for the pusher config module."""
+"""Tests for the pusher config schema."""
 
 from __future__ import annotations
 
 from unittest import TestCase
 
-from michelangelo.workflow.tasks.pusher.config import (
+from michelangelo.workflow.schema.exceptions import ConfigurationError
+from michelangelo.workflow.schema.pusher import (
     DatasetFormat,
     DatasetPluginConfig,
     EvalReportPluginConfig,
@@ -12,7 +13,6 @@ from michelangelo.workflow.tasks.pusher.config import (
     PusherConfig,
     PusherPluginConfig,
 )
-from michelangelo.workflow.tasks.pusher.exceptions import ConfigurationError
 
 
 class TestDatasetFormat(TestCase):

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from unittest import TestCase
 
+from michelangelo.workflow.schema.exceptions import ConfigurationError
 from michelangelo.workflow.tasks.pusher.exceptions import (
     ArtifactNotFoundError,
-    ConfigurationError,
     PusherError,
     PusherPluginError,
 )
@@ -55,20 +55,24 @@ class TestArtifactNotFoundError(TestCase):
 
 
 class TestConfigurationError(TestCase):
-    """Tests for ConfigurationError."""
+    """Tests for ConfigurationError (defined in workflow.schema.exceptions)."""
 
-    def test_is_pusher_error(self):
-        """It is a subclass of PusherError."""
-        self.assertTrue(issubclass(ConfigurationError, PusherError))
+    def test_is_exception(self):
+        """It is a subclass of Exception."""
+        self.assertTrue(issubclass(ConfigurationError, Exception))
+
+    def test_is_not_pusher_error(self):
+        """It is a schema-layer exception, not a runtime PusherError subclass."""
+        self.assertFalse(issubclass(ConfigurationError, PusherError))
 
     def test_message_is_preserved_exactly(self):
         """It preserves the provided message without modification."""
         msg = "No plugin specified for artifact 'model'."
         self.assertEqual(str(ConfigurationError(msg)), msg)
 
-    def test_can_be_caught_as_pusher_error(self):
-        """It can be caught via its PusherError base class."""
-        with self.assertRaises(PusherError):
+    def test_can_be_raised_and_caught(self):
+        """It can be raised and caught as ConfigurationError."""
+        with self.assertRaises(ConfigurationError):
             raise ConfigurationError("bad config")
 
 

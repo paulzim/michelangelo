@@ -1,14 +1,32 @@
-"""Exception hierarchy for the pusher module."""
+"""Runtime exception hierarchy for the pusher module.
+
+``ConfigurationError`` is defined in ``michelangelo.workflow.schema.exceptions``
+(the schema layer) and re-exported here so that callers importing from this
+module continue to work without modification.
+"""
 
 from __future__ import annotations
 
+from michelangelo.workflow.schema.exceptions import ConfigurationError
+
+__all__ = [
+    "ArtifactNotFoundError",
+    "ConfigurationError",
+    "PusherError",
+    "PusherPluginError",
+]
+
 
 class PusherError(Exception):
-    """Base exception class for all pusher errors.
+    """Base exception class for all pusher runtime errors.
 
-    All exceptions raised by the pusher module inherit from this class,
-    allowing callers to catch the full family with a single
+    All exceptions raised by the pusher module at execution time inherit from
+    this class, allowing callers to catch the full family with a single
     ``except PusherError`` clause.
+
+    Note that ``ConfigurationError`` (raised at config-validation time) is
+    intentionally *not* a subclass of ``PusherError`` — it originates from
+    the schema layer, not the runtime layer.
     """
 
 
@@ -28,23 +46,6 @@ class ArtifactNotFoundError(PusherError):
     def __init__(self, name: str, available: list[str]) -> None:
         """Initialize with the missing artifact name and available names."""
         super().__init__(f"Artifact '{name}' not found. Available: {available}")
-
-
-class ConfigurationError(PusherError):
-    """Raised when a ``PusherConfig`` or ``PusherPluginConfig`` is invalid.
-
-    Args:
-        message: Human-readable description of the configuration problem.
-
-    Example:
-        >>> err = ConfigurationError("No plugin specified for artifact 'model'.")
-        >>> str(err)
-        "No plugin specified for artifact 'model'."
-    """
-
-    def __init__(self, message: str) -> None:
-        """Initialize with a human-readable configuration error message."""
-        super().__init__(message)
 
 
 class PusherPluginError(PusherError):
