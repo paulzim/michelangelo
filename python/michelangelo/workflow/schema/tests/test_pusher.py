@@ -1,4 +1,4 @@
-"""Tests for the pusher config schema."""
+"""Tests for michelangelo.workflow.schema.pusher config dataclasses."""
 
 from __future__ import annotations
 
@@ -261,7 +261,6 @@ class TestResolvedPluginConfigExtensionPluginMissingConfig(TestCase):
 
     def test_raises_when_extension_plugin_config_is_none(self):
         """It raises ConfigurationError (not None) when plugin_config is missing."""
-        # __post_init__ enforces the pair, so we must bypass it to test B1 directly.
         cfg = PusherPluginConfig(
             name="x",
             plugin_name="hive_plugin",
@@ -272,19 +271,3 @@ class TestResolvedPluginConfigExtensionPluginMissingConfig(TestCase):
         with self.assertRaises(ConfigurationError) as ctx:
             cfg.resolved_plugin_config()
         self.assertIn("plugin_config is None", str(ctx.exception))
-
-
-class TestConfigShimIdentity(TestCase):
-    """Tests that pusher/config.py re-exports the same objects as schema/pusher.py."""
-
-    def test_shim_exports_same_classes(self):
-        """Shim classes are identical to the canonical schema classes."""
-        import michelangelo.workflow.schema.pusher as canonical
-        import michelangelo.workflow.tasks.pusher.config as shim
-
-        self.assertIs(shim.PusherConfig, canonical.PusherConfig)
-        self.assertIs(shim.PusherPluginConfig, canonical.PusherPluginConfig)
-        self.assertIs(shim.ModelPluginConfig, canonical.ModelPluginConfig)
-        self.assertIs(shim.DatasetPluginConfig, canonical.DatasetPluginConfig)
-        self.assertIs(shim.EvalReportPluginConfig, canonical.EvalReportPluginConfig)
-        self.assertIs(shim.DatasetFormat, canonical.DatasetFormat)
