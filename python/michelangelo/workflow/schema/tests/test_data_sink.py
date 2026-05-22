@@ -133,6 +133,18 @@ class TestLocalFileSinkDirectory(TestCase):
         with self.assertRaises(TypeError):
             sink.write(artifact)
 
+    def test_raises_value_error_for_unsupported_format(self):
+        """It raises ValueError for a DatasetFormat not handled by LocalFileSink."""
+        from unittest.mock import MagicMock
+        import pandas as pd
+        bad_format = MagicMock()
+        bad_format.value = "xyz"
+        sink = LocalFileSink(tempfile.mkdtemp())
+        sink._format = bad_format
+        artifact = DatasetVariable(value=pd.DataFrame([{"x": 1}]))
+        with self.assertRaises(ValueError):
+            sink.write(artifact)
+
 
 class TestInMemorySink(TestCase):
     """Tests for InMemorySink."""
