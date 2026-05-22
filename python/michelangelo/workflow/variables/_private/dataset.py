@@ -5,12 +5,10 @@ transient in-memory value. Persistence is delegated to the uniflow IO registry
 (``PandasIO``, ``SparkIO``, ``RayDatasetIO``), keeping this class free of any
 direct dependency on pandas, pyspark, or ray at import time.
 
-Open source ``_private/`` convention:
-    Internal implementation details intended for subclassing by provider layers
-    (Uber, cloud providers) belong in ``workflow/variables/_private/``. That
-    directory is not imported by the public ``__init__.py`` and is excluded from
-    the stable public API. ``DatasetArtifact`` itself *is* public and lives here
-    in the top-level ``variables/`` package.
+``_private/`` convention:
+    This file lives in ``_private/`` following the same convention as the
+    internal repo — do not import directly from this path. Import
+    ``DatasetArtifact`` from ``michelangelo.workflow.variables`` instead.
 """
 
 from __future__ import annotations

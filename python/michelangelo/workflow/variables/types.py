@@ -98,4 +98,4 @@ class PusherResult:
 
 
 # DatasetArtifact lives in its own module — re-exported here for backwards compat.
-from michelangelo.workflow.variables.dataset import DatasetArtifact  # noqa: E402,F401
+from michelangelo.workflow.variables._private.dataset import DatasetArtifact  # noqa: E402,F401
