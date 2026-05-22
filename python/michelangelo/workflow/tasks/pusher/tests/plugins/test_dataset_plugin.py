@@ -1,4 +1,4 @@
-"""Tests for DatasetPusherPlugin — sink dispatch and DatasetArtifact integration."""
+"""Tests for DatasetPusherPlugin — sink dispatch and DatasetVariable integration."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from michelangelo.workflow.schema.pusher import DatasetFormat, DatasetPluginConf
 from michelangelo.workflow.tasks.pusher.plugins.dataset_plugin import (
     DatasetPusherPlugin,
 )
-from michelangelo.workflow.variables.types import DatasetArtifact
+from michelangelo.workflow.variables.types import DatasetVariable
 
 _RECORDS = [
     {"name": "alice", "score": 0.92},
@@ -29,14 +29,14 @@ _RECORDS = [
 _DF = pd.DataFrame(_RECORDS)
 
 
-def _artifact(records: list | None = None) -> DatasetArtifact:
-    """Return a DatasetArtifact wrapping a pandas DataFrame."""
+def _artifact(records: list | None = None) -> DatasetVariable:
+    """Return a DatasetVariable wrapping a pandas DataFrame."""
     df = pd.DataFrame(records if records is not None else _RECORDS)
-    return DatasetArtifact(value=df)
+    return DatasetVariable(value=df)
 
 
 def _make_plugin(
-    artifact: DatasetArtifact | None = None,
+    artifact: DatasetVariable | None = None,
     dest: str | None = None,
     fmt: DatasetFormat = DatasetFormat.CSV,
 ) -> DatasetPusherPlugin:
@@ -50,12 +50,12 @@ def _make_plugin(
     )
 
 
-class TestDatasetArtifact(TestCase):
-    """Tests for DatasetArtifact construction and to_pandas()."""
+class TestDatasetVariable(TestCase):
+    """Tests for DatasetVariable construction and to_pandas()."""
 
     def test_value_stores_dataframe(self):
-        """DatasetArtifact(value=df).value is the DataFrame."""
-        artifact = DatasetArtifact(value=_DF.copy())
+        """DatasetVariable(value=df).value is the DataFrame."""
+        artifact = DatasetVariable(value=_DF.copy())
         self.assertIsInstance(artifact.value, pd.DataFrame)
         self.assertEqual(len(artifact.value), len(_RECORDS))
 
@@ -65,16 +65,16 @@ class TestDatasetArtifact(TestCase):
 
         df = _DF.copy()
         dest = tempfile.mkdtemp()
-        artifact = DatasetArtifact(value=df, path=dest)
+        artifact = DatasetVariable(value=df, path=dest)
         artifact.save()
-        restored = DatasetArtifact(path=dest)
+        restored = DatasetVariable(path=dest)
         restored.load_pandas_dataframe()
         self.assertIsInstance(restored.value, type(df))
         self.assertEqual(len(restored.value), len(_RECORDS))
 
     def test_backend_is_pandas(self):
         """Backend property returns 'pandas' for a DataFrame value."""
-        artifact = DatasetArtifact(value=_DF.copy())
+        artifact = DatasetVariable(value=_DF.copy())
         self.assertEqual(artifact.backend, "pandas")
 
 
@@ -181,7 +181,7 @@ class TestDatasetPusherPluginExecute(TestCase):
             config=DatasetPluginConfig(
                 destination_path=dest, format=DatasetFormat.PARQUET
             ),
-            artifact=DatasetArtifact(value=pd.DataFrame()),
+            artifact=DatasetVariable(value=pd.DataFrame()),
         )
         result = plugin.execute()
         self.assertEqual(result["num_records"], 0)
@@ -199,7 +199,7 @@ class TestDatasetPusherPluginExecute(TestCase):
         """It includes SinkResult.extra fields in the per-sink result dict."""
 
         class _ExtraSink(DataSink):
-            def write(self, artifact: DatasetArtifact) -> SinkResult:  # type: ignore[override]
+            def write(self, artifact: DatasetVariable) -> SinkResult:  # type: ignore[override]
                 return SinkResult(
                     uri="custom://target",
                     num_records=3,

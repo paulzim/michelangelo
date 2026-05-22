@@ -1,6 +1,6 @@
-"""DatasetPusherPlugin — dispatches a DatasetArtifact to one or more DataSinks.
+"""DatasetPusherPlugin — dispatches a DatasetVariable to one or more DataSinks.
 
-Consumes a ``DatasetArtifact`` (wrapping pandas, Spark, or Ray data) and
+Consumes a ``DatasetVariable`` (wrapping pandas, Spark, or Ray data) and
 routes it to each configured ``DataSink``. The sink, not the plugin, is
 responsible for extracting the data in its most efficient format:
 
@@ -24,7 +24,7 @@ from michelangelo.workflow.tasks.pusher.plugins.base import PusherPluginBase
 
 if TYPE_CHECKING:
     from michelangelo.workflow.schema.pusher import DatasetPluginConfig
-    from michelangelo.workflow.variables.types import DatasetArtifact
+    from michelangelo.workflow.variables.types import DatasetVariable
 
 _logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ __all__ = ["DatasetPusherPlugin"]
 class DatasetPusherPlugin(PusherPluginBase):
     """Plugin that dispatches a dataset artifact to one or more configured sinks.
 
-    Consumes a ``DatasetArtifact`` and calls ``sink.write(artifact)`` on each
+    Consumes a ``DatasetVariable`` and calls ``sink.write(artifact)`` on each
     sink in ``config.sinks``. All sinks receive the same artifact; each sink
     extracts data in the format most efficient for its target backend.
 
@@ -47,7 +47,7 @@ class DatasetPusherPlugin(PusherPluginBase):
 
     Args:
         config: ``DatasetPluginConfig`` containing at least one sink.
-        artifact: A ``DatasetArtifact`` wrapping the dataset to write.
+        artifact: A ``DatasetVariable`` wrapping the dataset to write.
         storage_backend: Unused by the built-in sinks. Available for provider
             sink implementations that compose with a ``StorageBackend``.
         registry_client: Unused by this plugin.
@@ -62,10 +62,10 @@ class DatasetPusherPlugin(PusherPluginBase):
         from michelangelo.workflow.schema.pusher import (
             DatasetFormat, DatasetPluginConfig,
         )
-        from michelangelo.workflow.variables.types import DatasetArtifact
+        from michelangelo.workflow.variables.types import DatasetVariable
         import pandas as pd
 
-        artifact = DatasetArtifact(value=pd.DataFrame([{"x": 1}]))
+        artifact = DatasetVariable(value=pd.DataFrame([{"x": 1}]))
         plugin = DatasetPusherPlugin(
             config=DatasetPluginConfig(
                 destination_path="/tmp/out",
@@ -80,7 +80,7 @@ class DatasetPusherPlugin(PusherPluginBase):
     def __init__(
         self,
         config: DatasetPluginConfig,
-        artifact: DatasetArtifact | None = None,
+        artifact: DatasetVariable | None = None,
         storage_backend: Any = None,
         registry_client: Any = None,
     ) -> None:
@@ -88,7 +88,7 @@ class DatasetPusherPlugin(PusherPluginBase):
         super().__init__(config, artifact, storage_backend, registry_client)
         if artifact is None:
             raise ConfigurationError(
-                "DatasetPusherPlugin requires a DatasetArtifact. "
+                "DatasetPusherPlugin requires a DatasetVariable. "
                 "Pass the artifact via the artifact= argument."
             )
         if not config.sinks:

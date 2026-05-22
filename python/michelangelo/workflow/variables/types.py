@@ -97,5 +97,5 @@ class PusherResult:
     error: str | None = None
 
 
-# DatasetArtifact lives in its own module — re-exported here for backwards compat.
-from michelangelo.workflow.variables._private.dataset import DatasetArtifact  # noqa: E402,F401
+# DatasetVariable lives in its own module — re-exported here for backwards compat.
+from michelangelo.workflow.variables._private.dataset import DatasetVariable  # noqa: E402,F401

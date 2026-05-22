@@ -6,7 +6,7 @@ for development and testing. Provider layers extend this:
 
     # uber-one (Phase 2-3):
     class UberHiveSink(DataSink):
-        def write(self, artifact: DatasetArtifact) -> SinkResult:
+        def write(self, artifact: DatasetVariable) -> SinkResult:
             spark_df = artifact.value          # native Spark — no toPandas()
             save_data_sink(self._config, spark_df)
             return SinkResult(uri=f"hive://{db}.{table}",
@@ -14,7 +14,7 @@ for development and testing. Provider layers extend this:
 
     # Community (Phase 7 optional extras):
     class S3ParquetSink(DataSink):             # pip install michelangelo[aws]
-        def write(self, artifact: DatasetArtifact) -> SinkResult: ...
+        def write(self, artifact: DatasetVariable) -> SinkResult: ...
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any
 from michelangelo.workflow.schema.pusher import DatasetFormat
 
 if TYPE_CHECKING:
-    from michelangelo.workflow.variables.types import DatasetArtifact
+    from michelangelo.workflow.variables.types import DatasetVariable
 
 _logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class SinkResult:
 class DataSink(ABC):
     """Abstract base for all dataset sinks.
 
-    A ``DataSink`` receives a ``DatasetArtifact`` and writes the data to a
+    A ``DataSink`` receives a ``DatasetVariable`` and writes the data to a
     destination in the most efficient format for that sink:
 
     - Sinks that require a pandas DataFrame access ``artifact.value`` after
@@ -86,7 +86,7 @@ class DataSink(ABC):
                 self._bucket = bucket
                 self._key = key
 
-            def write(self, artifact: DatasetArtifact) -> SinkResult:
+            def write(self, artifact: DatasetVariable) -> SinkResult:
                 import boto3
                 import pandas as pd
                 df = artifact.value
@@ -103,7 +103,7 @@ class DataSink(ABC):
     """
 
     @abstractmethod
-    def write(self, artifact: DatasetArtifact) -> SinkResult:
+    def write(self, artifact: DatasetVariable) -> SinkResult:
         """Write the dataset artifact to this sink's target.
 
         Args:
@@ -159,7 +159,7 @@ class LocalFileSink(DataSink):
         self._format = format
         self._partition_by = partition_by or []
 
-    def write(self, artifact: DatasetArtifact) -> SinkResult:
+    def write(self, artifact: DatasetVariable) -> SinkResult:
         """Write the artifact as a local file.
 
         Accepts pandas DataFrames only. For Spark DataFrames use ``HiveSink``.
@@ -222,7 +222,7 @@ class InMemorySink(DataSink):
         """Initialise with an empty record store."""
         self._df: Any = None
 
-    def write(self, artifact: DatasetArtifact) -> SinkResult:
+    def write(self, artifact: DatasetVariable) -> SinkResult:
         """Store the artifact's data in memory.
 
         Accepts pandas DataFrames only.
@@ -295,12 +295,12 @@ class HiveSink(DataSink):
         self._table = table
         self._mode = mode
 
-    def write(self, artifact: DatasetArtifact) -> SinkResult:
+    def write(self, artifact: DatasetVariable) -> SinkResult:
         """Write the artifact to Hive as a Spark saveAsTable operation.
 
         Args:
             artifact: Dataset artifact. Must hold a ``pyspark.sql.DataFrame``
-                in ``artifact.value`` (e.g. ``DatasetArtifact(value=spark_df)``).
+                in ``artifact.value`` (e.g. ``DatasetVariable(value=spark_df)``).
 
         Returns:
             A ``SinkResult`` with a ``hive://`` URI and the row count.
@@ -319,7 +319,7 @@ class HiveSink(DataSink):
             raise TypeError(
                 f"HiveSink requires artifact.value to be a pyspark.sql.DataFrame, "
                 f"got {type(artifact.value).__name__}. "
-                "Use DatasetArtifact(value=spark_df) to pass a Spark DataFrame."
+                "Use DatasetVariable(value=spark_df) to pass a Spark DataFrame."
             )
         qualified = f"{self._database}.{self._table}"
         spark_df = artifact.value  # native — no toPandas()

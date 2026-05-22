@@ -20,13 +20,13 @@ from michelangelo.workflow.schema.data_sink import (
 )
 from michelangelo.workflow.schema.exceptions import ConfigurationError
 from michelangelo.workflow.schema.pusher import DatasetFormat, DatasetPluginConfig
-from michelangelo.workflow.variables.types import DatasetArtifact
+from michelangelo.workflow.variables.types import DatasetVariable
 
 _DF = pd.DataFrame([{"name": "alice", "score": 0.92}, {"name": "bob", "score": 0.88}])
 
 
-def _artifact(df: pd.DataFrame | None = None) -> DatasetArtifact:
-    return DatasetArtifact(value=df if df is not None else _DF.copy())
+def _artifact(df: pd.DataFrame | None = None) -> DatasetVariable:
+    return DatasetVariable(value=df if df is not None else _DF.copy())
 
 
 class TestDataSinkABC(TestCase):
@@ -128,7 +128,7 @@ class TestLocalFileSinkDirectory(TestCase):
 
     def test_raises_type_error_for_non_pandas_artifact(self):
         """It raises TypeError when artifact.value is not a pandas DataFrame."""
-        artifact = DatasetArtifact(value={"not": "a dataframe"})
+        artifact = DatasetVariable(value={"not": "a dataframe"})
         sink = LocalFileSink(tempfile.mkdtemp(), format=DatasetFormat.CSV)
         with self.assertRaises(TypeError):
             sink.write(artifact)
@@ -157,7 +157,7 @@ class TestInMemorySink(TestCase):
 
     def test_raises_type_error_for_non_pandas_artifact(self):
         """It raises TypeError when artifact.value is not a pandas DataFrame."""
-        artifact = DatasetArtifact(value={"not": "a dataframe"})
+        artifact = DatasetVariable(value={"not": "a dataframe"})
         with self.assertRaises(TypeError):
             InMemorySink().write(artifact)
 
@@ -221,9 +221,9 @@ class TestHiveSink(TestCase):
         return mock_sql, spark_df
 
     def _artifact_from_spark(self, spark_df, mock_sql):
-        from michelangelo.workflow.variables.types import DatasetArtifact
+        from michelangelo.workflow.variables.types import DatasetVariable
 
-        return DatasetArtifact(value=spark_df)
+        return DatasetVariable(value=spark_df)
 
     def _pyspark_mods(self, mock_sql):
         mock_pyspark = _types.SimpleNamespace(sql=mock_sql)
@@ -279,9 +279,9 @@ class TestHiveSink(TestCase):
 
     def test_raises_import_error_when_pyspark_missing(self):
         """It raises ImportError when pyspark is not installed."""
-        from michelangelo.workflow.variables.types import DatasetArtifact
+        from michelangelo.workflow.variables.types import DatasetVariable
 
-        artifact = DatasetArtifact(value=MagicMock())
+        artifact = DatasetVariable(value=MagicMock())
         sink = HiveSink(database="ml", table="t")
         with patch.dict(sys.modules, {"pyspark": None, "pyspark.sql": None}), \
                 self.assertRaises(ImportError):
@@ -289,10 +289,10 @@ class TestHiveSink(TestCase):
 
     def test_raises_type_error_for_non_spark_artifact(self):
         """It raises TypeError when artifact.value is not a Spark DataFrame."""
-        from michelangelo.workflow.variables.types import DatasetArtifact
+        from michelangelo.workflow.variables.types import DatasetVariable
 
         mock_sql, _ = _mock_pyspark_sql()
-        artifact = DatasetArtifact(value=_DF.copy())
+        artifact = DatasetVariable(value=_DF.copy())
         sink = HiveSink(database="ml", table="t")
         mods = {"pyspark": MagicMock(), "pyspark.sql": mock_sql}
         with patch.dict(sys.modules, mods), self.assertRaises(TypeError):

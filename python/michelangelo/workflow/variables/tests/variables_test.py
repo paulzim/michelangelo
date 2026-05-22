@@ -14,7 +14,7 @@ import pandas as pd
 from michelangelo.workflow.variables.metadata import ModelMetadata
 from michelangelo.workflow.variables.types import (
     AssembledModel,
-    DatasetArtifact,
+    DatasetVariable,
     ModelArtifact,
     PusherResult,
 )
@@ -216,35 +216,35 @@ def _ray_mods(mock_data):
     return {"ray": _types.SimpleNamespace(data=mock_data), "ray.data": mock_data}
 
 
-class TestDatasetArtifactPandas(TestCase):
-    """Tests for DatasetArtifact with a pandas DataFrame value."""
+class TestDatasetVariablePandas(TestCase):
+    """Tests for DatasetVariable with a pandas DataFrame value."""
 
     def test_stores_dataframe(self):
-        """DatasetArtifact(value=df) stores the DataFrame in .value."""
+        """DatasetVariable(value=df) stores the DataFrame in .value."""
         df = pd.DataFrame([{"x": 1}])
-        artifact = DatasetArtifact(value=df)
+        artifact = DatasetVariable(value=df)
         self.assertIs(artifact.value, df)
 
     def test_backend_is_pandas(self):
         """It reports 'pandas' as the backend."""
-        artifact = DatasetArtifact(value=pd.DataFrame())
+        artifact = DatasetVariable(value=pd.DataFrame())
         self.assertEqual(artifact.backend, "pandas")
 
     def test_create_factory(self):
-        """DatasetArtifact.create(value) is equivalent to DatasetArtifact(value=...)."""
+        """DatasetVariable.create(value) is equivalent to DatasetVariable(value=...)."""
         df = pd.DataFrame([{"x": 1}])
-        artifact = DatasetArtifact.create(df)
+        artifact = DatasetVariable.create(df)
         self.assertIs(artifact.value, df)
         self.assertEqual(artifact.backend, "pandas")
 
     def test_path_auto_generated(self):
         """A memory:// path is generated when none is provided."""
-        artifact = DatasetArtifact(value=pd.DataFrame())
+        artifact = DatasetVariable(value=pd.DataFrame())
         self.assertTrue(artifact.path.startswith("memory://"))
 
     def test_custom_path_stored(self):
         """An explicitly provided path is stored as-is."""
-        artifact = DatasetArtifact(value=pd.DataFrame(), path="/tmp/mydata")
+        artifact = DatasetVariable(value=pd.DataFrame(), path="/tmp/mydata")
         self.assertEqual(artifact.path, "/tmp/mydata")
 
     def test_save_and_load_roundtrip(self):
@@ -253,9 +253,9 @@ class TestDatasetArtifactPandas(TestCase):
 
         df = pd.DataFrame([{"name": "alice", "score": 0.9}])
         dest = tempfile.mkdtemp()
-        artifact = DatasetArtifact(value=df, path=dest)
+        artifact = DatasetVariable(value=df, path=dest)
         artifact.save()
-        restored = DatasetArtifact(path=dest)
+        restored = DatasetVariable(path=dest)
         restored.load_pandas_dataframe()
         self.assertEqual(len(restored.value), len(df))
         self.assertEqual(restored.value["name"].tolist(), df["name"].tolist())
@@ -266,73 +266,73 @@ class TestDatasetArtifactPandas(TestCase):
 
         df = pd.DataFrame([{"x": 42}])
         dest = tempfile.mkdtemp()
-        DatasetArtifact(value=df, path=dest).save()
-        artifact = DatasetArtifact(path=dest)
+        DatasetVariable(value=df, path=dest).save()
+        artifact = DatasetVariable(path=dest)
         # No explicit load — lazy via value property
         self.assertEqual(artifact.value["x"].tolist(), [42])
 
     def test_save_raises_for_unsupported_type(self):
         """save() raises TypeError for an unrecognised value type."""
-        artifact = DatasetArtifact(value={"not": "a dataframe"})
+        artifact = DatasetVariable(value={"not": "a dataframe"})
         with self.assertRaises(TypeError):
             artifact.save()
 
     def test_save_raises_value_error_when_no_value_set(self):
         """save() raises ValueError when _value is None (path-only artifact)."""
-        artifact = DatasetArtifact(path="/tmp/no-value")
+        artifact = DatasetVariable(path="/tmp/no-value")
         with self.assertRaises(ValueError, msg="Cannot save"):
             artifact.save()
 
     def test_repr_shows_path_and_backend(self):
         """repr() includes path and backend for debugging."""
         df = pd.DataFrame([{"x": 1}])
-        artifact = DatasetArtifact(value=df, path="/tmp/mydata")
+        artifact = DatasetVariable(value=df, path="/tmp/mydata")
         r = repr(artifact)
         self.assertIn("/tmp/mydata", r)
         self.assertIn("pandas", r)
 
     def test_init_import_from_package(self):
-        """DatasetArtifact is importable from the package __init__."""
-        from michelangelo.workflow.variables import DatasetArtifact as DA
-        self.assertIs(DA, DatasetArtifact)
+        """DatasetVariable is importable from the package __init__."""
+        from michelangelo.workflow.variables import DatasetVariable as DA
+        self.assertIs(DA, DatasetVariable)
 
 
-class TestDatasetArtifactBackendSpark(TestCase):
-    """Tests for DatasetArtifact backend detection with Spark DataFrames."""
+class TestDatasetVariableBackendSpark(TestCase):
+    """Tests for DatasetVariable backend detection with Spark DataFrames."""
 
     def test_wraps_spark_dataframe(self):
-        """DatasetArtifact(value=spark_df) stores the value directly."""
+        """DatasetVariable(value=spark_df) stores the value directly."""
         _, spark_df = _mock_pyspark()
-        artifact = DatasetArtifact(value=spark_df)
+        artifact = DatasetVariable(value=spark_df)
         self.assertIs(artifact.value, spark_df)
 
     def test_backend_is_spark(self):
         """It reports 'spark' when value is a pyspark.sql.DataFrame."""
         mock_sql, spark_df = _mock_pyspark()
         with patch.dict(sys.modules, _spark_mods(mock_sql)):
-            artifact = DatasetArtifact(value=spark_df)
+            artifact = DatasetVariable(value=spark_df)
             self.assertEqual(artifact.backend, "spark")
 
     def test_backend_unknown_when_pyspark_not_installed(self):
         """It returns 'unknown' when pyspark is absent and value is unrecognised."""
-        artifact = DatasetArtifact(value=object())
+        artifact = DatasetVariable(value=object())
         with patch.dict(sys.modules, {"pyspark": None, "pyspark.sql": None,
                                       "ray": None, "ray.data": None}):
             self.assertEqual(artifact.backend, "unknown")
 
 
-class TestDatasetArtifactBackendRay(TestCase):
-    """Tests for DatasetArtifact backend detection with Ray Datasets."""
+class TestDatasetVariableBackendRay(TestCase):
+    """Tests for DatasetVariable backend detection with Ray Datasets."""
 
     def test_wraps_ray_dataset(self):
-        """DatasetArtifact(value=ray_ds) stores the value directly."""
+        """DatasetVariable(value=ray_ds) stores the value directly."""
         _, ray_ds = _mock_ray()
-        artifact = DatasetArtifact(value=ray_ds)
+        artifact = DatasetVariable(value=ray_ds)
         self.assertIs(artifact.value, ray_ds)
 
     def test_backend_is_ray(self):
         """It reports 'ray' when value is a ray.data.Dataset."""
         mock_data, ray_ds = _mock_ray()
         with patch.dict(sys.modules, _ray_mods(mock_data)):
-            artifact = DatasetArtifact(value=ray_ds)
+            artifact = DatasetVariable(value=ray_ds)
             self.assertEqual(artifact.backend, "ray")

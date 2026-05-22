@@ -92,7 +92,7 @@ class DatasetPluginConfig:
 
     Attributes:
         sinks: Ordered list of sinks to write to. All sinks receive the same
-            ``DatasetArtifact``. Each sink extracts data in its native format —
+            ``DatasetVariable``. Each sink extracts data in its native format —
             ``LocalFileSink`` calls ``artifact.to_pandas()``; ``UberHiveSink``
             accesses ``artifact.value`` as a Spark DataFrame directly (no
             ``toPandas()`` collection to the driver).
