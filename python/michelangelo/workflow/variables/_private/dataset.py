@@ -96,6 +96,9 @@ class DatasetArtifact:
         """
         return cls(value=value, path=path)
 
+    def __repr__(self) -> str:
+        return f"DatasetArtifact(path={self.path!r}, backend={self.backend!r})"
+
     # ------------------------------------------------------------------
     # Value access
     # ------------------------------------------------------------------
@@ -130,10 +133,13 @@ class DatasetArtifact:
             >>> DatasetArtifact(value=pd.DataFrame()).backend
             'pandas'
         """
-        import pandas as pd_rt
+        try:
+            import pandas as pd_rt
 
-        if isinstance(self._value, pd_rt.DataFrame):
-            return "pandas"
+            if isinstance(self._value, pd_rt.DataFrame):
+                return "pandas"
+        except ImportError:
+            pass
         try:
             import pyspark.sql as _ps
 
@@ -164,13 +170,19 @@ class DatasetArtifact:
         - ``ray.data.Dataset`` → ``RayDatasetIO.write``
 
         Raises:
+            ValueError: If no value has been set.
             TypeError: If the value type is not supported.
         """
-        import pandas as pd_rt
+        if self._value is None:
+            raise ValueError("Cannot save: no value has been set on this artifact.")
+        try:
+            import pandas as pd_rt
 
-        if isinstance(self._value, pd_rt.DataFrame):
-            self.save_pandas_dataframe()
-            return
+            if isinstance(self._value, pd_rt.DataFrame):
+                self.save_pandas_dataframe()
+                return
+        except ImportError:
+            pass
         try:
             import pyspark.sql as _ps
 

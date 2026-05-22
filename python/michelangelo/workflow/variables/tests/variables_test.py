@@ -277,6 +277,25 @@ class TestDatasetArtifactPandas(TestCase):
         with self.assertRaises(TypeError):
             artifact.save()
 
+    def test_save_raises_value_error_when_no_value_set(self):
+        """save() raises ValueError when _value is None (path-only artifact)."""
+        artifact = DatasetArtifact(path="/tmp/no-value")
+        with self.assertRaises(ValueError, msg="Cannot save"):
+            artifact.save()
+
+    def test_repr_shows_path_and_backend(self):
+        """repr() includes path and backend for debugging."""
+        df = pd.DataFrame([{"x": 1}])
+        artifact = DatasetArtifact(value=df, path="/tmp/mydata")
+        r = repr(artifact)
+        self.assertIn("/tmp/mydata", r)
+        self.assertIn("pandas", r)
+
+    def test_init_import_from_package(self):
+        """DatasetArtifact is importable from the package __init__."""
+        from michelangelo.workflow.variables import DatasetArtifact as DA
+        self.assertIs(DA, DatasetArtifact)
+
 
 class TestDatasetArtifactBackendSpark(TestCase):
     """Tests for DatasetArtifact backend detection with Spark DataFrames."""

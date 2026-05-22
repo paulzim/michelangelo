@@ -69,7 +69,8 @@ class DataSink(ABC):
     A ``DataSink`` receives a ``DatasetArtifact`` and writes the data to a
     destination in the most efficient format for that sink:
 
-    - Sinks that require pandas call ``artifact.to_pandas()`` internally.
+    - Sinks that require a pandas DataFrame access ``artifact.value`` after
+      calling ``artifact.load_pandas_dataframe()`` (or check ``artifact.backend``).
     - Sinks that require a native Spark DataFrame access ``artifact.value``
       directly — avoiding ``toPandas()`` which would collect all data to the
       driver and cause OOM on large datasets.
@@ -87,7 +88,10 @@ class DataSink(ABC):
 
             def write(self, artifact: DatasetArtifact) -> SinkResult:
                 import boto3
-                df = artifact.to_pandas()
+                import pandas as pd
+                df = artifact.value
+                if not isinstance(df, pd.DataFrame):
+                    raise TypeError("S3ParquetSink requires a pandas DataFrame.")
                 buf = df.to_parquet(index=False)
                 boto3.client("s3").put_object(
                     Bucket=self._bucket, Key=self._key, Body=buf
@@ -120,7 +124,7 @@ class DataSink(ABC):
 class LocalFileSink(DataSink):
     """Sink that writes a dataset to a local file in CSV, Parquet, or JSON Lines.
 
-    Calls ``artifact.to_pandas()`` internally — suitable for development,
+    Accesses ``artifact.value`` directly — suitable for development,
     testing, and single-machine workflows. Not appropriate for large-scale
     Spark datasets; use ``HiveSink`` or a custom ``DataSink`` for those.
 
