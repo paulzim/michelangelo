@@ -124,6 +124,12 @@ class LocalFileSink(DataSink):
     testing, and single-machine workflows. Not appropriate for large-scale
     Spark datasets; use ``HiveSink`` or a custom ``DataSink`` for those.
 
+    .. note::
+        Parquet output is a **single** ``data.parquet`` file written via
+        ``pandas.DataFrame.to_parquet()``. This differs from
+        ``michelangelo.uniflow.plugins.pandas.PandasIO``, which produces a
+        directory of ``part-*.parquet`` files. Do not mix the two paths.
+
     Args:
         destination_path: Directory where the output file is written.
             Created automatically if absent.

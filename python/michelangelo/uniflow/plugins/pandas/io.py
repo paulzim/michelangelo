@@ -50,6 +50,12 @@ class PandasIO(IO["pd.DataFrame"]):
         io.write("/tmp/mydata", df)
         loaded = io.read("/tmp/mydata", None)
         assert len(loaded) == 2
+
+    .. note::
+        ``PandasIO`` writes a **directory** of ``part-*.parquet`` files, not a
+        single file. This differs from ``LocalFileSink`` (workflow pusher),
+        which writes a single ``data.parquet`` via ``pandas.DataFrame.to_parquet()``.
+        Do not mix the two read/write paths for the same dataset.
     """
 
     def __init__(self, storage_options: dict[str, Any] | None = None) -> None:
@@ -121,11 +127,17 @@ class PandasIO(IO["pd.DataFrame"]):
 
 
 def _ensure_dir(fs: Any, path: str) -> None:
-    """Create ``path`` on ``fs`` if it does not already exist."""
+    """Create ``path`` on ``fs`` if it does not already exist.
+
+    The ``AttributeError`` branch handles fsspec filesystem implementations
+    that do not expose ``exists()`` (e.g. some custom or legacy backends).
+    Those filesystems are probed via ``ls()`` and created via ``mkdir()``.
+    """
     try:
         if not fs.exists(path):
             fs.mkdir(path, create_parents=True)
     except AttributeError:
+        # Filesystem does not implement exists() — probe with ls() instead.
         try:
             fs.ls(path)
         except Exception:

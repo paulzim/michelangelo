@@ -7,6 +7,7 @@ import tempfile
 from unittest import TestCase
 
 import pandas as pd
+
 from michelangelo.uniflow.plugins.pandas.io import PandasIO
 
 _DF = pd.DataFrame([
