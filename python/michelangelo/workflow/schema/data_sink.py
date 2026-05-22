@@ -1,0 +1,220 @@
+"""Pluggable dataset sink abstraction for DatasetPusherPlugin.
+
+``DataSink`` decouples ``DatasetPusherPlugin`` from any specific storage
+technology. Built-in sinks (``LocalFileSink``, ``InMemorySink``) are provided
+for development and testing. Provider layers extend this:
+
+    # uber-one (Phase 2-3):
+    class UberHiveSink(DataSink):
+        def write(self, artifact: DatasetArtifact) -> SinkResult:
+            spark_df = artifact.value          # native Spark — no toPandas()
+            save_data_sink(self._config, spark_df)
+            return SinkResult(uri=f"hive://{db}.{table}",
+                              num_records=spark_df.count())
+
+    # Community (Phase 7 optional extras):
+    class S3ParquetSink(DataSink):             # pip install michelangelo[aws]
+        def write(self, artifact: DatasetArtifact) -> SinkResult: ...
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+from michelangelo.workflow.schema.pusher import DatasetFormat
+
+if TYPE_CHECKING:
+    from michelangelo.workflow.variables.types import DatasetArtifact
+
+_logger = logging.getLogger(__name__)
+
+__all__ = [
+    "DataSink",
+    "InMemorySink",
+    "LocalFileSink",
+    "SinkResult",
+]
+
+
+@dataclass(frozen=True)
+class SinkResult:
+    """Structured result returned by ``DataSink.write()``.
+
+    Attributes:
+        uri: Canonical location of the written data. An absolute path for
+            local sinks; a URI (``s3://...``, ``hive://...``) for remote sinks.
+        num_records: Number of rows written.
+        extra: Optional sink-specific metadata (partition paths, byte count,
+            table name, etc.). Included verbatim in the plugin's result dict.
+
+    Example:
+        >>> result = SinkResult(uri="/tmp/data/data.parquet", num_records=3)
+        >>> result.num_records
+        3
+    """
+
+    uri: str
+    num_records: int
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+class DataSink(ABC):
+    """Abstract base for all dataset sinks.
+
+    A ``DataSink`` receives a ``DatasetArtifact`` and writes the data to a
+    destination in the most efficient format for that sink:
+
+    - Sinks that require pandas call ``artifact.to_pandas()`` internally.
+    - Sinks that require a native Spark DataFrame access ``artifact.value``
+      directly — avoiding ``toPandas()`` which would collect all data to the
+      driver and cause OOM on large datasets.
+    - Sinks that require Ray Dataset access ``artifact.value`` directly.
+
+    This mirrors the internal Michelangelo implementation:
+    ``for sink in config.sinks: save_data_sink(sink, var.value)``
+
+    Example::
+
+        class S3ParquetSink(DataSink):
+            def __init__(self, bucket: str, key: str) -> None:
+                self._bucket = bucket
+                self._key = key
+
+            def write(self, artifact: DatasetArtifact) -> SinkResult:
+                import boto3
+                df = artifact.to_pandas()
+                buf = df.to_parquet(index=False)
+                boto3.client("s3").put_object(
+                    Bucket=self._bucket, Key=self._key, Body=buf
+                )
+                return SinkResult(
+                    uri=f"s3://{self._bucket}/{self._key}",
+                    num_records=len(df),
+                )
+    """
+
+    @abstractmethod
+    def write(self, artifact: DatasetArtifact) -> SinkResult:
+        """Write the dataset artifact to this sink's target.
+
+        Args:
+            artifact: The dataset artifact produced by the assembler or trainer
+                task. Its ``.value`` may be a ``pandas.DataFrame``, a
+                ``pyspark.sql.DataFrame``, or a ``ray.data.Dataset`` depending
+                on the runtime environment.
+
+        Returns:
+            A ``SinkResult`` describing what was written and where.
+
+        Raises:
+            IOError: On write failure.
+            ImportError: If a required optional dependency is not installed.
+        """
+
+
+class LocalFileSink(DataSink):
+    """Sink that writes a dataset to a local file in CSV, Parquet, or JSON Lines.
+
+    Calls ``artifact.to_pandas()`` internally — suitable for development,
+    testing, and single-machine workflows. Not appropriate for large-scale
+    Spark datasets; use ``UberHiveSink`` or ``S3Sink`` for those.
+
+    Args:
+        destination_path: Directory where the output file is written.
+            Created automatically if absent.
+        format: Output format. Defaults to ``DatasetFormat.PARQUET``.
+        partition_by: Column names to use for directory partitioning.
+            Reserved for provider subclasses; unused by the built-in writer.
+
+    Example::
+
+        sink = LocalFileSink("/tmp/eval_data", format=DatasetFormat.CSV)
+        result = sink.write(artifact)
+        # result.uri == "/tmp/eval_data/data.csv"
+    """
+
+    def __init__(
+        self,
+        destination_path: str,
+        format: DatasetFormat = DatasetFormat.PARQUET,
+        partition_by: list[str] | None = None,
+    ) -> None:
+        """Initialise with the output directory path and format."""
+        self._destination_path = destination_path
+        self._format = format
+        self._partition_by = partition_by or []
+
+    def write(self, artifact: DatasetArtifact) -> SinkResult:
+        """Write the artifact as a local file.
+
+        Args:
+            artifact: Dataset artifact. Converted to pandas via
+                ``artifact.to_pandas()`` before writing.
+
+        Returns:
+            A ``SinkResult`` with the absolute file path as ``uri``.
+
+        Raises:
+            ImportError: If pyarrow is not installed (Parquet only).
+            IOError: If the destination directory is not writable.
+            TypeError: If the artifact cannot be converted to pandas.
+        """
+        df = artifact.to_pandas()
+        os.makedirs(self._destination_path, exist_ok=True)
+        output_path = os.path.join(self._destination_path, f"data.{self._format.value}")
+
+        if self._format == DatasetFormat.CSV:
+            df.to_csv(output_path, index=False)
+        elif self._format == DatasetFormat.PARQUET:
+            df.to_parquet(output_path, index=False)
+        elif self._format == DatasetFormat.JSON:
+            df.to_json(output_path, orient="records", lines=True)
+        else:
+            raise ValueError(f"Unsupported DatasetFormat: {self._format!r}")
+
+        num_records = len(df)
+        _logger.info(
+            "LocalFileSink: wrote %d records to '%s'.", num_records, output_path
+        )
+        return SinkResult(uri=output_path, num_records=num_records)
+
+
+class InMemorySink(DataSink):
+    """Sink that accumulates records in memory without any I/O.
+
+    Intended exclusively for testing. Written records are accessible via
+    the ``records`` property after ``write()`` is called.
+
+    Example::
+
+        sink = InMemorySink()
+        result = sink.write(artifact)
+        assert len(sink.records) == result.num_records
+    """
+
+    def __init__(self) -> None:
+        """Initialise with an empty record store."""
+        self._df: Any = None
+
+    def write(self, artifact: DatasetArtifact) -> SinkResult:
+        """Store the artifact's data in memory.
+
+        Args:
+            artifact: Dataset artifact. Converted to pandas for storage.
+
+        Returns:
+            A ``SinkResult`` with ``uri="memory://in-memory-sink"``.
+        """
+        self._df = artifact.to_pandas()
+        return SinkResult(uri="memory://in-memory-sink", num_records=len(self._df))
+
+    @property
+    def records(self) -> list[dict[str, Any]]:
+        """Records from the most recent ``write()`` call as a list of dicts."""
+        if self._df is None:
+            return []
+        return self._df.to_dict(orient="records")

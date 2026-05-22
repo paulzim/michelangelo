@@ -1,66 +1,72 @@
-"""DatasetPusherPlugin — writes a DatasetArtifact to one or more configured sinks.
+"""DatasetPusherPlugin — dispatches a DatasetArtifact to one or more DataSinks.
 
-Consumes a ``DatasetArtifact`` (wrapping a pandas, Spark, or Ray dataset) and
-writes it to a destination via the configured output path. In PR4 this is
-extended by a pluggable ``DataSink`` abstraction that allows provider layers
-(Uber) to target ``UberHiveSink``/``UberTerrablobSink``, and the community to
-add ``S3Sink``, ``GCSSink``, ``BigQuerySink``, etc. without modifying this plugin.
+Consumes a ``DatasetArtifact`` (wrapping pandas, Spark, or Ray data) and
+routes it to each configured ``DataSink``. The sink, not the plugin, is
+responsible for extracting the data in its most efficient format:
+
+- ``LocalFileSink.write(artifact)`` → ``artifact.to_pandas()`` (small data OK)
+- ``UberHiveSink.write(artifact)`` → ``artifact.value`` as native Spark DataFrame
+  (no ``toPandas()`` collect — mirrors the internal implementation:
+  ``spark_df = self._var.value; save_data_sink(sink, spark_df)``)
+- ``S3Sink.write(artifact)`` → native Ray/Spark write or pandas fallback
+
+This design means ``DatasetPusherPlugin`` has zero knowledge of storage
+technology — adding a new sink requires no changes to the plugin.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING, Any
 
 from michelangelo.workflow.schema.exceptions import ConfigurationError
-from michelangelo.workflow.schema.pusher import DatasetFormat, DatasetPluginConfig
 from michelangelo.workflow.tasks.pusher.plugins.base import PusherPluginBase
 
 if TYPE_CHECKING:
+    from michelangelo.workflow.schema.pusher import DatasetPluginConfig
     from michelangelo.workflow.variables.types import DatasetArtifact
 
 _logger = logging.getLogger(__name__)
 
 
 class DatasetPusherPlugin(PusherPluginBase):
-    """Plugin that writes a dataset artifact to a file sink in a configurable format.
+    """Plugin that dispatches a dataset artifact to one or more configured sinks.
 
-    Consumes a ``DatasetArtifact`` (wrapping pandas, Spark, or Ray data) and
-    converts it to a ``pandas.DataFrame`` via ``artifact.to_pandas()`` before
-    writing. Supported output formats: CSV, Parquet, and JSON Lines.
+    Consumes a ``DatasetArtifact`` and calls ``sink.write(artifact)`` on each
+    sink in ``config.sinks``. All sinks receive the same artifact; each sink
+    extracts data in the format most efficient for its target backend.
 
-    **Extension path (PR4):** ``DatasetPluginConfig`` will gain a
-    ``sinks: list[DataSink]`` field. Provider layers supply their own
-    ``DataSink`` implementations — ``UberHiveSink`` passes the native Spark
-    DataFrame directly to Hive (bypassing ``to_pandas()``); ``S3Sink``,
-    ``GCSSink``, etc. write to remote storage — all without subclassing this
-    plugin. The ``destination_path`` shorthand auto-creates a ``LocalFileSink``
-    for backwards compatibility.
+    Configure sinks explicitly or via the ``destination_path`` shorthand:
+
+    - **Shorthand** (auto-creates ``LocalFileSink``):
+      ``DatasetPluginConfig(destination_path="/tmp/out")``
+    - **Explicit** (preferred, supports multi-sink and large-scale targets):
+      ``DatasetPluginConfig(sinks=[LocalFileSink("/tmp/out"), UberHiveSink(...)])``
 
     Args:
-        config: ``DatasetPluginConfig`` specifying ``destination_path``,
-            ``format``, and optional ``partition_by`` columns.
+        config: ``DatasetPluginConfig`` containing at least one sink.
         artifact: A ``DatasetArtifact`` wrapping the dataset to write.
-        storage_backend: Unused by this built-in implementation. Available for
-            provider sink subclasses that compose with a StorageBackend.
-        registry_client: Unused by this built-in implementation.
+        storage_backend: Unused by the built-in sinks. Available for provider
+            sink implementations that compose with a ``StorageBackend``.
+        registry_client: Unused by this plugin.
 
     Raises:
-        ConfigurationError: If neither ``destination_path`` nor ``sinks`` is
-            set (PR4 will use ``sinks``; PR3 requires ``destination_path``).
+        ConfigurationError: If ``config.sinks`` is empty after ``__post_init__``
+            resolution (neither ``sinks`` nor ``destination_path`` was set).
 
     Example::
 
-        import pandas as pd
-        from michelangelo.workflow.variables.types import DatasetArtifact
-
-        artifact = DatasetArtifact.from_pandas(
-            pd.DataFrame([{"col1": 1, "col2": "a"}])
+        from michelangelo.workflow.schema.data_sink import LocalFileSink
+        from michelangelo.workflow.schema.pusher import (
+            DatasetFormat, DatasetPluginConfig,
         )
+        from michelangelo.workflow.variables.types import DatasetArtifact
+        import pandas as pd
+
+        artifact = DatasetArtifact.from_pandas(pd.DataFrame([{"x": 1}]))
         plugin = DatasetPusherPlugin(
             config=DatasetPluginConfig(
-                destination_path="/tmp/eval_data",
+                destination_path="/tmp/out",
                 format=DatasetFormat.PARQUET,
             ),
             artifact=artifact,
@@ -76,110 +82,51 @@ class DatasetPusherPlugin(PusherPluginBase):
         storage_backend: Any = None,
         registry_client: Any = None,
     ) -> None:
-        """Validate that a write destination is configured, then store dependencies."""
+        """Validate that at least one sink is configured, then store dependencies."""
         super().__init__(config, artifact, storage_backend, registry_client)
-        # PR4 will add config.sinks — validate the combined state so that
-        # introducing sinks does not require changing this guard.
-        has_sinks = bool(getattr(config, "sinks", []))
-        if not has_sinks and config.destination_path is None:
+        if not config.sinks:
             raise ConfigurationError(
-                "DatasetPusherPlugin requires a destination. "
-                "Set DatasetPluginConfig(destination_path=...) or, in PR4+, "
-                "pass an explicit sinks=[LocalFileSink(...)] list."
+                "DatasetPusherPlugin requires at least one sink. "
+                "Set DatasetPluginConfig(destination_path=...) or pass an "
+                "explicit sinks=[LocalFileSink(...)] list."
             )
 
     def execute(self) -> dict[str, Any]:
-        """Write the dataset artifact to the configured destination path.
+        """Dispatch the artifact to each configured sink.
 
-        In this Phase 1 implementation the plugin calls ``artifact.to_pandas()``
-        to materialise the data before writing to a local file. This is the
-        correct path for the built-in ``LocalFileSink`` (development / small
-        data use cases). **It is not appropriate for large-scale Spark datasets.**
-
-        In PR4, ``execute()`` will delegate directly to each ``DataSink`` via
-        ``sink.write(artifact)`` — passing the ``DatasetArtifact`` in full so
-        that each sink can choose the most efficient extraction path:
-
-        - ``LocalFileSink.write(artifact)`` → calls ``artifact.to_pandas()``
-        - ``UberHiveSink.write(artifact)`` → accesses ``artifact.value`` as a
-          native Spark DataFrame and calls ``save_data_sink()`` directly,
-          **without collecting to the driver**
-        - ``S3Sink.write(artifact)`` → uses native Ray/Spark write-to-S3 if
-          available, falls back to ``artifact.to_pandas()`` otherwise
-
-        This mirrors the internal implementation:
-        ``for sink in config.sinks: save_data_sink(sink, var.value)``.
+        Calls ``sink.write(self._artifact)`` on each sink in order. Each sink
+        is responsible for extracting the data in the format it needs — no
+        ``to_pandas()`` conversion at the plugin level.
 
         Returns:
-            A dict with exactly three keys:
+            A dict with:
 
-            - ``destination_path``: Absolute path to the written output file.
-            - ``format``: The format value string (``"csv"``, ``"parquet"``,
-              or ``"json"``).
-            - ``num_records``: Number of rows written.
+            - ``"sinks"``: list of per-sink result dicts, each with ``uri``
+              and ``num_records`` keys.
+            - ``"num_records"``: record count from the first sink.
+            - ``"destination_path"``: first sink's URI (backwards-compat alias
+              for callers that read this key from the old single-file API).
 
         Raises:
-            ImportError: If pandas or pyarrow is not installed (Parquet only).
-            IOError: If the destination path is not writable.
-            TypeError: If the artifact value cannot be converted to pandas.
+            IOError: Propagated from any sink's ``write()`` on failure.
+            TypeError: If the artifact cannot be converted to the format a
+                sink requires.
         """
-        # PR3: materialise to pandas for local file writes.
-        # PR4: this line moves inside LocalFileSink.write(artifact).
-        df = self._artifact.to_pandas()
-        dest = self._config.destination_path
-        fmt = self._config.format
+        sink_results = []
+        for sink in self._config.sinks:
+            result = sink.write(self._artifact)
+            sink_results.append(
+                {"uri": result.uri, "num_records": result.num_records, **result.extra}
+            )
+            _logger.info(
+                "DatasetPusherPlugin: %s wrote %d records to '%s'.",
+                type(sink).__name__,
+                result.num_records,
+                result.uri,
+            )
 
-        os.makedirs(dest, exist_ok=True)
-        output_path = os.path.join(dest, f"data.{fmt.value}")
-
-        if fmt == DatasetFormat.CSV:
-            self._write_csv(df, output_path)
-        elif fmt == DatasetFormat.PARQUET:
-            self._write_parquet(df, output_path)
-        elif fmt == DatasetFormat.JSON:
-            self._write_json(df, output_path)
-        else:
-            raise ValueError(f"Unsupported DatasetFormat: {fmt!r}")
-
-        num_records = len(df)
-        _logger.info(
-            "Wrote %d records to '%s' (%s).", num_records, output_path, fmt.value
-        )
         return {
-            "destination_path": output_path,
-            "format": fmt.value,
-            "num_records": num_records,
+            "sinks": sink_results,
+            "num_records": sink_results[0]["num_records"] if sink_results else 0,
+            "destination_path": sink_results[0]["uri"] if sink_results else None,
         }
-
-    @staticmethod
-    def _write_csv(df: Any, path: str) -> None:
-        """Write a DataFrame as CSV with a header row.
-
-        Args:
-            df: A ``pandas.DataFrame``.
-            path: Absolute path to write the CSV file.
-        """
-        df.to_csv(path, index=False)
-
-    @staticmethod
-    def _write_parquet(df: Any, path: str) -> None:
-        """Write a DataFrame as Parquet.
-
-        Args:
-            df: A ``pandas.DataFrame``.
-            path: Absolute path to write the Parquet file.
-
-        Raises:
-            ImportError: If pyarrow is not installed.
-        """
-        df.to_parquet(path, index=False)
-
-    @staticmethod
-    def _write_json(df: Any, path: str) -> None:
-        """Write a DataFrame as JSON Lines (one JSON object per line).
-
-        Args:
-            df: A ``pandas.DataFrame``.
-            path: Absolute path to write the JSON Lines file.
-        """
-        df.to_json(path, orient="records", lines=True)
