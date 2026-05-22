@@ -122,7 +122,7 @@ class LocalFileSink(DataSink):
 
     Calls ``artifact.to_pandas()`` internally — suitable for development,
     testing, and single-machine workflows. Not appropriate for large-scale
-    Spark datasets; use ``UberHiveSink`` or ``S3Sink`` for those.
+    Spark datasets; use ``HiveSink`` or a custom ``DataSink`` for those.
 
     Args:
         destination_path: Directory where the output file is written.
@@ -252,6 +252,11 @@ class HiveSink(DataSink):
         mode: str = "overwrite",
     ) -> None:
         """Initialise with Hive database, table, and write mode."""
+        _valid_modes = {"overwrite", "append", "ignore", "error"}
+        if mode not in _valid_modes:
+            raise ValueError(
+                f"Invalid mode {mode!r}. Expected one of: {sorted(_valid_modes)}."
+            )
         self._database = database
         self._table = table
         self._mode = mode
@@ -284,7 +289,7 @@ class HiveSink(DataSink):
             )
         qualified = f"{self._database}.{self._table}"
         spark_df = artifact.value  # native — no toPandas()
+        num_records = spark_df.count()  # count before write to avoid a second scan
         spark_df.write.mode(self._mode).saveAsTable(qualified)
-        num_records = spark_df.count()
         _logger.info("HiveSink: wrote %d records to '%s'.", num_records, qualified)
         return SinkResult(uri=f"hive://{qualified}", num_records=num_records)

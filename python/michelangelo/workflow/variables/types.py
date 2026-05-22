@@ -147,6 +147,7 @@ class DatasetArtifact:
 
         Returns:
             ``"pandas"``, ``"spark"``, ``"ray"``, or ``"unknown"``.
+            Checked in order: pandas → spark → ray. The first match wins.
 
         Example:
             >>> import pandas as pd
@@ -189,7 +190,7 @@ class DatasetArtifact:
 
         Example:
             >>> import pandas as pd
-            >>> artifact = DatasetArtifact.from_pandas(pd.DataFrame([{"x": 1}]))
+            >>> artifact = DatasetArtifact(value=pd.DataFrame([{"x": 1}]))
             >>> artifact.to_pandas().shape
             (1, 1)
         """

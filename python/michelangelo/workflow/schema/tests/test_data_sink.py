@@ -227,6 +227,25 @@ class TestHiveSink(TestCase):
         spark_df.write.mode.assert_called_once_with("overwrite")
         spark_df.write.saveAsTable.assert_called_once_with("ml.features")
 
+    def test_count_called_before_save(self):
+        """It counts rows before saveAsTable to avoid a second scan."""
+        call_order = []
+        mock_sql, spark_df = self._make_spark_df()
+        spark_df.count = MagicMock(side_effect=lambda: call_order.append("count") or 3)
+        spark_df.write.saveAsTable = MagicMock(
+            side_effect=lambda *a: call_order.append("save")
+        )
+        artifact = self._artifact_from_spark(spark_df, mock_sql)
+        sink = HiveSink(database="ml", table="features")
+        with patch.dict(sys.modules, self._pyspark_mods(mock_sql)):
+            sink.write(artifact)
+        self.assertEqual(call_order, ["count", "save"])
+
+    def test_raises_value_error_for_invalid_mode(self):
+        """It raises ValueError for an unsupported write mode."""
+        with self.assertRaises(ValueError):
+            HiveSink(database="ml", table="t", mode="truncate")
+
     def test_returns_hive_uri(self):
         """It returns a SinkResult with a hive:// URI."""
         mock_sql, spark_df = self._make_spark_df(num_records=5)
