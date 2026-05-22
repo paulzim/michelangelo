@@ -8,7 +8,12 @@ from unittest import TestCase
 
 import pandas as pd
 
-from michelangelo.workflow.schema.data_sink import InMemorySink, LocalFileSink
+from michelangelo.workflow.schema.data_sink import (
+    DataSink,
+    InMemorySink,
+    LocalFileSink,
+    SinkResult,
+)
 from michelangelo.workflow.schema.exceptions import ConfigurationError
 from michelangelo.workflow.schema.pusher import DatasetFormat, DatasetPluginConfig
 from michelangelo.workflow.tasks.pusher.plugins.dataset_plugin import (
@@ -72,6 +77,15 @@ class TestDatasetPusherPluginInit(TestCase):
                 artifact=_artifact(),
             )
         self.assertIn("sink", str(ctx.exception))
+
+    def test_raises_when_artifact_is_none(self):
+        """It raises ConfigurationError when artifact=None is passed."""
+        with self.assertRaises(ConfigurationError) as ctx:
+            DatasetPusherPlugin(
+                config=DatasetPluginConfig(sinks=[InMemorySink()]),
+                artifact=None,
+            )
+        self.assertIn("artifact", str(ctx.exception).lower())
 
 
 class TestDatasetPusherPluginExecute(TestCase):
@@ -168,3 +182,22 @@ class TestDatasetPusherPluginExecute(TestCase):
         cfg = DatasetPluginConfig(destination_path=dest)
         self.assertEqual(len(cfg.sinks), 1)
         self.assertIsInstance(cfg.sinks[0], LocalFileSink)
+
+    def test_sink_extra_metadata_appears_in_result(self):
+        """It includes SinkResult.extra fields in the per-sink result dict."""
+
+        class _ExtraSink(DataSink):
+            def write(self, artifact: DatasetArtifact) -> SinkResult:  # type: ignore[override]
+                return SinkResult(
+                    uri="custom://target",
+                    num_records=3,
+                    extra={"table": "ml.evals", "partition": "2026"},
+                )
+
+        plugin = DatasetPusherPlugin(
+            config=DatasetPluginConfig(sinks=[_ExtraSink()]),
+            artifact=_artifact(),
+        )
+        result = plugin.execute()
+        self.assertEqual(result["sinks"][0]["table"], "ml.evals")
+        self.assertEqual(result["sinks"][0]["partition"], "2026")

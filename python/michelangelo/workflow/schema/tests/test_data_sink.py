@@ -166,6 +166,11 @@ class TestDatasetPluginConfigPostInit(TestCase):
         cfg = DatasetPluginConfig()
         self.assertEqual(cfg.sinks, [])
 
+    def test_explicit_empty_sinks_not_overridden_by_destination_path(self):
+        """It does not auto-create a sink when sinks=[] is passed explicitly."""
+        cfg = DatasetPluginConfig(sinks=[], destination_path="/tmp/out")
+        self.assertEqual(cfg.sinks, [])
+
     def test_raises_config_error_when_plugin_has_no_sinks(self):
         """DatasetPusherPlugin raises ConfigurationError when sinks is empty."""
         from michelangelo.workflow.tasks.pusher.plugins.dataset_plugin import (

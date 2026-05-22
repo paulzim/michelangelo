@@ -28,6 +28,8 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
+__all__ = ["DatasetPusherPlugin"]
+
 
 class DatasetPusherPlugin(PusherPluginBase):
     """Plugin that dispatches a dataset artifact to one or more configured sinks.
@@ -82,8 +84,13 @@ class DatasetPusherPlugin(PusherPluginBase):
         storage_backend: Any = None,
         registry_client: Any = None,
     ) -> None:
-        """Validate that at least one sink is configured, then store dependencies."""
+        """Validate that at least one sink is configured and artifact is present."""
         super().__init__(config, artifact, storage_backend, registry_client)
+        if artifact is None:
+            raise ConfigurationError(
+                "DatasetPusherPlugin requires a DatasetArtifact. "
+                "Pass the artifact via the artifact= argument."
+            )
         if not config.sinks:
             raise ConfigurationError(
                 "DatasetPusherPlugin requires at least one sink. "

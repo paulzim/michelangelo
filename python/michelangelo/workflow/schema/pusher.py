@@ -96,8 +96,10 @@ class DatasetPluginConfig:
             ``LocalFileSink`` calls ``artifact.to_pandas()``; ``UberHiveSink``
             accesses ``artifact.value`` as a Spark DataFrame directly (no
             ``toPandas()`` collection to the driver).
-        destination_path: Convenience shorthand. When set and ``sinks`` is
-            empty, a ``LocalFileSink`` is auto-created by ``__post_init__``.
+        destination_path: Convenience shorthand. When ``sinks`` is ``None``
+            (not provided) and ``destination_path`` is set, a ``LocalFileSink``
+            is auto-created by ``__post_init__``. Passing ``sinks=[]`` explicitly
+            disables the auto-create even when ``destination_path`` is set.
         format: Used only with the ``destination_path`` shorthand.
         partition_by: Forwarded to the auto-created ``LocalFileSink``. Ignored
             when ``sinks`` is provided explicitly.
@@ -108,23 +110,26 @@ class DatasetPluginConfig:
         <DatasetFormat.PARQUET: 'parquet'>
     """
 
-    sinks: list[DataSink] = field(default_factory=list)
+    sinks: list[DataSink] | None = None
     destination_path: str | None = None
     format: DatasetFormat = DatasetFormat.PARQUET
     partition_by: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        """Auto-create a LocalFileSink when destination_path shorthand is used."""
-        if not self.sinks and self.destination_path is not None:
-            from michelangelo.workflow.schema.data_sink import LocalFileSink
+        """Auto-create a LocalFileSink from destination_path when sinks is unset."""
+        if self.sinks is None:
+            if self.destination_path is not None:
+                from michelangelo.workflow.schema.data_sink import LocalFileSink
 
-            self.sinks = [
-                LocalFileSink(
-                    self.destination_path,
-                    format=self.format,
-                    partition_by=self.partition_by or None,
-                )
-            ]
+                self.sinks = [
+                    LocalFileSink(
+                        self.destination_path,
+                        format=self.format,
+                        partition_by=self.partition_by or None,
+                    )
+                ]
+            else:
+                self.sinks = []
 
 
 @dataclass

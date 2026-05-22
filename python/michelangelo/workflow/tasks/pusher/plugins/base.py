@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
+__all__ = ["PusherPluginBase"]
+
 
 class PusherPluginBase(ABC):
     """Abstract base class that all pusher plugins must implement.
