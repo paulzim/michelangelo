@@ -142,10 +142,15 @@ def main() -> dict:
             )
 
     lightning_trainer_kwargs = {
-        # Don't pass accelerator/devices here: ray.train.lightning.prepare_trainer
-        # overrides them based on the worker's resource assignment from ScalingConfig.
         "max_epochs": 3,
         "log_every_n_steps": 20,
+        # Force CPU for this local smoke test.
+        #
+        # On Apple Silicon, PyTorch Lightning may auto-detect the MPS backend.
+        # Ray Train's Lightning integration still uses a DDP-family strategy,
+        # and Lightning does not support DDP on MPS. Explicitly pinning the
+        # accelerator to CPU keeps this example working on macOS.
+        "accelerator": "cpu",
     }
     if mlflow_logger is not None:
         # _resolve_logger accepts a pre-built Logger instance and forwards it
