@@ -13,7 +13,7 @@ for development and testing. Provider layers extend this:
                               num_records=spark_df.count())
 
     # Community (Phase 7 optional extras):
-    class S3ParquetSink(DataSink):             # pip install michelangelo[aws]
+    class S3ParquetSink(DataSink):             # requires boto3
         def write(self, artifact: DatasetVariable) -> SinkResult: ...
 """
 
