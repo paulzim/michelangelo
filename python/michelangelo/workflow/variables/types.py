@@ -105,16 +105,17 @@ class DatasetArtifact:
     """A dataset artifact flowing between workflow tasks.
 
     Wraps a tabular dataset produced by an assembler or trainer task and
-    consumed by the pusher. Three backends are supported as first-class citizens:
+    consumed by the pusher. Pass the value directly — type is detected
+    automatically via ``backend``:
 
-    - **pandas** — single-machine or small datasets; always available.
-    - **Spark** — large-scale distributed datasets; requires pyspark.
-    - **Ray** — Ray-based ML pipelines; requires ray[data].
+    - ``pandas.DataFrame`` — single-machine or small datasets.
+    - ``pyspark.sql.DataFrame`` — large-scale distributed datasets (Spark).
+    - ``ray.data.Dataset`` — Ray-based ML pipelines.
 
     Each ``DataSink`` extracts data in the format most efficient for its backend:
 
-    - ``LocalFileSink`` calls ``artifact.to_pandas()`` — triggers ``toPandas()``
-      collection for Spark; fine for pandas and small datasets.
+    - ``LocalFileSink`` calls ``artifact.to_pandas()`` — fine for pandas;
+      triggers ``toPandas()`` collection for Spark (avoid on large datasets).
     - ``HiveSink`` accesses ``artifact.value`` directly as a Spark DataFrame —
       no ``toPandas()`` collection to driver; safe for billion-row datasets.
 
@@ -126,9 +127,12 @@ class DatasetArtifact:
 
     Example:
         >>> import pandas as pd
-        >>> artifact = DatasetArtifact.from_pandas(pd.DataFrame([{"x": 1}]))
+        >>> artifact = DatasetArtifact(value=pd.DataFrame([{"x": 1}]))
         >>> artifact.backend
         'pandas'
+        >>> # spark_df = SparkSession.builder.getOrCreate().createDataFrame(...)
+        >>> # DatasetArtifact(value=spark_df).backend
+        'spark'
     """
 
     value: Any  # pd.DataFrame | pyspark.sql.DataFrame | ray.data.Dataset
@@ -137,6 +141,9 @@ class DatasetArtifact:
     @classmethod
     def from_pandas(cls, df: pd.DataFrame) -> DatasetArtifact:
         """Create a ``DatasetArtifact`` wrapping a pandas DataFrame.
+
+        Convenience factory with type validation. For Spark or Ray values,
+        use ``DatasetArtifact(value=...)`` directly.
 
         Args:
             df: A ``pandas.DataFrame`` containing the dataset records.
@@ -158,91 +165,23 @@ class DatasetArtifact:
         if not isinstance(df, pd_rt.DataFrame):
             raise TypeError(
                 f"Expected pandas.DataFrame, got {type(df).__name__}. "
-                "Use from_spark() for Spark DataFrames or from_ray() for Ray Datasets."
+                "For Spark or Ray datasets use DatasetArtifact(value=...) directly."
             )
         return cls(value=df)
-
-    @classmethod
-    def from_spark(cls, df: Any) -> DatasetArtifact:
-        """Create a ``DatasetArtifact`` wrapping a Spark DataFrame.
-
-        The artifact holds the native Spark DataFrame. Sinks such as ``HiveSink``
-        access ``artifact.value`` directly without calling ``toPandas()``, avoiding
-        full data collection to the driver on large datasets.
-
-        Args:
-            df: A ``pyspark.sql.DataFrame``.
-
-        Returns:
-            A ``DatasetArtifact`` whose ``value`` is the provided Spark DataFrame.
-
-        Raises:
-            ImportError: If pyspark is not installed.
-            TypeError: If ``df`` is not a ``pyspark.sql.DataFrame``.
-
-        Example:
-            >>> # spark = SparkSession.builder.getOrCreate()
-            >>> # df = spark.createDataFrame([{"x": 1}])
-            >>> # artifact = DatasetArtifact.from_spark(df)
-            >>> # artifact.backend
-            'spark'
-        """
-        try:
-            import pyspark.sql as _ps
-        except ImportError as e:
-            raise ImportError(
-                "pyspark is required: pip install pyspark"
-            ) from e
-        if not isinstance(df, _ps.DataFrame):
-            raise TypeError(
-                f"Expected pyspark.sql.DataFrame, got {type(df).__name__}. "
-                "Use from_pandas() for pandas DataFrames."
-            )
-        return cls(value=df)
-
-    @classmethod
-    def from_ray(cls, ds: Any) -> DatasetArtifact:
-        """Create a ``DatasetArtifact`` wrapping a Ray Dataset.
-
-        Args:
-            ds: A ``ray.data.Dataset``.
-
-        Returns:
-            A ``DatasetArtifact`` whose ``value`` is the provided Ray Dataset.
-
-        Raises:
-            ImportError: If ray[data] is not installed.
-            TypeError: If ``ds`` is not a ``ray.data.Dataset``.
-
-        Example:
-            >>> # import ray
-            >>> # artifact = DatasetArtifact.from_ray(ray.data.from_items([{"x": 1}]))
-            >>> # artifact.backend
-            'ray'
-        """
-        try:
-            import ray.data as _rd
-        except ImportError as e:
-            raise ImportError(
-                "ray[data] is required: pip install 'ray[data]'"
-            ) from e
-        if not isinstance(ds, _rd.Dataset):
-            raise TypeError(
-                f"Expected ray.data.Dataset, got {type(ds).__name__}. "
-                "Use from_pandas() for pandas DataFrames."
-            )
-        return cls(value=ds)
 
     @property
     def backend(self) -> str:
         """Return the name of the underlying data backend.
+
+        Detects the type of ``value`` at runtime via ``isinstance``, mirroring
+        the internal ``DatasetVariable.save()`` dispatch pattern.
 
         Returns:
             ``"pandas"``, ``"spark"``, ``"ray"``, or ``"unknown"``.
 
         Example:
             >>> import pandas as pd
-            >>> DatasetArtifact.from_pandas(pd.DataFrame()).backend
+            >>> DatasetArtifact(value=pd.DataFrame()).backend
             'pandas'
         """
         import pandas as pd_rt

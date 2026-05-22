@@ -217,7 +217,7 @@ def _ray_mods(mock_data):
 
 
 class TestDatasetArtifactFromPandas(TestCase):
-    """Tests for DatasetArtifact.from_pandas()."""
+    """Tests for DatasetArtifact.from_pandas() convenience factory."""
 
     def test_wraps_dataframe(self):
         """It stores the DataFrame in .value."""
@@ -235,67 +235,51 @@ class TestDatasetArtifactFromPandas(TestCase):
         artifact = DatasetArtifact.from_pandas(pd.DataFrame())
         self.assertEqual(artifact.backend, "pandas")
 
+    def test_direct_construction_pandas(self):
+        """DatasetArtifact(value=df) works without from_pandas."""
+        df = pd.DataFrame([{"x": 1}])
+        artifact = DatasetArtifact(value=df)
+        self.assertEqual(artifact.backend, "pandas")
 
-class TestDatasetArtifactFromSpark(TestCase):
-    """Tests for DatasetArtifact.from_spark()."""
+
+class TestDatasetArtifactBackendSpark(TestCase):
+    """Tests for DatasetArtifact backend detection with Spark DataFrames."""
 
     def test_wraps_spark_dataframe(self):
-        """It stores the Spark DataFrame in .value."""
-        mock_sql, spark_df = _mock_pyspark()
-        mods = _spark_mods(mock_sql)
-        with patch.dict(sys.modules, mods):
-            artifact = DatasetArtifact.from_spark(spark_df)
+        """DatasetArtifact(value=spark_df) stores the value directly."""
+        _, spark_df = _mock_pyspark()
+        artifact = DatasetArtifact(value=spark_df)
         self.assertIs(artifact.value, spark_df)
 
-    def test_raises_import_error_when_pyspark_missing(self):
-        """It raises ImportError when pyspark is not installed."""
-        with patch.dict(sys.modules, {"pyspark": None, "pyspark.sql": None}), \
-                self.assertRaises(ImportError):
-            DatasetArtifact.from_spark(MagicMock())
-
-    def test_raises_type_error_for_wrong_type(self):
-        """It raises TypeError when value is not a Spark DataFrame."""
-        mock_sql, _ = _mock_pyspark()
-        mods = _spark_mods(mock_sql)
-        with patch.dict(sys.modules, mods), self.assertRaises(TypeError):
-            DatasetArtifact.from_spark("not-a-spark-df")
-
     def test_backend_is_spark(self):
-        """It reports 'spark' as the backend."""
+        """It reports 'spark' when value is a pyspark.sql.DataFrame."""
         mock_sql, spark_df = _mock_pyspark()
         with patch.dict(sys.modules, _spark_mods(mock_sql)):
-            artifact = DatasetArtifact.from_spark(spark_df)
+            artifact = DatasetArtifact(value=spark_df)
             self.assertEqual(artifact.backend, "spark")
 
+    def test_backend_unknown_when_pyspark_not_installed(self):
+        """It returns 'unknown' when pyspark is absent and value is unrecognised."""
+        artifact = DatasetArtifact(value=object())
+        with patch.dict(sys.modules, {"pyspark": None, "pyspark.sql": None,
+                                      "ray": None, "ray.data": None}):
+            self.assertEqual(artifact.backend, "unknown")
 
-class TestDatasetArtifactFromRay(TestCase):
-    """Tests for DatasetArtifact.from_ray()."""
+
+class TestDatasetArtifactBackendRay(TestCase):
+    """Tests for DatasetArtifact backend detection with Ray Datasets."""
 
     def test_wraps_ray_dataset(self):
-        """It stores the Ray Dataset in .value."""
-        mock_data, ray_ds = _mock_ray()
-        with patch.dict(sys.modules, _ray_mods(mock_data)):
-            artifact = DatasetArtifact.from_ray(ray_ds)
+        """DatasetArtifact(value=ray_ds) stores the value directly."""
+        _, ray_ds = _mock_ray()
+        artifact = DatasetArtifact(value=ray_ds)
         self.assertIs(artifact.value, ray_ds)
 
-    def test_raises_import_error_when_ray_missing(self):
-        """It raises ImportError when ray is not installed."""
-        with patch.dict(sys.modules, {"ray": None, "ray.data": None}), \
-                self.assertRaises(ImportError):
-            DatasetArtifact.from_ray(MagicMock())
-
-    def test_raises_type_error_for_wrong_type(self):
-        """It raises TypeError when value is not a Ray Dataset."""
-        mock_data, _ = _mock_ray()
-        with patch.dict(sys.modules, _ray_mods(mock_data)), \
-                self.assertRaises(TypeError):
-            DatasetArtifact.from_ray("not-a-ray-dataset")
-
     def test_backend_is_ray(self):
-        """It reports 'ray' as the backend."""
+        """It reports 'ray' when value is a ray.data.Dataset."""
         mock_data, ray_ds = _mock_ray()
         with patch.dict(sys.modules, _ray_mods(mock_data)):
-            artifact = DatasetArtifact.from_ray(ray_ds)
+            artifact = DatasetArtifact(value=ray_ds)
             self.assertEqual(artifact.backend, "ray")
 
 
@@ -305,7 +289,7 @@ class TestDatasetArtifactToPandas(TestCase):
     def test_returns_pandas_directly(self):
         """It returns the stored DataFrame for a pandas artifact."""
         df = pd.DataFrame([{"x": 1}])
-        artifact = DatasetArtifact.from_pandas(df)
+        artifact = DatasetArtifact(value=df)
         self.assertIs(artifact.to_pandas(), df)
 
     def test_calls_to_pandas_on_spark_df(self):
@@ -314,8 +298,7 @@ class TestDatasetArtifactToPandas(TestCase):
         mock_sql, spark_df = _mock_pyspark()
         spark_df.toPandas = MagicMock(return_value=expected)
         with patch.dict(sys.modules, _spark_mods(mock_sql)):
-            artifact = DatasetArtifact.from_spark(spark_df)
-            result = artifact.to_pandas()
+            result = DatasetArtifact(value=spark_df).to_pandas()
         self.assertIs(result, expected)
         spark_df.toPandas.assert_called_once()
 
@@ -325,8 +308,7 @@ class TestDatasetArtifactToPandas(TestCase):
         mock_data, ray_ds = _mock_ray()
         ray_ds.to_pandas = MagicMock(return_value=expected)
         with patch.dict(sys.modules, _ray_mods(mock_data)):
-            artifact = DatasetArtifact.from_ray(ray_ds)
-            result = artifact.to_pandas()
+            result = DatasetArtifact(value=ray_ds).to_pandas()
         self.assertIs(result, expected)
         ray_ds.to_pandas.assert_called_once()
 

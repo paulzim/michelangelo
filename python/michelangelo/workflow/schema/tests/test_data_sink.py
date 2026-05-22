@@ -211,10 +211,7 @@ class TestHiveSink(TestCase):
     def _artifact_from_spark(self, spark_df, mock_sql):
         from michelangelo.workflow.variables.types import DatasetArtifact
 
-        mock_pyspark = _types.SimpleNamespace(sql=mock_sql)
-        mods = {"pyspark": mock_pyspark, "pyspark.sql": mock_sql}
-        with patch.dict(sys.modules, mods):
-            return DatasetArtifact.from_spark(spark_df)
+        return DatasetArtifact(value=spark_df)
 
     def _pyspark_mods(self, mock_sql):
         mock_pyspark = _types.SimpleNamespace(sql=mock_sql)
