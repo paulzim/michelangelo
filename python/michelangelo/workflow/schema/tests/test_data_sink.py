@@ -1,15 +1,19 @@
-"""Tests for workflow/schema/data_sink.py — DataSink, LocalFileSink, InMemorySink."""
+"""Tests for workflow/schema/data_sink.py — DataSink sinks and HiveSink."""
 
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
+import types as _types
 from unittest import TestCase
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
 from michelangelo.workflow.schema.data_sink import (
     DataSink,
+    HiveSink,
     InMemorySink,
     LocalFileSink,
     SinkResult,
@@ -182,3 +186,86 @@ class TestDatasetPluginConfigPostInit(TestCase):
                 config=DatasetPluginConfig(),
                 artifact=_artifact(),
             )
+
+
+def _mock_pyspark_sql():
+    """Return (mock_pyspark_sql_module, mock_df_class)."""
+    mock_df_class = type("DataFrame", (), {})
+    mock_sql = _types.SimpleNamespace(DataFrame=mock_df_class)
+    return mock_sql, mock_df_class
+
+
+class TestHiveSink(TestCase):
+    """Tests for HiveSink — Spark-native Hive table writes."""
+
+    def _make_spark_df(self, num_records: int = 3):
+        """Return a mock Spark DataFrame with a write chain and count()."""
+        mock_sql, mock_df_class = _mock_pyspark_sql()
+        spark_df = mock_df_class()
+        spark_df.write = MagicMock()
+        spark_df.write.mode.return_value = spark_df.write
+        spark_df.write.saveAsTable = MagicMock()
+        spark_df.count = MagicMock(return_value=num_records)
+        return mock_sql, spark_df
+
+    def _artifact_from_spark(self, spark_df, mock_sql):
+        from michelangelo.workflow.variables.types import DatasetArtifact
+
+        mock_pyspark = _types.SimpleNamespace(sql=mock_sql)
+        mods = {"pyspark": mock_pyspark, "pyspark.sql": mock_sql}
+        with patch.dict(sys.modules, mods):
+            return DatasetArtifact.from_spark(spark_df)
+
+    def _pyspark_mods(self, mock_sql):
+        mock_pyspark = _types.SimpleNamespace(sql=mock_sql)
+        return {"pyspark": mock_pyspark, "pyspark.sql": mock_sql}
+
+    def test_writes_to_hive_table(self):
+        """It calls spark_df.write.mode(mode).saveAsTable(database.table)."""
+        mock_sql, spark_df = self._make_spark_df()
+        artifact = self._artifact_from_spark(spark_df, mock_sql)
+        sink = HiveSink(database="ml", table="features")
+        with patch.dict(sys.modules, self._pyspark_mods(mock_sql)):
+            sink.write(artifact)
+        spark_df.write.mode.assert_called_once_with("overwrite")
+        spark_df.write.saveAsTable.assert_called_once_with("ml.features")
+
+    def test_returns_hive_uri(self):
+        """It returns a SinkResult with a hive:// URI."""
+        mock_sql, spark_df = self._make_spark_df(num_records=5)
+        artifact = self._artifact_from_spark(spark_df, mock_sql)
+        sink = HiveSink(database="ml", table="training_data")
+        with patch.dict(sys.modules, self._pyspark_mods(mock_sql)):
+            result = sink.write(artifact)
+        self.assertEqual(result.uri, "hive://ml.training_data")
+        self.assertEqual(result.num_records, 5)
+
+    def test_respects_append_mode(self):
+        """It passes 'append' mode to Spark's write."""
+        mock_sql, spark_df = self._make_spark_df()
+        artifact = self._artifact_from_spark(spark_df, mock_sql)
+        sink = HiveSink(database="ml", table="logs", mode="append")
+        with patch.dict(sys.modules, self._pyspark_mods(mock_sql)):
+            sink.write(artifact)
+        spark_df.write.mode.assert_called_once_with("append")
+
+    def test_raises_import_error_when_pyspark_missing(self):
+        """It raises ImportError when pyspark is not installed."""
+        from michelangelo.workflow.variables.types import DatasetArtifact
+
+        artifact = DatasetArtifact(value=MagicMock())
+        sink = HiveSink(database="ml", table="t")
+        with patch.dict(sys.modules, {"pyspark": None, "pyspark.sql": None}), \
+                self.assertRaises(ImportError):
+            sink.write(artifact)
+
+    def test_raises_type_error_for_non_spark_artifact(self):
+        """It raises TypeError when artifact.value is not a Spark DataFrame."""
+        from michelangelo.workflow.variables.types import DatasetArtifact
+
+        mock_sql, _ = _mock_pyspark_sql()
+        artifact = DatasetArtifact.from_pandas(_DF.copy())
+        sink = HiveSink(database="ml", table="t")
+        mods = {"pyspark": MagicMock(), "pyspark.sql": mock_sql}
+        with patch.dict(sys.modules, mods), self.assertRaises(TypeError):
+            sink.write(artifact)

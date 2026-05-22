@@ -34,6 +34,7 @@ _logger = logging.getLogger(__name__)
 
 __all__ = [
     "DataSink",
+    "HiveSink",
     "InMemorySink",
     "LocalFileSink",
     "SinkResult",
@@ -218,3 +219,73 @@ class InMemorySink(DataSink):
         if self._df is None:
             return []
         return self._df.to_dict(orient="records")
+
+
+class HiveSink(DataSink):
+    """Sink that writes a dataset to an Apache Hive table via Spark.
+
+    Accesses ``artifact.value`` directly as a native Spark DataFrame — no
+    ``toPandas()`` collection to the driver. This is the recommended sink for
+    large-scale datasets in Spark environments (Hive, Delta Lake, Iceberg).
+
+    Requires pyspark. A Spark session must be active when ``write()`` is called.
+
+    Args:
+        database: Hive database name (e.g. ``"ml_features"``).
+        table: Hive table name (e.g. ``"training_data"``).
+        mode: Spark write mode — ``"overwrite"`` (default) or ``"append"``.
+
+    Example::
+
+        sink = HiveSink(database="ml", table="training_features")
+        result = sink.write(artifact)
+        # result.uri == "hive://ml.training_features"
+
+    Provider subclasses can override ``write()`` to add partition config,
+    table properties, or custom write paths.
+    """
+
+    def __init__(
+        self,
+        database: str,
+        table: str,
+        mode: str = "overwrite",
+    ) -> None:
+        """Initialise with Hive database, table, and write mode."""
+        self._database = database
+        self._table = table
+        self._mode = mode
+
+    def write(self, artifact: DatasetArtifact) -> SinkResult:
+        """Write the artifact to Hive as a Spark saveAsTable operation.
+
+        Args:
+            artifact: Dataset artifact. Must hold a ``pyspark.sql.DataFrame``
+                in ``artifact.value``. Use ``DatasetArtifact.from_spark()``
+                to wrap a Spark DataFrame.
+
+        Returns:
+            A ``SinkResult`` with a ``hive://`` URI and the row count.
+
+        Raises:
+            ImportError: If pyspark is not installed.
+            TypeError: If ``artifact.value`` is not a Spark DataFrame.
+        """
+        try:
+            import pyspark.sql as _ps
+        except ImportError as e:
+            raise ImportError(
+                "pyspark is required for HiveSink: pip install pyspark"
+            ) from e
+        if not isinstance(artifact.value, _ps.DataFrame):
+            raise TypeError(
+                f"HiveSink requires artifact.value to be a pyspark.sql.DataFrame, "
+                f"got {type(artifact.value).__name__}. "
+                "Use DatasetArtifact.from_spark() to wrap a Spark DataFrame."
+            )
+        qualified = f"{self._database}.{self._table}"
+        spark_df = artifact.value  # native — no toPandas()
+        spark_df.write.mode(self._mode).saveAsTable(qualified)
+        num_records = spark_df.count()
+        _logger.info("HiveSink: wrote %d records to '%s'.", num_records, qualified)
+        return SinkResult(uri=f"hive://{qualified}", num_records=num_records)
