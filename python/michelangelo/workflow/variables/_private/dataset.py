@@ -1,94 +1,54 @@
-"""Dataset variable implementation for workflow data handling."""
+"""DatasetVariable — provider-layer subclass of DatasetArtifact.
 
-import importlib
+Extends ``DatasetArtifact`` with the ``Variable`` base class infrastructure
+(``_load_value_using_io`` / ``_save_value_using_io`` helpers, ``path`` from
+environment, ``_io_metadata`` round-trip). Provider layers (e.g. Uber) subclass
+``DatasetVariable`` here to add platform-specific IO or metadata handling.
+
+Open source users: use ``DatasetArtifact`` directly.
+"""
+
+from __future__ import annotations
+
 from dataclasses import dataclass
 
-import pandas as pd
-import pyspark
-import ray
-
+from michelangelo.uniflow.plugins.pandas.io import PandasIO
 from michelangelo.uniflow.plugins.ray.io import RayDatasetIO
 from michelangelo.uniflow.plugins.spark.io import SparkIO
-
-from .base import Variable
-
-
-def has_pyspark() -> bool:
-    """Check if PySpark is available and has an active session."""
-    try:
-        pyspark_sql = importlib.import_module("pyspark.sql")
-    except ModuleNotFoundError:
-        return False
-
-    spark = pyspark_sql.SparkSession.getActiveSession()
-    return spark is not None
-
-
-def has_ray() -> bool:
-    """Check if Ray is available and initialized."""
-    try:
-        ray = importlib.import_module("ray")
-    except ModuleNotFoundError:
-        return None
-    return ray.is_initialized()
+from michelangelo.workflow.variables._private.base import Variable
+from michelangelo.workflow.variables.dataset import DatasetArtifact
 
 
 @dataclass
-class DatasetVariable(Variable):
-    """Represents a piece of data.
+class DatasetVariable(DatasetArtifact, Variable):
+    """Dataset variable with Variable base infrastructure.
 
-    Underlying it could be a Spark DataFrame, a Ray Dataset or a Pandas DataFrame.
+    Inherits the full IO dispatch from ``DatasetArtifact`` and the
+    ``_load_value_using_io`` / ``_save_value_using_io`` helpers from
+    ``Variable``. Provider subclasses override ``save()`` or ``_load()``
+    to add platform-specific behaviour.
     """
 
-    @classmethod
-    def create(cls, value) -> "DatasetVariable":
-        """A factory method to create a dataset variable with the given value."""
-        res = super().create(value)
-        return res
+    def save_pandas_dataframe(self) -> None:
+        """Persist the pandas DataFrame via Variable IO infrastructure."""
+        self._save_value_using_io(PandasIO)
 
-    def _load(self):
-        """Load value from variable path.
-
-        Automatically find the value type based on sys modules.
-        If it does not work out, please call the type specific APIs to load the value.
-        """
-        if has_pyspark():
-            self.load_spark_dataframe()
-        elif has_ray():
-            self.load_ray_dataset()
-        else:
-            self.load_pandas_dataframe()
-
-    def load_spark_dataframe(self):
-        """Load the value as Spark DataFrame."""
-        self._load_value_using_io(SparkIO)
-
-    def load_ray_dataset(self):
-        """Load the value as Ray Dataset."""
-        self._load_value_using_io(RayDatasetIO)
-
-    def save(self):
-        """Save value to variable path.
-
-        Automatically find the value type based on the class of the value.
-        If it does not work out, please call the type specific APIs to save the value.
-        """
-        if isinstance(self.value, pyspark.sql.DataFrame):
-            self.save_spark_dataframe()
-
-        elif isinstance(self.value, ray.data.Dataset):
-            self.save_ray_dataset()
-
-        elif isinstance(self.value, pd.DataFrame):
-            self.save_pandas_dataframe()
-
-        else:
-            raise TypeError("Unsupported value type")
-
-    def save_spark_dataframe(self):
-        """Save the value as Spark DataFrame."""
+    def save_spark_dataframe(self) -> None:
+        """Persist the Spark DataFrame via Variable IO infrastructure."""
         self._save_value_using_io(SparkIO)
 
-    def save_ray_dataset(self):
-        """Save the value as Ray Dataset."""
+    def save_ray_dataset(self) -> None:
+        """Persist the Ray Dataset via Variable IO infrastructure."""
         self._save_value_using_io(RayDatasetIO)
+
+    def load_pandas_dataframe(self) -> None:
+        """Load from path as a pandas DataFrame via Variable IO infrastructure."""
+        self._load_value_using_io(PandasIO)
+
+    def load_spark_dataframe(self) -> None:
+        """Load from path as a Spark DataFrame via Variable IO infrastructure."""
+        self._load_value_using_io(SparkIO)
+
+    def load_ray_dataset(self) -> None:
+        """Load from path as a Ray Dataset via Variable IO infrastructure."""
+        self._load_value_using_io(RayDatasetIO)
