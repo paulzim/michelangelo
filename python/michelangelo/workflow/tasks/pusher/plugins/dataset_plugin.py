@@ -4,11 +4,9 @@ Consumes a ``DatasetVariable`` (wrapping pandas, Spark, or Ray data) and
 routes it to each configured ``DataSink``. The sink, not the plugin, is
 responsible for extracting the data in its most efficient format:
 
-- ``LocalFileSink.write(variable)`` → accesses ``variable.value`` as pandas DataFrame (small data)
+- ``LocalFileSink.write(variable)`` → ``variable.value`` as pandas DataFrame
 - ``HiveSink.write(variable)`` → ``variable.value`` as native Spark DataFrame
-  (no ``toPandas()`` collect — mirrors the internal implementation:
-  ``spark_df = self._var.value; save_data_sink(sink, spark_df)``)
-- ``S3Sink.write(artifact)`` → native Ray/Spark write or pandas fallback
+- ``S3Sink.write(variable)`` → native Ray/Spark write or pandas fallback
 
 This design means ``DatasetPusherPlugin`` has zero knowledge of storage
 technology — adding a new sink requires no changes to the plugin.
@@ -43,7 +41,7 @@ class DatasetPusherPlugin(PusherPluginBase):
     - **Shorthand** (auto-creates ``LocalFileSink``):
       ``DatasetPluginConfig(destination_path="/tmp/out")``
     - **Explicit** (preferred, supports multi-sink and large-scale targets):
-      ``DatasetPluginConfig(sinks=[LocalFileSink("/tmp/out"), UberHiveSink(...)])``
+      ``DatasetPluginConfig(sinks=[LocalFileSink("/tmp/out"), HiveSink("db", "tbl")])``
 
     Args:
         config: ``DatasetPluginConfig`` containing at least one sink.

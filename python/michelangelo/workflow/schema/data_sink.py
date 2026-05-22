@@ -4,11 +4,11 @@
 technology. Built-in sinks (``LocalFileSink``, ``InMemorySink``) are provided
 for development and testing. Provider layers extend this:
 
-    # uber-one (Phase 2-3):
-    class UberHiveSink(DataSink):
+    # Provider layer example (Hive/Spark):
+    class HiveProviderSink(DataSink):
         def write(self, artifact: DatasetVariable) -> SinkResult:
             spark_df = artifact.value          # native Spark — no toPandas()
-            save_data_sink(self._config, spark_df)
+            spark_df.write.mode("overwrite").saveAsTable(f"{db}.{table}")
             return SinkResult(uri=f"hive://{db}.{table}",
                               num_records=spark_df.count())
 
@@ -76,8 +76,8 @@ class DataSink(ABC):
       driver and cause OOM on large datasets.
     - Sinks that require Ray Dataset access ``artifact.value`` directly.
 
-    This mirrors the internal Michelangelo implementation:
-    ``for sink in config.sinks: save_data_sink(sink, var.value)``
+    Each sink calls ``sink.write(variable)`` — the plugin dispatches without
+    knowledge of storage technology.
 
     Example::
 

@@ -96,6 +96,7 @@ class DatasetVariable(Variable):
         return cls(value=value, path=path)
 
     def __repr__(self) -> str:
+        """Return a concise string showing path and backend."""
         return f"DatasetVariable(path={self.path!r}, backend={self.backend!r})"
 
     # ------------------------------------------------------------------

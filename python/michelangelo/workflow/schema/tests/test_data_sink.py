@@ -136,6 +136,7 @@ class TestLocalFileSinkDirectory(TestCase):
     def test_raises_value_error_for_unsupported_format(self):
         """It raises ValueError for a DatasetFormat not handled by LocalFileSink."""
         from unittest.mock import MagicMock
+
         import pandas as pd
         bad_format = MagicMock()
         bad_format.value = "xyz"

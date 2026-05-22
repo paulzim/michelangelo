@@ -88,7 +88,7 @@ class DatasetPluginConfig:
         DatasetPluginConfig(sinks=[LocalFileSink("/tmp/out", DatasetFormat.CSV)])
 
         # Multi-sink (write to local file and a remote target simultaneously):
-        DatasetPluginConfig(sinks=[LocalFileSink("/tmp/out"), UberHiveSink(...)])
+        DatasetPluginConfig(sinks=[LocalFileSink("/tmp/out"), HiveSink("db", "table")])
 
     Attributes:
         sinks: Ordered list of sinks to write to. All sinks receive the same

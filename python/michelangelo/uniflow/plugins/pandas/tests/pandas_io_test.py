@@ -74,25 +74,20 @@ class TestPandasIORoundtrip(TestCase):
         self.assertTrue(os.path.isdir(dest))
 
     def test_ensure_dir_fallback_when_exists_not_supported(self):
-        """_ensure_dir() falls back to ls() probe when fs.exists() raises AttributeError."""
+        """_ensure_dir() falls back to ls() when fs.exists() is absent."""
         from unittest.mock import MagicMock, patch
-        import fsspec
 
         dest = tempfile.mkdtemp()
-        # Build a mock fs that has no exists() method (raises AttributeError)
-        # but has ls() and mkdir()
         mock_fs = MagicMock(spec=[])  # empty spec — all attrs raise AttributeError
         mock_fs.ls = MagicMock(side_effect=FileNotFoundError("not found"))
         mock_fs.mkdir = MagicMock()
-        mock_fs.open = MagicMock(return_value=open(os.devnull, "wb"))
-
-        with patch("fsspec.core.url_to_fs", return_value=(mock_fs, dest)):
-            io = PandasIO()
-            # write() calls _ensure_dir internally; verify mkdir was invoked
-            try:
-                io.write(dest, _DF.copy())
-            except Exception:
-                pass  # write may fail after mkdir; we only care mkdir was called
+        with open(os.devnull, "wb") as devnull:
+            mock_fs.open = MagicMock(return_value=devnull)
+            with patch("fsspec.core.url_to_fs", return_value=(mock_fs, dest)):
+                io = PandasIO()
+                import contextlib
+                with contextlib.suppress(Exception):
+                    io.write(dest, _DF.copy())
             mock_fs.mkdir.assert_called()
 
     def test_write_returns_none(self):
