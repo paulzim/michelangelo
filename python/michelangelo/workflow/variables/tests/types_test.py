@@ -7,7 +7,7 @@ import types as _types
 from dataclasses import dataclass
 from io import BytesIO
 from unittest import TestCase
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -230,10 +230,52 @@ class TestDatasetArtifactPandas(TestCase):
         artifact = DatasetArtifact(value=pd.DataFrame())
         self.assertEqual(artifact.backend, "pandas")
 
-    def test_to_pandas_returns_value(self):
-        """to_pandas() returns the stored DataFrame directly."""
+    def test_create_factory(self):
+        """DatasetArtifact.create(value) is equivalent to DatasetArtifact(value=...)."""
         df = pd.DataFrame([{"x": 1}])
-        self.assertIs(DatasetArtifact(value=df).to_pandas(), df)
+        artifact = DatasetArtifact.create(df)
+        self.assertIs(artifact.value, df)
+        self.assertEqual(artifact.backend, "pandas")
+
+    def test_path_auto_generated(self):
+        """A memory:// path is generated when none is provided."""
+        artifact = DatasetArtifact(value=pd.DataFrame())
+        self.assertTrue(artifact.path.startswith("memory://"))
+
+    def test_custom_path_stored(self):
+        """An explicitly provided path is stored as-is."""
+        artifact = DatasetArtifact(value=pd.DataFrame(), path="/tmp/mydata")
+        self.assertEqual(artifact.path, "/tmp/mydata")
+
+    def test_save_and_load_roundtrip(self):
+        """save() persists to path; load_pandas_dataframe() restores the value."""
+        import tempfile
+
+        df = pd.DataFrame([{"name": "alice", "score": 0.9}])
+        dest = tempfile.mkdtemp()
+        artifact = DatasetArtifact(value=df, path=dest)
+        artifact.save()
+        restored = DatasetArtifact(path=dest)
+        restored.load_pandas_dataframe()
+        self.assertEqual(len(restored.value), len(df))
+        self.assertEqual(restored.value["name"].tolist(), df["name"].tolist())
+
+    def test_lazy_load_on_value_access(self):
+        """Accessing .value on a path-only artifact triggers _load() → load_pandas."""
+        import tempfile
+
+        df = pd.DataFrame([{"x": 42}])
+        dest = tempfile.mkdtemp()
+        DatasetArtifact(value=df, path=dest).save()
+        artifact = DatasetArtifact(path=dest)
+        # No explicit load — lazy via value property
+        self.assertEqual(artifact.value["x"].tolist(), [42])
+
+    def test_save_raises_for_unsupported_type(self):
+        """save() raises TypeError for an unrecognised value type."""
+        artifact = DatasetArtifact(value={"not": "a dataframe"})
+        with self.assertRaises(TypeError):
+            artifact.save()
 
 
 class TestDatasetArtifactBackendSpark(TestCase):
@@ -275,33 +317,3 @@ class TestDatasetArtifactBackendRay(TestCase):
         with patch.dict(sys.modules, _ray_mods(mock_data)):
             artifact = DatasetArtifact(value=ray_ds)
             self.assertEqual(artifact.backend, "ray")
-
-
-class TestDatasetArtifactToPandas(TestCase):
-    """Tests for DatasetArtifact.to_pandas() cross-backend conversion."""
-
-    def test_calls_to_pandas_on_spark_df(self):
-        """It calls toPandas() on a Spark DataFrame."""
-        expected = pd.DataFrame([{"x": 1}])
-        mock_sql, spark_df = _mock_pyspark()
-        spark_df.toPandas = MagicMock(return_value=expected)
-        with patch.dict(sys.modules, _spark_mods(mock_sql)):
-            result = DatasetArtifact(value=spark_df).to_pandas()
-        self.assertIs(result, expected)
-        spark_df.toPandas.assert_called_once()
-
-    def test_calls_to_pandas_on_ray_dataset(self):
-        """It calls to_pandas() on a Ray Dataset."""
-        expected = pd.DataFrame([{"x": 2}])
-        mock_data, ray_ds = _mock_ray()
-        ray_ds.to_pandas = MagicMock(return_value=expected)
-        with patch.dict(sys.modules, _ray_mods(mock_data)):
-            result = DatasetArtifact(value=ray_ds).to_pandas()
-        self.assertIs(result, expected)
-        ray_ds.to_pandas.assert_called_once()
-
-    def test_raises_type_error_for_unsupported_value(self):
-        """It raises TypeError for an unrecognised value type."""
-        artifact = DatasetArtifact(value={"not": "a dataframe"})
-        with self.assertRaises(TypeError):
-            artifact.to_pandas()

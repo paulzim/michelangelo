@@ -5,10 +5,10 @@ from __future__ import annotations
 import contextlib
 
 # flake8: noqa:F401
+from michelangelo.workflow.variables.dataset import DatasetArtifact
 from michelangelo.workflow.variables.metadata import ModelMetadata
 from michelangelo.workflow.variables.types import (
     AssembledModel,
-    DatasetArtifact,
     ModelArtifact,
     PusherResult,
 )

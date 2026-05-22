@@ -158,19 +158,30 @@ class LocalFileSink(DataSink):
     def write(self, artifact: DatasetArtifact) -> SinkResult:
         """Write the artifact as a local file.
 
+        Accepts pandas DataFrames only. For Spark DataFrames use ``HiveSink``.
+
         Args:
-            artifact: Dataset artifact. Converted to pandas via
-                ``artifact.to_pandas()`` before writing.
+            artifact: Dataset artifact. ``artifact.value`` must be a
+                ``pandas.DataFrame``.
 
         Returns:
             A ``SinkResult`` with the absolute file path as ``uri``.
 
         Raises:
+            TypeError: If ``artifact.value`` is not a pandas DataFrame.
             ImportError: If pyarrow is not installed (Parquet only).
             IOError: If the destination directory is not writable.
-            TypeError: If the artifact cannot be converted to pandas.
         """
-        df = artifact.to_pandas()
+        import pandas as _pd
+
+        if not isinstance(artifact.value, _pd.DataFrame):
+            raise TypeError(
+                f"LocalFileSink requires artifact.value to be a pandas.DataFrame, "
+                f"got {type(artifact.value).__name__}. "
+                "For Spark DataFrames use HiveSink; for Ray Datasets use a "
+                "custom DataSink."
+            )
+        df = artifact.value
         os.makedirs(self._destination_path, exist_ok=True)
         output_path = os.path.join(self._destination_path, f"data.{self._format.value}")
 
@@ -210,13 +221,26 @@ class InMemorySink(DataSink):
     def write(self, artifact: DatasetArtifact) -> SinkResult:
         """Store the artifact's data in memory.
 
+        Accepts pandas DataFrames only.
+
         Args:
-            artifact: Dataset artifact. Converted to pandas for storage.
+            artifact: Dataset artifact. ``artifact.value`` must be a
+                ``pandas.DataFrame``.
 
         Returns:
             A ``SinkResult`` with ``uri="memory://in-memory-sink"``.
+
+        Raises:
+            TypeError: If ``artifact.value`` is not a pandas DataFrame.
         """
-        self._df = artifact.to_pandas()
+        import pandas as _pd
+
+        if not isinstance(artifact.value, _pd.DataFrame):
+            raise TypeError(
+                f"InMemorySink requires artifact.value to be a pandas.DataFrame, "
+                f"got {type(artifact.value).__name__}."
+            )
+        self._df = artifact.value
         return SinkResult(uri="memory://in-memory-sink", num_records=len(self._df))
 
     @property

@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from michelangelo.workflow.variables.metadata import ModelMetadata
-
-if TYPE_CHECKING:
-    import pandas as pd
 
 
 @dataclass
@@ -100,124 +97,5 @@ class PusherResult:
     error: str | None = None
 
 
-@dataclass
-class DatasetArtifact:
-    """A dataset artifact flowing between workflow tasks.
-
-    Wraps a tabular dataset produced by an assembler or trainer task and
-    consumed by the pusher. Pass the value directly — type is detected
-    automatically via ``backend``:
-
-    - ``pandas.DataFrame`` — single-machine or small datasets.
-    - ``pyspark.sql.DataFrame`` — large-scale distributed datasets (Spark).
-    - ``ray.data.Dataset`` — Ray-based ML pipelines.
-
-    Each ``DataSink`` extracts data in the format most efficient for its backend:
-
-    - ``LocalFileSink`` calls ``artifact.to_pandas()`` — fine for pandas;
-      triggers ``toPandas()`` collection for Spark (avoid on large datasets).
-    - ``HiveSink`` accesses ``artifact.value`` directly as a Spark DataFrame —
-      no ``toPandas()`` collection to driver; safe for billion-row datasets.
-
-    Attributes:
-        value: The underlying dataset — a ``pandas.DataFrame``, a
-            ``pyspark.sql.DataFrame``, or a ``ray.data.Dataset``.
-        metadata: Optional free-form key-value metadata describing the dataset
-            (schema version, feature names, etc.).
-
-    Example:
-        >>> import pandas as pd
-        >>> artifact = DatasetArtifact(value=pd.DataFrame([{"x": 1}]))
-        >>> artifact.backend
-        'pandas'
-        >>> # spark_df = SparkSession.builder.getOrCreate().createDataFrame(...)
-        >>> # DatasetArtifact(value=spark_df).backend
-        'spark'
-    """
-
-    value: Any  # pd.DataFrame | pyspark.sql.DataFrame | ray.data.Dataset
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    @property
-    def backend(self) -> str:
-        """Return the name of the underlying data backend.
-
-        Detects the type of ``value`` at runtime via ``isinstance``, mirroring
-        the internal ``DatasetVariable.save()`` dispatch pattern.
-
-        Returns:
-            ``"pandas"``, ``"spark"``, ``"ray"``, or ``"unknown"``.
-            Checked in order: pandas → spark → ray. The first match wins.
-
-        Example:
-            >>> import pandas as pd
-            >>> DatasetArtifact(value=pd.DataFrame()).backend
-            'pandas'
-        """
-        import pandas as pd_rt
-
-        if isinstance(self.value, pd_rt.DataFrame):
-            return "pandas"
-        try:
-            import pyspark.sql as _ps
-
-            if isinstance(self.value, _ps.DataFrame):
-                return "spark"
-        except ImportError:
-            pass
-        try:
-            import ray.data as _rd
-
-            if isinstance(self.value, _rd.Dataset):
-                return "ray"
-        except ImportError:
-            pass
-        return "unknown"
-
-    def to_pandas(self) -> pd.DataFrame:
-        """Return the dataset as a ``pandas.DataFrame``.
-
-        For Spark DataFrames, calls ``toPandas()`` which collects all data to
-        the driver — avoid on large datasets; use ``HiveSink`` instead.
-        For Ray Datasets, calls ``to_pandas()``.
-
-        Returns:
-            A ``pandas.DataFrame`` with one row per record.
-
-        Raises:
-            ImportError: If pandas is not installed.
-            TypeError: If the underlying ``value`` type is not supported.
-
-        Example:
-            >>> import pandas as pd
-            >>> artifact = DatasetArtifact(value=pd.DataFrame([{"x": 1}]))
-            >>> artifact.to_pandas().shape
-            (1, 1)
-        """
-        import pandas as pd_rt
-
-        if isinstance(self.value, pd_rt.DataFrame):
-            return self.value
-
-        # Spark conversion — collects to driver; use HiveSink for large datasets
-        try:
-            import pyspark.sql as _ps
-
-            if isinstance(self.value, _ps.DataFrame):
-                return self.value.toPandas()
-        except ImportError:
-            pass
-
-        # Ray conversion
-        try:
-            import ray.data as _rd
-
-            if isinstance(self.value, _rd.Dataset):
-                return self.value.to_pandas()
-        except ImportError:
-            pass
-
-        raise TypeError(
-            f"Cannot convert {type(self.value).__name__} to pandas.DataFrame. "
-            "Supported: pandas.DataFrame, pyspark.sql.DataFrame, ray.data.Dataset."
-        )
+# DatasetArtifact lives in its own module — re-exported here for backwards compat.
+from michelangelo.workflow.variables.dataset import DatasetArtifact  # noqa: E402,F401

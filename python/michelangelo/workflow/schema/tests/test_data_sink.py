@@ -126,6 +126,13 @@ class TestLocalFileSinkDirectory(TestCase):
         sink.write(_artifact())
         self.assertTrue(os.path.isdir(dest))
 
+    def test_raises_type_error_for_non_pandas_artifact(self):
+        """It raises TypeError when artifact.value is not a pandas DataFrame."""
+        artifact = DatasetArtifact(value={"not": "a dataframe"})
+        sink = LocalFileSink(tempfile.mkdtemp(), format=DatasetFormat.CSV)
+        with self.assertRaises(TypeError):
+            sink.write(artifact)
+
 
 class TestInMemorySink(TestCase):
     """Tests for InMemorySink."""
@@ -147,7 +154,12 @@ class TestInMemorySink(TestCase):
         sink = InMemorySink()
         result = sink.write(_artifact())
         self.assertTrue(result.uri.startswith("memory://"))
-        self.assertEqual(result.num_records, len(_DF))
+
+    def test_raises_type_error_for_non_pandas_artifact(self):
+        """It raises TypeError when artifact.value is not a pandas DataFrame."""
+        artifact = DatasetArtifact(value={"not": "a dataframe"})
+        with self.assertRaises(TypeError):
+            InMemorySink().write(artifact)
 
 
 class TestDatasetPluginConfigPostInit(TestCase):

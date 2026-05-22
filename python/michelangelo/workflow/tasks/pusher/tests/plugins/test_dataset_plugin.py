@@ -60,11 +60,17 @@ class TestDatasetArtifact(TestCase):
         self.assertEqual(len(artifact.value), len(_RECORDS))
 
     def test_to_pandas_returns_dataframe(self):
-        """to_pandas() returns the stored DataFrame for a pandas artifact."""
-        artifact = DatasetArtifact(value=_DF.copy())
-        result = artifact.to_pandas()
-        self.assertIsInstance(result, pd.DataFrame)
-        self.assertEqual(len(result), len(_RECORDS))
+        """load_pandas_dataframe() restores the value after save."""
+        import tempfile
+
+        df = _DF.copy()
+        dest = tempfile.mkdtemp()
+        artifact = DatasetArtifact(value=df, path=dest)
+        artifact.save()
+        restored = DatasetArtifact(path=dest)
+        restored.load_pandas_dataframe()
+        self.assertIsInstance(restored.value, type(df))
+        self.assertEqual(len(restored.value), len(_RECORDS))
 
     def test_backend_is_pandas(self):
         """Backend property returns 'pandas' for a DataFrame value."""
