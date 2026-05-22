@@ -1,245 +1,307 @@
-"""Lightning trainer - compatible with internal SDK API."""
+"""Public PyTorch Lightning trainer wrapping Ray Train.
+
+This package is a one-time snapshot of an internal trainer used for distributed
+PyTorch Lightning training on Ray. Bugs may be patched in OSS, but new features
+are not automatically backported from the source. See ``CONTRIBUTING.md`` for
+the support policy.
+
+Typical use::
+
+    from michelangelo.lib.trainer.torch.pytorch_lightning import (
+        LightningTrainer,
+        LightningTrainerParam,
+    )
+
+    trainer = LightningTrainer(
+        trainer_param=LightningTrainerParam(
+            create_model_fn=my_model_factory,
+            create_model_fn_kwargs={"hidden_dim": 64},
+            train_data=train_ds,
+            val_data=val_ds,
+            batch_size=256,
+        ),
+        run_config=ray.train.RunConfig(name="my_run", storage_path="/tmp/runs"),
+        scaling_config=ray.train.ScalingConfig(num_workers=1, use_gpu=False),
+    )
+    result = trainer.train()
+"""
+
+from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from typing import Any, Callable, Optional
+import os
+import uuid
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass, field
+from typing import TYPE_CHECKING, Callable
 
-import pytorch_lightning as pl
-from ray.data import Dataset
-from ray.train import CheckpointConfig, RunConfig, ScalingConfig
-from ray.train.lightning import RayDDPStrategy, RayLightningEnvironment
+import ray
+import torch
+from pytorch_lightning.utilities.deepspeed import (
+    convert_zero_checkpoint_to_fp32_state_dict,
+)
 from ray.train.torch import TorchTrainer
 
-log = logging.getLogger(__name__)
+from michelangelo.lib.trainer.torch.pytorch_lightning._private.util import (
+    _train_loop_per_worker,
+)
+
+if TYPE_CHECKING:
+    from michelangelo.lib.trainer.torch.pytorch_lightning.schema import (
+        IncrementalTrainingSpec,
+        TransferLearningSpec,
+    )
+
+_logger = logging.getLogger(__name__)
+CHECKPOINT_NAME = ray.train.lightning.RayTrainReportCallback.CHECKPOINT_NAME
+CHECKPOINT_PATH_KEY = "checkpoint_path"
+_UNSET = object()
+
+
+@dataclass
+class CometParam:
+    """Configuration for the Comet ML logger.
+
+    Credentials are forwarded as-is to ``comet_ml``; ``api_key`` should be treated
+    as a secret. ``comet_ml`` is imported lazily inside the worker, so this
+    dataclass can be constructed even when ``comet_ml`` is not installed (the
+    import only fires when the trainer actually attaches the logger).
+
+    Attributes:
+        api_key: Comet API key for the target workspace.
+        project_name: Comet project name to log under.
+        experiment_name: Display name for the experiment in the Comet UI.
+        workspace: Comet workspace owning the project.
+        tags: Optional list of tags to attach to the experiment.
+    """
+
+    api_key: str
+    project_name: str
+    experiment_name: str
+    workspace: str
+    tags: list[str] | None = field(default_factory=list)
 
 
 @dataclass
 class LightningTrainerParam:
-    """Parameters for LightningTrainer - matches internal API exactly."""
+    """Configuration for :class:`LightningTrainer`.
 
-    create_model: Callable[..., pl.LightningModule]
-    model_kwargs: dict[str, Any]
-    train_data: Dataset
-    validation_data: Dataset
-    batch_size: int
-    num_epochs: int
-    lightning_trainer_kwargs: Optional[dict[str, Any]] = None
+    All callables (``create_model_fn``, ``data_collate_fn``) are invoked inside the
+    Ray Train worker. The model is constructed on each worker via
+    ``create_model_fn(**create_model_fn_kwargs)`` rather than being pickled across
+    process boundaries.
 
-    def __post_init__(self):
-        """Initialize lightning_trainer_kwargs if not provided."""
-        if self.lightning_trainer_kwargs is None:
-            self.lightning_trainer_kwargs = {}
-
-
-class LightningTrainer:
-    """Lightning trainer that wraps Ray Train.
-
-    Compatible with internal
-    uber.ai.michelangelo.lib.trainer.torch.pytorch_lightning.lightning_trainer.LightningTrainer.
+    Attributes:
+        create_model_fn: Factory returning a ``pytorch_lightning.LightningModule``.
+            Invoked on each worker with ``**create_model_fn_kwargs``.
+        create_model_fn_kwargs: Keyword arguments passed to ``create_model_fn``.
+        train_data: Training Ray Dataset.
+        val_data: Validation Ray Dataset.
+        batch_size: Per-worker training batch size.
+        num_shuffle_batches: Number of batches kept in the Ray Data local shuffle
+            buffer. ``0`` disables shuffling.
+        num_epochs: Deprecated; prefer ``lightning_trainer_kwargs={"max_epochs": N}``.
+        data_collate_fn: Optional custom collate function passed to
+            ``Dataset.iter_torch_batches``; defaults to Ray Data's column-tensor
+            output.
+        comet_param: Optional :class:`CometParam`; when set, a CometLogger is
+            attached on each worker.
+        lightning_trainer_kwargs: Extra keyword arguments forwarded verbatim to
+            ``pytorch_lightning.Trainer(...)``.
+        transfer_learning_spec: Optional warm-start spec describing layer freezing
+            patterns.
+        incremental_training_spec: Optional spec for continuing from an existing
+            run.
+        initial_weights_path: Optional path to a state dict file (local, ``s3://``,
+            ``gs://``, etc.); loaded on rank 0 and broadcast to other workers.
     """
 
-    def __init__(self, param: LightningTrainerParam):
-        """Initialize the Lightning trainer with parameters."""
-        self.param = param
-        self._setup_trainer()
+    create_model_fn: Callable
+    create_model_fn_kwargs: dict
+    train_data: ray.data.Dataset
+    val_data: ray.data.Dataset
+    batch_size: int = 8
+    num_shuffle_batches: int = (
+        10  # By default we reserve 10 batches in ray data shuffle buffer.
+    )
+    num_epochs: int | None = field(default=_UNSET)  # type: ignore[assignment]  # sentinel replaced in __post_init__
+    data_collate_fn: Callable | None = None
+    comet_param: CometParam | None = None
+    lightning_trainer_kwargs: dict = field(default_factory=dict)
 
-    def _setup_trainer(self):
-        """Setup the Ray TorchTrainer with Lightning."""
+    transfer_learning_spec: TransferLearningSpec | None = None
+    incremental_training_spec: IncrementalTrainingSpec | None = None
+    initial_weights_path: str | None = None
 
-        def train_loop_per_worker(config):
-            """Training loop that runs on each worker."""
-            import os
-
-            import torch
-            from ray import train
-            from ray.train import get_context
-
-            # Get Ray Train context
-            get_context()
-
-            # Setup Lightning environment
-            RayLightningEnvironment()
-
-            # Create model
-            model = self.param.create_model(**self.param.model_kwargs)
-
-            # Get distributed datasets
-            train_dataset = train.get_dataset_shard("train")
-            val_dataset = train.get_dataset_shard("validation")
-
-            # Convert to PyTorch datasets
-            def ray_dataset_to_torch(ray_ds, batch_size):
-                """Convert Ray dataset to PyTorch DataLoader."""
-                from torch.utils.data import DataLoader
-                from torch.utils.data import Dataset as TorchDataset
-
-                class RayTorchDataset(TorchDataset):
-                    def __init__(self, ray_dataset_iter):
-                        # Convert the iterator to list for indexing
-                        self.data = []
-                        for batch in ray_dataset_iter.iter_batches():
-                            # batch is already a dict with lists
-                            if isinstance(batch, dict):
-                                # Convert columnar format to row format
-                                num_rows = len(next(iter(batch.values())))
-                                for i in range(num_rows):
-                                    item = {k: v[i] for k, v in batch.items()}
-                                    self.data.append(item)
-                            else:
-                                # If not dict, try pandas conversion
-                                for item in batch.to_pandas().to_dict("records"):
-                                    self.data.append(item)
-
-                    def __len__(self):
-                        return len(self.data)
-
-                    def __getitem__(self, idx):
-                        item = self.data[idx]
-                        return {
-                            k: (
-                                torch.tensor(v, dtype=torch.long)
-                                if isinstance(v, list)
-                                else v
-                            )
-                            for k, v in item.items()
-                        }
-
-                torch_dataset = RayTorchDataset(ray_ds)
-                return DataLoader(
-                    torch_dataset,
-                    batch_size=batch_size,
-                    shuffle=True,
-                    num_workers=0,  # Ray handles the parallelism
-                )
-
-            train_dataloader = ray_dataset_to_torch(
-                train_dataset, self.param.batch_size
-            )
-            val_dataloader = ray_dataset_to_torch(val_dataset, self.param.batch_size)
-
-            # Setup trainer kwargs - let Ray handle MLflow logging
-            trainer_kwargs = {
-                "max_epochs": self.param.num_epochs,
-                "enable_checkpointing": True,
-                "logger": False,  # Ray MLflow callback will handle logging
-                **self.param.lightning_trainer_kwargs,
-            }
-
-            # Use Ray strategy if specified
-            if "strategy" in trainer_kwargs:
-                # Keep the strategy as-is (e.g., RayFSDPStrategy)
-                pass
-            else:
-                # Default to Ray DDP strategy
-                trainer_kwargs["strategy"] = RayDDPStrategy()
-
-            # Create Lightning trainer
-            trainer = pl.Trainer(**trainer_kwargs)
-
-            # Train the model
-            trainer.fit(
-                model,
-                train_dataloaders=train_dataloader,
-                val_dataloaders=val_dataloader,
+    def __post_init__(self):
+        """Apply default ``num_epochs`` and warn on the deprecated field usage."""
+        if self.num_epochs is _UNSET:
+            self.num_epochs = 1
+        else:
+            _logger.warning(
+                "LightningTrainerParam.num_epochs is deprecated. "
+                "Use LightningTrainerParam.lightning_trainer_kwargs={'max_epochs': N} instead."
             )
 
-            # Save model checkpoint for Ray to capture
-            import tempfile
 
-            from ray import train as ray_train
+class LightningTrainer(TorchTrainer):
+    """Ray ``TorchTrainer`` subclass that runs a PyTorch Lightning training loop."""
 
-            # Create checkpoint in temporary directory for Ray to capture
-            checkpoint_dir = tempfile.mkdtemp()
+    def __init__(
+        self,
+        trainer_param: LightningTrainerParam,
+        run_config: ray.train.RunConfig | None = None,
+        scaling_config: ray.train.ScalingConfig | None = None,
+    ):
+        """Initialize the trainer.
 
-            checkpoint_path = os.path.join(checkpoint_dir, "model_checkpoint.ckpt")
-            trainer.save_checkpoint(checkpoint_path)
-
-            # Also save the model state directly
-            model_path = os.path.join(checkpoint_dir, "model_state.pt")
-            torch.save(model.state_dict(), model_path)
-
-            # Report final metrics to Ray for MLflow logging
-            final_metrics = {}
-            if hasattr(trainer, "logged_metrics") and trainer.logged_metrics:
-                for key, value in trainer.logged_metrics.items():
-                    if isinstance(value, torch.Tensor):
-                        final_metrics[key] = value.item()
-                    else:
-                        final_metrics[key] = value
-
-            # Report checkpoint and metrics to Ray Train
-            # (this gets picked up by MLflow callback)
-            ray_train.report(
-                final_metrics,
-                checkpoint=ray_train.Checkpoint.from_directory(checkpoint_dir),
-            )
-
-            return {"metrics": final_metrics}
-
-        # Store the train loop function for later initialization
-        self._train_loop_per_worker = train_loop_per_worker
-
-    def train(self, run_config: RunConfig, scaling_config: ScalingConfig):
-        """Train the model using Ray.
-
-        Returns Ray Result object compatible with internal API.
+        Args:
+            trainer_param: Training configuration (model factory, datasets, etc.).
+            run_config: Optional Ray ``RunConfig`` (storage path, run name, ...).
+            scaling_config: Optional Ray ``ScalingConfig`` (num_workers, GPU/CPU
+                requests, ...).
         """
-        log.info("Starting distributed Lightning training...")
-        log.info(f"Using storage path: {run_config.storage_path}")
+        self.trainer_param = trainer_param
+        _logger.info(
+            "LightningTrainer initialized with trainer_param: %r", trainer_param
+        )
+        train_loop_config = asdict(trainer_param)
+        # Unique run id for Comet experiment
+        train_loop_config["run_id"] = str(uuid.uuid4())
+        # Pop out train and val data since we have to pass them into datasets parameter of TorchTrainer.
+        train_data = train_loop_config.pop("train_data")
+        val_data = train_loop_config.pop("val_data")
 
-        # Create TorchTrainer with proper RunConfig and ScalingConfig
-        torch_trainer = TorchTrainer(
-            train_loop_per_worker=self._train_loop_per_worker,
-            datasets={
-                "train": self.param.train_data,
-                "validation": self.param.validation_data,
-            },
+        super().__init__(
+            train_loop_per_worker=_train_loop_per_worker,
+            train_loop_config=train_loop_config,
             scaling_config=scaling_config,
             run_config=run_config,
-            train_loop_config={},
+            datasets={"train": train_data, "val": val_data},
         )
 
-        # Train and return result
-        result = torch_trainer.fit()
+    def train(
+        self,
+        run_config: ray.train.RunConfig | None = None,
+        scaling_config: ray.train.ScalingConfig | None = None,
+    ) -> dict:
+        """Run training and return a small result dict.
 
-        log.info("Distributed Lightning training completed")
-        return result
+        Args:
+            run_config: Optional override applied before ``fit()``.
+            scaling_config: Optional override applied before ``fit()``.
+
+        Returns:
+            Dict with ``checkpoint_path`` (path to the latest checkpoint),
+            ``path`` (the Ray result path), and ``metrics``.
+
+        Raises:
+            Exception: Whatever Ray Train reports in ``result.error``.
+        """
+        if scaling_config is not None:
+            self.scaling_config = scaling_config
+        if run_config is not None:
+            self.run_config = run_config
+
+        result = self.fit()
+        if result.error:
+            raise result.error
+
+        # The user-supplied LightningModule is captured in result.metrics["config"]
+        # and is generally not serializable across worker boundaries. Drop it.
+        result.metrics.pop("config", None)
+        # Keep the checkpoint object for subclasses that need it (e.g., LightningTrainerWithStateDict)
+        self.checkpoint = result.checkpoint
+        return {
+            CHECKPOINT_PATH_KEY: result.checkpoint.path,
+            "path": result.path,
+            "metrics": result.metrics,
+        }
 
 
-def create_run_config(
-    name: Optional[str] = None,
-    storage_path: Optional[str] = None,
-    checkpoint_config: CheckpointConfig = None,
-    stop: Optional[dict] = None,  # Keep for compatibility but don't use
-    verbose: int = 1,  # Keep parameter for compatibility but don't use it
-) -> RunConfig:
-    """Create Ray RunConfig for distributed training."""
-    return RunConfig(
-        name=name,
-        storage_path=storage_path,
-        checkpoint_config=checkpoint_config,
-    )
+class LightningTrainerWithStateDict(LightningTrainer):
+    """LightningTrainer that loads the trained checkpoint into a torch model.
+
+    After ``train()`` completes, callers can pass an initialized ``torch.nn.Module``
+    to :meth:`update_model_state_dict` and have it populated from the latest
+    checkpoint. Supports both DDP single-file checkpoints and DeepSpeed ZeRO
+    sharded directories.
+    """
+
+    def _is_deepspeed_strategy(self) -> bool:
+        """Return ``True`` if the configured strategy is DeepSpeed."""
+        strategy = self.trainer_param.lightning_trainer_kwargs.get("strategy")
+        if strategy is None:
+            return False
+
+        # DeepSpeed was used if the strategy is "deepspeed" or a RayDeepSpeedStrategy instance
+        if isinstance(strategy, str):
+            return strategy.lower() == "deepspeed"
+
+        try:
+            from ray.train.lightning import RayDeepSpeedStrategy
+
+            return isinstance(strategy, RayDeepSpeedStrategy)
+        except ImportError:
+            return False
+
+    def update_model_state_dict(self, torch_model: torch.nn.Module) -> None:
+        """Populate ``torch_model`` in-place from the latest training checkpoint.
+
+        Args:
+            torch_model: Model whose ``state_dict`` will be replaced.
+
+        Raises:
+            ValueError: If ``train()`` has not been called yet.
+        """
+        if not hasattr(self, "checkpoint") or self.checkpoint is None:
+            raise ValueError(
+                "No checkpoint available. Please call train() first to generate a checkpoint."
+            )
+        used_deepspeed = self._is_deepspeed_strategy()
+        # use the ray checkpoint as_directory() to get the local temp checkpoint directory
+        with self.checkpoint.as_directory() as d:
+            _logger.info(
+                "Saving Ray Checkpoint to local temp Checkpoint directory: %s", d
+            )
+            data_dir_contents = os.listdir(d)
+            _logger.info("Data directory contents: %s", data_dir_contents)
+            lightning_ckpt_path = os.path.join(d, CHECKPOINT_NAME)
+            if used_deepspeed:
+                local_model_path = os.path.join(lightning_ckpt_path, "model.pt")
+                # PyTorch 2.6+ defaults weights_only=True, which rejects arbitrary Python classes
+                # (LossScaler, DynamicLossScaler, optimizer states, etc.) embedded in DeepSpeed ZeRO
+                # checkpoints. The env var reverts the default for any torch.load call that doesn't
+                # explicitly pass weights_only, covering both pytorch_lightning and deepspeed internals.
+                # TODO: Remove this once we upgrade to Lightning 2.6+ https://github.com/Lightning-AI/pytorch-lightning/pull/21194
+                with _torch_weights_only_disabled():
+                    model_state_dict = convert_zero_checkpoint_to_fp32_state_dict(
+                        lightning_ckpt_path, local_model_path
+                    )
+                _logger.info(
+                    "Loaded DeepSpeed checkpoint from %s to %s",
+                    lightning_ckpt_path,
+                    local_model_path,
+                )
+            else:
+                # DDP checkpoint
+                checkpoint = torch.load(lightning_ckpt_path, map_location="cpu")
+                model_state_dict = checkpoint["state_dict"]
+                _logger.info("Loaded DDP checkpoint from %s", lightning_ckpt_path)
+            torch_model.load_state_dict(model_state_dict, strict=False)
+            _logger.info("Updated the state dict of the torch model.")
 
 
-def create_scaling_config(
-    trainer_cpu: int = 2,
-    cpu_per_worker: int = 4,
-    num_workers: Optional[int] = None,
-    use_gpu: bool = True,
-    resources_per_worker: Optional[dict] = None,
-) -> ScalingConfig:
-    """Create Ray ScalingConfig for distributed training."""
-    if num_workers is None:
-        # Infer from runtime or default
-        num_workers = 4
-
-    if resources_per_worker is None:
-        resources_per_worker = {"CPU": cpu_per_worker}
-        if use_gpu:
-            resources_per_worker["GPU"] = 1
-
-    return ScalingConfig(
-        num_workers=num_workers,
-        use_gpu=use_gpu,
-        resources_per_worker=resources_per_worker,
-    )
+@contextmanager
+def _torch_weights_only_disabled():
+    """Force ``torch.load()`` to use ``weights_only=False`` for callers that don't pass it explicitly."""
+    key = "TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"
+    old = os.environ.pop(key, None)
+    os.environ[key] = "1"
+    try:
+        yield
+    finally:
+        if old is not None:
+            os.environ[key] = old
+        else:
+            os.environ.pop(key, None)

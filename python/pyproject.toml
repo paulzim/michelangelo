@@ -50,6 +50,8 @@ torch = { version = "2.6.0", optional = true }
 pytorch_lightning = { version = "2.2.0", optional = true }
 einops = { version = "0.8.0", optional = true }
 transformers = { version = "4.48.2", optional = true }
+comet_ml = { version = "^3.49.0", optional = true }
+deepspeed = { version = "^0.14.0", optional = true }
 xgboost_ray = {version = "0.1.19", optional = true }
 xgboost = {version = "2.1.4", optional = true }
 kaggle = { version = "^1.6.17", optional = true }
@@ -76,6 +78,9 @@ plugin = ["ray", "pyspark"]
 example = ["accelerate", "datasets", "numpy", "pandas", "pyarrow", "ray", "s3fs", "torch", "transformers", "pytorch_lightning", "einops", "xgboost", "xgboost_ray", "kaggle", "scikit-learn", "chronon-ai", "thrift", "sqlglot", "pyspark", "ray", "mlflow", "boto3", "peft"]
 vllm = ["accelerate", "datasets", "numpy", "pandas", "pyarrow", "ray", "s3fs", "torch", "transformers", "pytorch_lightning", "einops", "vllm", "setuptools"]
 mactl = []
+trainer = ["ray", "torch", "pytorch_lightning", "transformers", "numpy"]
+trainer-comet = ["comet_ml"]
+trainer-deepspeed = ["deepspeed"]
 
 [tool.pytest.ini_options]
 pythonpath = [
@@ -180,6 +185,9 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "**/gen/**/*.py" = ["ALL"]
 "**/api/v2/services/gen/**/*.py" = ["ALL"]
 "**/tests/fixtures/**/*.py" = ["ALL"]
+# The trainer package is a one-time snapshot of internal training code; line-length
+# rule is relaxed to preserve the original code shape from the upstream source.
+"michelangelo/lib/trainer/**/*.py" = ["E501"]
 
 # Google-style docstrings
 [tool.ruff.lint.pydocstyle]
@@ -236,7 +244,12 @@ omit = [
     "*/__pycache__/*",
     "*/site-packages/*",
     "*/sandbox.py",
-    "*/*.tmpl",    
+    "*/*.tmpl",
+    # Trainer worker-internal modules: these run inside Ray Train workers
+    # and require a distributed Ray runtime to execute. They are covered
+    # via integration tests rather than unit tests, and the project's
+    # _private/ convention marks them as not-for-direct-import.
+    "*/lib/trainer/**/_private/*",
 ]
 
 [tool.coverage.report]
