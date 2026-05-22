@@ -216,30 +216,24 @@ def _ray_mods(mock_data):
     return {"ray": _types.SimpleNamespace(data=mock_data), "ray.data": mock_data}
 
 
-class TestDatasetArtifactFromPandas(TestCase):
-    """Tests for DatasetArtifact.from_pandas() convenience factory."""
+class TestDatasetArtifactPandas(TestCase):
+    """Tests for DatasetArtifact with a pandas DataFrame value."""
 
-    def test_wraps_dataframe(self):
-        """It stores the DataFrame in .value."""
+    def test_stores_dataframe(self):
+        """DatasetArtifact(value=df) stores the DataFrame in .value."""
         df = pd.DataFrame([{"x": 1}])
-        artifact = DatasetArtifact.from_pandas(df)
+        artifact = DatasetArtifact(value=df)
         self.assertIs(artifact.value, df)
-
-    def test_raises_type_error_for_non_dataframe(self):
-        """It raises TypeError when passed a non-DataFrame."""
-        with self.assertRaises(TypeError):
-            DatasetArtifact.from_pandas([{"x": 1}])  # type: ignore[arg-type]
 
     def test_backend_is_pandas(self):
         """It reports 'pandas' as the backend."""
-        artifact = DatasetArtifact.from_pandas(pd.DataFrame())
+        artifact = DatasetArtifact(value=pd.DataFrame())
         self.assertEqual(artifact.backend, "pandas")
 
-    def test_direct_construction_pandas(self):
-        """DatasetArtifact(value=df) works without from_pandas."""
+    def test_to_pandas_returns_value(self):
+        """to_pandas() returns the stored DataFrame directly."""
         df = pd.DataFrame([{"x": 1}])
-        artifact = DatasetArtifact(value=df)
-        self.assertEqual(artifact.backend, "pandas")
+        self.assertIs(DatasetArtifact(value=df).to_pandas(), df)
 
 
 class TestDatasetArtifactBackendSpark(TestCase):
@@ -285,12 +279,6 @@ class TestDatasetArtifactBackendRay(TestCase):
 
 class TestDatasetArtifactToPandas(TestCase):
     """Tests for DatasetArtifact.to_pandas() cross-backend conversion."""
-
-    def test_returns_pandas_directly(self):
-        """It returns the stored DataFrame for a pandas artifact."""
-        df = pd.DataFrame([{"x": 1}])
-        artifact = DatasetArtifact(value=df)
-        self.assertIs(artifact.to_pandas(), df)
 
     def test_calls_to_pandas_on_spark_df(self):
         """It calls toPandas() on a Spark DataFrame."""

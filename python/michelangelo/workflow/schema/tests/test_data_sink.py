@@ -26,7 +26,7 @@ _DF = pd.DataFrame([{"name": "alice", "score": 0.92}, {"name": "bob", "score": 0
 
 
 def _artifact(df: pd.DataFrame | None = None) -> DatasetArtifact:
-    return DatasetArtifact.from_pandas(df if df is not None else _DF.copy())
+    return DatasetArtifact(value=df if df is not None else _DF.copy())
 
 
 class TestDataSinkABC(TestCase):
@@ -261,7 +261,7 @@ class TestHiveSink(TestCase):
         from michelangelo.workflow.variables.types import DatasetArtifact
 
         mock_sql, _ = _mock_pyspark_sql()
-        artifact = DatasetArtifact.from_pandas(_DF.copy())
+        artifact = DatasetArtifact(value=_DF.copy())
         sink = HiveSink(database="ml", table="t")
         mods = {"pyspark": MagicMock(), "pyspark.sql": mock_sql}
         with patch.dict(sys.modules, mods), self.assertRaises(TypeError):

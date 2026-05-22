@@ -261,8 +261,7 @@ class HiveSink(DataSink):
 
         Args:
             artifact: Dataset artifact. Must hold a ``pyspark.sql.DataFrame``
-                in ``artifact.value``. Use ``DatasetArtifact.from_spark()``
-                to wrap a Spark DataFrame.
+                in ``artifact.value`` (e.g. ``DatasetArtifact(value=spark_df)``).
 
         Returns:
             A ``SinkResult`` with a ``hive://`` URI and the row count.
@@ -281,7 +280,7 @@ class HiveSink(DataSink):
             raise TypeError(
                 f"HiveSink requires artifact.value to be a pyspark.sql.DataFrame, "
                 f"got {type(artifact.value).__name__}. "
-                "Use DatasetArtifact.from_spark() to wrap a Spark DataFrame."
+                "Use DatasetArtifact(value=spark_df) to pass a Spark DataFrame."
             )
         qualified = f"{self._database}.{self._table}"
         spark_df = artifact.value  # native — no toPandas()

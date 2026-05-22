@@ -138,37 +138,6 @@ class DatasetArtifact:
     value: Any  # pd.DataFrame | pyspark.sql.DataFrame | ray.data.Dataset
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    @classmethod
-    def from_pandas(cls, df: pd.DataFrame) -> DatasetArtifact:
-        """Create a ``DatasetArtifact`` wrapping a pandas DataFrame.
-
-        Convenience factory with type validation. For Spark or Ray values,
-        use ``DatasetArtifact(value=...)`` directly.
-
-        Args:
-            df: A ``pandas.DataFrame`` containing the dataset records.
-
-        Returns:
-            A ``DatasetArtifact`` whose ``value`` is the provided DataFrame.
-
-        Raises:
-            TypeError: If ``df`` is not a ``pandas.DataFrame``.
-
-        Example:
-            >>> import pandas as pd
-            >>> artifact = DatasetArtifact.from_pandas(pd.DataFrame([{"x": 1}]))
-            >>> len(artifact.value)
-            1
-        """
-        import pandas as pd_rt
-
-        if not isinstance(df, pd_rt.DataFrame):
-            raise TypeError(
-                f"Expected pandas.DataFrame, got {type(df).__name__}. "
-                "For Spark or Ray datasets use DatasetArtifact(value=...) directly."
-            )
-        return cls(value=df)
-
     @property
     def backend(self) -> str:
         """Return the name of the underlying data backend.

@@ -65,7 +65,7 @@ class DatasetPusherPlugin(PusherPluginBase):
         from michelangelo.workflow.variables.types import DatasetArtifact
         import pandas as pd
 
-        artifact = DatasetArtifact.from_pandas(pd.DataFrame([{"x": 1}]))
+        artifact = DatasetArtifact(value=pd.DataFrame([{"x": 1}]))
         plugin = DatasetPusherPlugin(
             config=DatasetPluginConfig(
                 destination_path="/tmp/out",

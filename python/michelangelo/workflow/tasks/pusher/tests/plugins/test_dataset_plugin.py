@@ -32,7 +32,7 @@ _DF = pd.DataFrame(_RECORDS)
 def _artifact(records: list | None = None) -> DatasetArtifact:
     """Return a DatasetArtifact wrapping a pandas DataFrame."""
     df = pd.DataFrame(records if records is not None else _RECORDS)
-    return DatasetArtifact.from_pandas(df)
+    return DatasetArtifact(value=df)
 
 
 def _make_plugin(
@@ -51,19 +51,25 @@ def _make_plugin(
 
 
 class TestDatasetArtifact(TestCase):
-    """Tests for DatasetArtifact construction and conversion."""
+    """Tests for DatasetArtifact construction and to_pandas()."""
 
-    def test_from_pandas_wraps_dataframe(self):
-        """It wraps a pandas DataFrame and returns it via to_pandas()."""
-        artifact = DatasetArtifact.from_pandas(_DF.copy())
+    def test_value_stores_dataframe(self):
+        """DatasetArtifact(value=df).value is the DataFrame."""
+        artifact = DatasetArtifact(value=_DF.copy())
+        self.assertIsInstance(artifact.value, pd.DataFrame)
+        self.assertEqual(len(artifact.value), len(_RECORDS))
+
+    def test_to_pandas_returns_dataframe(self):
+        """to_pandas() returns the stored DataFrame for a pandas artifact."""
+        artifact = DatasetArtifact(value=_DF.copy())
         result = artifact.to_pandas()
         self.assertIsInstance(result, pd.DataFrame)
         self.assertEqual(len(result), len(_RECORDS))
 
-    def test_from_pandas_raises_for_non_dataframe(self):
-        """It raises TypeError when passed a non-DataFrame."""
-        with self.assertRaises(TypeError):
-            DatasetArtifact.from_pandas(_RECORDS)  # type: ignore[arg-type]
+    def test_backend_is_pandas(self):
+        """Backend property returns 'pandas' for a DataFrame value."""
+        artifact = DatasetArtifact(value=_DF.copy())
+        self.assertEqual(artifact.backend, "pandas")
 
 
 class TestDatasetPusherPluginInit(TestCase):
@@ -169,7 +175,7 @@ class TestDatasetPusherPluginExecute(TestCase):
             config=DatasetPluginConfig(
                 destination_path=dest, format=DatasetFormat.PARQUET
             ),
-            artifact=DatasetArtifact.from_pandas(pd.DataFrame()),
+            artifact=DatasetArtifact(value=pd.DataFrame()),
         )
         result = plugin.execute()
         self.assertEqual(result["num_records"], 0)
