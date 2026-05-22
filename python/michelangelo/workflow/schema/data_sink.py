@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any
 from michelangelo.workflow.schema.pusher import DatasetFormat
 
 if TYPE_CHECKING:
-    from michelangelo.workflow.variables.types import DatasetVariable
+    from michelangelo.workflow.variables import DatasetVariable
 
 _logger = logging.getLogger(__name__)
 

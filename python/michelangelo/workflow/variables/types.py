@@ -95,7 +95,3 @@ class PusherResult:
     success: bool
     value: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
-
-
-# DatasetVariable lives in its own module — re-exported here for backwards compat.
-from michelangelo.workflow.variables._private.dataset import DatasetVariable  # noqa: E402,F401

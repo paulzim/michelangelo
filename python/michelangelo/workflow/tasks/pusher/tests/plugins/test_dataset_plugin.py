@@ -19,7 +19,7 @@ from michelangelo.workflow.schema.pusher import DatasetFormat, DatasetPluginConf
 from michelangelo.workflow.tasks.pusher.plugins.dataset_plugin import (
     DatasetPusherPlugin,
 )
-from michelangelo.workflow.variables.types import DatasetVariable
+from michelangelo.workflow.variables._private.dataset import DatasetVariable
 
 _RECORDS = [
     {"name": "alice", "score": 0.92},
@@ -59,7 +59,7 @@ class TestDatasetVariable(TestCase):
         self.assertIsInstance(artifact.value, pd.DataFrame)
         self.assertEqual(len(artifact.value), len(_RECORDS))
 
-    def test_to_pandas_returns_dataframe(self):
+    def test_load_pandas_dataframe_restores_value(self):
         """load_pandas_dataframe() restores the value after save."""
         import tempfile
 

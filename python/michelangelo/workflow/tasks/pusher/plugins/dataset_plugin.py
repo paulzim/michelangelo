@@ -4,8 +4,8 @@ Consumes a ``DatasetVariable`` (wrapping pandas, Spark, or Ray data) and
 routes it to each configured ``DataSink``. The sink, not the plugin, is
 responsible for extracting the data in its most efficient format:
 
-- ``LocalFileSink.write(artifact)`` → ``artifact.to_pandas()`` (small data OK)
-- ``UberHiveSink.write(artifact)`` → ``artifact.value`` as native Spark DataFrame
+- ``LocalFileSink.write(variable)`` → accesses ``variable.value`` as pandas DataFrame (small data)
+- ``HiveSink.write(variable)`` → ``variable.value`` as native Spark DataFrame
   (no ``toPandas()`` collect — mirrors the internal implementation:
   ``spark_df = self._var.value; save_data_sink(sink, spark_df)``)
 - ``S3Sink.write(artifact)`` → native Ray/Spark write or pandas fallback
@@ -24,7 +24,7 @@ from michelangelo.workflow.tasks.pusher.plugins.base import PusherPluginBase
 
 if TYPE_CHECKING:
     from michelangelo.workflow.schema.pusher import DatasetPluginConfig
-    from michelangelo.workflow.variables.types import DatasetVariable
+    from michelangelo.workflow.variables import DatasetVariable
 
 _logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ class DatasetPusherPlugin(PusherPluginBase):
         from michelangelo.workflow.schema.pusher import (
             DatasetFormat, DatasetPluginConfig,
         )
-        from michelangelo.workflow.variables.types import DatasetVariable
+        from michelangelo.workflow.variables import DatasetVariable
         import pandas as pd
 
         artifact = DatasetVariable(value=pd.DataFrame([{"x": 1}]))

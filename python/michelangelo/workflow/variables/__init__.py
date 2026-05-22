@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
-
-# flake8: noqa:F401
 from michelangelo.workflow.variables._private.dataset import DatasetVariable
 from michelangelo.workflow.variables.metadata import ModelMetadata
 from michelangelo.workflow.variables.types import (
@@ -13,5 +10,10 @@ from michelangelo.workflow.variables.types import (
     PusherResult,
 )
 
-with contextlib.suppress(ImportError):
-    from michelangelo.workflow.variables._private.dataset import DatasetVariable
+__all__ = [
+    "AssembledModel",
+    "DatasetVariable",
+    "ModelArtifact",
+    "ModelMetadata",
+    "PusherResult",
+]

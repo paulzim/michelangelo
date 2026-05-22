@@ -92,10 +92,11 @@ class DatasetPluginConfig:
 
     Attributes:
         sinks: Ordered list of sinks to write to. All sinks receive the same
-            ``DatasetVariable``. Each sink extracts data in its native format —
-            ``LocalFileSink`` calls ``artifact.to_pandas()``; ``UberHiveSink``
-            accesses ``artifact.value`` as a Spark DataFrame directly (no
-            ``toPandas()`` collection to the driver).
+            ``DatasetVariable``. Each sink accesses ``variable.value`` in its
+            native format — ``LocalFileSink`` checks ``isinstance(pd.DataFrame)``
+            and raises ``TypeError`` for non-pandas; ``HiveSink`` accesses
+            ``variable.value`` as a native Spark DataFrame (no ``toPandas()``
+            collection to the driver).
         destination_path: Convenience shorthand. When ``sinks`` is ``None``
             (not provided) and ``destination_path`` is set, a ``LocalFileSink``
             is auto-created by ``__post_init__``. Passing ``sinks=[]`` explicitly

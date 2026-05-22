@@ -20,7 +20,7 @@ from michelangelo.workflow.schema.data_sink import (
 )
 from michelangelo.workflow.schema.exceptions import ConfigurationError
 from michelangelo.workflow.schema.pusher import DatasetFormat, DatasetPluginConfig
-from michelangelo.workflow.variables.types import DatasetVariable
+from michelangelo.workflow.variables import DatasetVariable
 
 _DF = pd.DataFrame([{"name": "alice", "score": 0.92}, {"name": "bob", "score": 0.88}])
 
@@ -221,7 +221,7 @@ class TestHiveSink(TestCase):
         return mock_sql, spark_df
 
     def _artifact_from_spark(self, spark_df, mock_sql):
-        from michelangelo.workflow.variables.types import DatasetVariable
+        from michelangelo.workflow.variables import DatasetVariable
 
         return DatasetVariable(value=spark_df)
 
@@ -279,7 +279,7 @@ class TestHiveSink(TestCase):
 
     def test_raises_import_error_when_pyspark_missing(self):
         """It raises ImportError when pyspark is not installed."""
-        from michelangelo.workflow.variables.types import DatasetVariable
+        from michelangelo.workflow.variables import DatasetVariable
 
         artifact = DatasetVariable(value=MagicMock())
         sink = HiveSink(database="ml", table="t")
@@ -289,7 +289,7 @@ class TestHiveSink(TestCase):
 
     def test_raises_type_error_for_non_spark_artifact(self):
         """It raises TypeError when artifact.value is not a Spark DataFrame."""
-        from michelangelo.workflow.variables.types import DatasetVariable
+        from michelangelo.workflow.variables import DatasetVariable
 
         mock_sql, _ = _mock_pyspark_sql()
         artifact = DatasetVariable(value=_DF.copy())

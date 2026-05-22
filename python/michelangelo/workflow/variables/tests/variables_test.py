@@ -14,10 +14,10 @@ import pandas as pd
 from michelangelo.workflow.variables.metadata import ModelMetadata
 from michelangelo.workflow.variables.types import (
     AssembledModel,
-    DatasetVariable,
     ModelArtifact,
     PusherResult,
 )
+from michelangelo.workflow.variables._private.dataset import DatasetVariable
 
 
 class TestModelMetadata(TestCase):
