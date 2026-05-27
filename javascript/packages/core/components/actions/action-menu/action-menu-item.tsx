@@ -5,39 +5,17 @@ import { ACCESSIBILITY_TYPE, PLACEMENT, Tooltip } from 'baseui/tooltip';
 import { Icon } from '#core/components/icon/icon';
 
 import type { MenuAdapterProps } from 'baseui/list';
-import type { ComponentActionConfig, Data, SelectedAction } from '#core/components/actions/types';
+import type { ResolvedActionItem } from '#core/components/actions/types';
 
-/**
- * Props for ActionMenuItem, combining BaseUI's MenuAdapter props with
- * action-menu-level state for tooltip coordination.
- *
- * BaseUI injects `$isHighlighted`, `$disabled`, `onClick`, etc. via the
- * Option override. The remaining props (`hoveredItem`, `keyboardActive`, etc.)
- * are passed from ActionMenu through the override's `props` field.
- */
 type ActionMenuItemProps = {
-  /**
-   * Item is the action configuration defined for a specific action in
-   * the ActionMenu list, passed as `item` per baseui MenuAdapter props.
-   */
-  item: Omit<ComponentActionConfig, 'disabled'> & {
-    disabled: boolean;
-    disabledMessage: string | undefined;
-  };
-  record: Data;
-  onSelectAction: (action: SelectedAction) => void;
+  /** Named `item` to match BaseUI's MenuAdapter injection. */
+  item: ResolvedActionItem;
+  onSelectAction: (action: ResolvedActionItem) => void;
   onClose?: () => void;
-  /**
-   * The action currently under the mouse cursor, or null.
-   * Compared by object identity against `action` to derive `isHovered`.
-   */
+  /** Action currently under the mouse cursor; compared by object identity to derive `isHovered`. */
   hoveredItem: object | null;
-  setHoveredItem: (item: object | null) => void;
-  /**
-   * True after any keydown inside the menu. False on mouse enter.
-   * Gates the keyboard tooltip path so auto-highlight on focus
-   * doesn't flash a tooltip.
-   */
+  setHoveredItem: (action: object | null) => void;
+  /** True after any keydown; false on mouse enter. Gates keyboard tooltip to suppress auto-highlight flash. */
   keyboardActive: boolean;
   setKeyboardActive: (active: boolean) => void;
 } & Omit<MenuAdapterProps, 'children' | 'item'>;
@@ -45,7 +23,6 @@ type ActionMenuItemProps = {
 export const ActionMenuItem = forwardRef<HTMLLIElement, ActionMenuItemProps>((props, ref) => {
   const {
     item: action,
-    record,
     onSelectAction,
     onClose,
     hoveredItem,
@@ -75,9 +52,7 @@ export const ActionMenuItem = forwardRef<HTMLLIElement, ActionMenuItemProps>((pr
       // Opacity dims the entire item (icon + text) uniformly.
       overrides={{ Root: { style: { height: '44px', opacity: action.disabled ? 0.4 : 1 } } }}
       $disabled={action.disabled}
-      onClick={
-        action.disabled ? undefined : () => onSelectAction({ component: action.component, record })
-      }
+      onClick={action.disabled ? undefined : () => onSelectAction(action)}
     >
       <ListItemLabel>{action.display.label}</ListItemLabel>
     </MenuAdapter>
