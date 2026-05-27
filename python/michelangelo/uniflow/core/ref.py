@@ -1,3 +1,4 @@
+import inspect
 import logging
 import os
 import uuid
@@ -37,7 +38,8 @@ def ref(value, io: IORegistry):
     if isinstance(value, dict):
         return {k: ref(v, io) for k, v in value.items()}
     if is_dataclass_instance(value):
-        res = {k: ref(v, io) for k, v in dataclass_dict(value).items()}
+        init_params = set(inspect.signature(type(value).__init__).parameters) - {"self"}
+        res = {k: ref(v, io) for k, v in dataclass_dict(value).items() if k in init_params}
         return type(value)(**res)
     if isinstance(value, pydantic.BaseModel):
         res = {k: ref(v, io) for k, v in pydantic_dict(value).items()}
@@ -87,7 +89,8 @@ def unref(value, io: IORegistry):
     if isinstance(value, dict):
         return {k: unref(v, io) for k, v in value.items()}
     if is_dataclass_instance(value):
-        res = {k: unref(v, io) for k, v in dataclass_dict(value).items()}
+        init_params = set(inspect.signature(type(value).__init__).parameters) - {"self"}
+        res = {k: unref(v, io) for k, v in dataclass_dict(value).items() if k in init_params}
         return type(value)(**res)
     if isinstance(value, pydantic.BaseModel):
         res = {k: unref(v, io) for k, v in pydantic_dict(value).items()}
