@@ -5,6 +5,8 @@ sidebar_label: "History & Evolution"
 
 # History and Evolution of Michelangelo
 
+Michelangelo has evolved significantly since its launch in 2016 — from a centralized platform for classical ML to a full-stack system supporting deep learning, generative AI, and agentic workflows.
+
 ## The problem that started it
 
 Before 2016, building and shipping a machine learning model at Uber meant starting from scratch every time. Applied scientists trained models in Jupyter notebooks. Engineers built custom serving containers for each project. There was no shared feature store, no standard deployment path, and no way for one team's infrastructure work to benefit any other. Every model that went to production was a one-off — and maintaining it was the team's own problem.
