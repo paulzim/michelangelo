@@ -8,6 +8,12 @@ title: Welcome
 
 Michelangelo is an end-to-end ML platform for building, deploying, and managing machine learning models. Born at Uber — where it powers **25,000+ model trainings per month** and **~30 million predictions per second** — now open source.
 
+## Why Michelangelo exists
+
+Before Michelangelo, Uber's ML teams each built their own infrastructure: custom training pipelines, bespoke serving containers, no shared path to production. Every model was a one-off, and maintaining it was the team's problem alone. Michelangelo was created to solve that fragmentation — standardizing the full ML lifecycle so any team could ship production-quality ML without reinventing the stack.
+
+Over eight years it evolved from tabular ML to deep learning to full LLMOps support, battle-tested across thousands of models and use cases. Open sourcing it extends that same mission: the platform is built on a modular, plug-and-play architecture so any engineering organization facing the same fragmentation problem can build on a foundation that has already been proven at scale. For the full story, see [History and Evolution](./about/history-and-evolution.md).
+
 ## Get started
 
 ### I'm evaluating Michelangelo
