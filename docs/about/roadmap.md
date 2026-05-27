@@ -21,7 +21,7 @@ The OSS release is staged so each version makes a specific, scoped promise rathe
 
 Michelangelo follows [Semantic Versioning 2.0.0](https://semver.org/) with stability declared per component, not per repository.
 
-| Tier | Guarantee |
+| Stability Level | Guarantee |
 |---|---|
 | **stable** | Backwards-compatible across all minor and patch versions within a major. Breaking changes only at the next major. |
 | **beta** | API may change between minor versions. Migration notes required in CHANGELOG. Breaking changes called out explicitly. |
