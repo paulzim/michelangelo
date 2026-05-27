@@ -5,7 +5,7 @@ import { ACCESSIBILITY_TYPE, PLACEMENT, Tooltip } from 'baseui/tooltip';
 import { Icon } from '#core/components/icon/icon';
 
 import type { MenuAdapterProps } from 'baseui/list';
-import type { ComponentActionConfig, Data, SelectedAction } from '#core/components/actions/types';
+import type { ResolvedActionItem } from '#core/components/actions/types';
 
 /**
  * Props for ActionMenuItem, combining BaseUI's MenuAdapter props with
@@ -16,20 +16,13 @@ import type { ComponentActionConfig, Data, SelectedAction } from '#core/componen
  * are passed from ActionMenu through the override's `props` field.
  */
 type ActionMenuItemProps = {
-  /**
-   * Item is the action configuration defined for a specific action in
-   * the ActionMenu list, passed as `item` per baseui MenuAdapter props.
-   */
-  item: Omit<ComponentActionConfig, 'disabled'> & {
-    disabled: boolean;
-    disabledMessage: string | undefined;
-  };
-  record: Data;
-  onSelectAction: (action: SelectedAction) => void;
+  /** Item is the resolved action data, passed as `item` per baseui MenuAdapter props. */
+  item: ResolvedActionItem;
+  onSelectAction: (action: ResolvedActionItem) => void;
   onClose?: () => void;
   /**
-   * The action currently under the mouse cursor, or null.
-   * Compared by object identity against `action` to derive `isHovered`.
+   * The action item currently under the mouse cursor, or null.
+   * Compared by object identity against `item` to derive `isHovered`.
    */
   hoveredItem: object | null;
   setHoveredItem: (item: object | null) => void;
@@ -44,8 +37,7 @@ type ActionMenuItemProps = {
 
 export const ActionMenuItem = forwardRef<HTMLLIElement, ActionMenuItemProps>((props, ref) => {
   const {
-    item: action,
-    record,
+    item,
     onSelectAction,
     onClose,
     hoveredItem,
@@ -54,7 +46,7 @@ export const ActionMenuItem = forwardRef<HTMLLIElement, ActionMenuItemProps>((pr
     setKeyboardActive,
     ...baseMenuProps
   } = props;
-  const isHovered = hoveredItem === action;
+  const isHovered = hoveredItem === item;
 
   const menuItem = (
     <MenuAdapter
@@ -65,29 +57,27 @@ export const ActionMenuItem = forwardRef<HTMLLIElement, ActionMenuItemProps>((pr
       ref={ref}
       role="option"
       artwork={
-        action.display.icon
-          ? ({ size }: { size: number }) => <Icon name={action.display.icon} size={`${size}px`} />
+        item.display.icon
+          ? ({ size }: { size: number }) => <Icon name={item.display.icon} size={`${size}px`} />
           : undefined
       }
       artworkSize={ARTWORK_SIZES.MEDIUM}
       // Opacity rather than $theme.colors.menuFontDisabled because ListItemLabel's
       // <p> sets its own color (contentPrimary), blocking CSS inheritance from the <li>.
       // Opacity dims the entire item (icon + text) uniformly.
-      overrides={{ Root: { style: { height: '44px', opacity: action.disabled ? 0.4 : 1 } } }}
-      $disabled={action.disabled}
-      onClick={
-        action.disabled ? undefined : () => onSelectAction({ component: action.component, record })
-      }
+      overrides={{ Root: { style: { height: '44px', opacity: item.disabled ? 0.4 : 1 } } }}
+      $disabled={item.disabled}
+      onClick={item.disabled ? undefined : () => onSelectAction(item)}
     >
-      <ListItemLabel>{action.display.label}</ListItemLabel>
+      <ListItemLabel>{item.display.label}</ListItemLabel>
     </MenuAdapter>
   );
 
-  if (!action.disabled || !action.disabledMessage) return menuItem;
+  if (!item.disabled || !item.disabledMessage) return menuItem;
 
   return (
     <Tooltip
-      content={action.disabledMessage}
+      content={item.disabledMessage}
       autoFocus={false}
       accessibilityType={ACCESSIBILITY_TYPE.tooltip}
       showArrow
@@ -107,7 +97,7 @@ export const ActionMenuItem = forwardRef<HTMLLIElement, ActionMenuItemProps>((pr
       // Entering mouse mode: track this item as hovered and disable the keyboard
       // path so the previously arrow-key-highlighted item's tooltip hides.
       onMouseEnter={() => {
-        setHoveredItem(action);
+        setHoveredItem(item);
         setKeyboardActive(false);
       }}
       onMouseLeave={() => setHoveredItem(null)}
