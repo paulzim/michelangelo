@@ -5,13 +5,12 @@ import { useServiceProvider } from '#core/providers/service-provider/use-service
 
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { ApplicationError } from '#core/types/error-types';
-import type { MutationOptions } from '#core/types/query-types';
+import type { MutationConfig } from '#core/types/query-types';
 
-export const useStudioMutation = <TData, TVariables extends Record<string, unknown>>(args: {
-  mutationName: string;
-  clientOptions?: MutationOptions<TData, TVariables>;
-}): UseMutationResult<TData, ApplicationError, TVariables> => {
-  const { mutationName, clientOptions } = args;
+export const useStudioMutation = <TData, TVariables extends Record<string, unknown>>(
+  config: MutationConfig
+): UseMutationResult<TData, ApplicationError, TVariables> => {
+  const { mutationName, clientOptions } = config;
   const { request } = useServiceProvider();
   const normalizeError = useErrorNormalizer();
 
@@ -24,7 +23,7 @@ export const useStudioMutation = <TData, TVariables extends Record<string, unkno
         throw normalizeError(error)!;
       }
     },
-    onSuccess: clientOptions?.onSuccess,
-    onError: clientOptions?.onError,
+    onSuccess: clientOptions?.onSuccess ? (data) => clientOptions.onSuccess!(data) : undefined,
+    onError: clientOptions?.onError ? (error) => clientOptions.onError!(error) : undefined,
   });
 };
