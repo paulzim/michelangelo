@@ -13,7 +13,7 @@ Michelangelo welcomes contributions from the community. This guide is your entry
 | UI improvements | New pages, component library additions |
 | Testing | Integration tests, test coverage gaps |
 
-For small fixes (typos, obvious bugs), open a PR directly. For new features or significant changes, open a GitHub issue first to discuss the approach before writing code.
+For small fixes (typos, obvious bugs), open a PR directly. For new features or significant changes, open a GitHub issue first to discuss the approach before writing code. For large architectural changes, see [Architectural proposals (RFCs)](#architectural-proposals-rfcs) below.
 
 ## Component Map
 
@@ -112,3 +112,20 @@ For adding or improving guides, references, or examples.
 
 - **GitHub Issues** — for bug reports and feature requests
 - **GitHub Discussions** — for questions about the codebase, design discussions, and community Q&A
+
+## Architectural proposals (RFCs)
+
+Large features or changes that affect public APIs, CRDs, operator contracts, or core platform behavior go through a public RFC process before implementation. An RFC documents the problem, proposed architecture, alternatives considered, and open questions — giving the community visibility and the chance to weigh in before code is written.
+
+**When to write an RFC instead of opening an issue:**
+- Your change affects a public API, CRD, or operator contract
+- Your change requires coordinating across multiple components
+- You want community input on the design before investing in implementation
+- You're an external contributor proposing a significant new capability
+
+**How to submit an RFC:**
+1. Copy the [RFC template](https://github.com/michelangelo-ai/enhancements/blob/main/rfcs/20260101-template.md) to `rfcs/YYYYMMDD-<short-name>.md` in the [michelangelo-ai/enhancements](https://github.com/michelangelo-ai/enhancements) repo
+2. Open a draft PR there and use GitHub PR comments for design discussion
+3. Once accepted, link your implementation PRs back to the RFC
+
+→ **[Browse existing RFCs](../architecture/rfcs/index.md)**

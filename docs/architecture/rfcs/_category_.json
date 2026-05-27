@@ -1,0 +1,8 @@
+{
+  "label": "RFCs",
+  "position": 1,
+  "link": {
+    "type": "doc",
+    "id": "architecture/rfcs/index"
+  }
+}
