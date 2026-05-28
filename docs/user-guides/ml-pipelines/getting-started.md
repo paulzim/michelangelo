@@ -27,6 +27,7 @@ Each step runs as an isolated, containerized task. Michelangelo handles data pas
 * [Poetry](https://python-poetry.org/) installed
 * For remote runs: Docker and access to a Kubernetes cluster (or use the [local sandbox](../../getting-started/sandbox-setup.md))
 * [Create a project](../project-management-for-ml-pipelines.md)
+* **macOS only**: XGBoost requires OpenMP (`libomp.dylib`), which is not installed by default. Run `brew install libomp` before installing dependencies.
 
 ## Environment setup
 
