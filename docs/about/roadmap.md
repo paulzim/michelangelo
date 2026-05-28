@@ -13,9 +13,9 @@ The OSS release is staged so each version makes a specific, scoped promise rathe
 
 | Version | Target | Focus |
 |---|---|---|
-| **0.1.2** | 2026 | Core pipeline platform — UniFlow, Ray, pipeline and run management, MA CLI and Studio |
-| **1.0** | 2026 | End-to-end LLM model management — fine-tuning, model registry, progressive serving, full lineage |
-| **1.1** | 2026 | Agent + LLM Gateway — K8s-native containerized agent jobs, deployment-aware LLM routing |
+| **0.1.2** | June 2026 | Release management + core pipeline platform — UniFlow, Ray, pipeline/run/trigger management, MA commands, MA Studio |
+| **0.2.0** | July 2026 | End-to-end LLM model management — Foundation Model fine-tuning, model registry, offline inference, progressive serving |
+| **0.3.0** | Q3 FY26 | Agent + LLM Gateway — K8s-native containerized agent (Agent Job API + Controller Manager) + LLM Gateway (LiteLLM or Bifrost, CRD-sync routing) |
 
 ## Versioning Policy
 
