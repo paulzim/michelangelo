@@ -49,14 +49,9 @@
   --custom-border-color: #e8e8e8;
   --uber-light-gray: #f3f3f3;
 
-  /* Landing page variables - Light mode */
-  --landing-bg: #fafafa;
-  --landing-gradient-1: rgba(37, 99, 235, 0.5);
-  --landing-gradient-2: rgba(124, 58, 237, 0.5);
-  --landing-gradient-3: rgba(219, 39, 119, 0.4);
+  /* Landing page accent (Uber blue) */
   --landing-accent: #276ef1;
-  --landing-gradient-text-1: #276ef1;
-  --landing-gradient-text-2: #7c3aed;
+  --landing-hero-bg: #ffffff;
 }
 
 [data-theme='dark'] {
@@ -82,14 +77,9 @@
   --custom-content-background: #000000;
   --custom-border-color: #333333;
 
-  /* Landing page variables - Dark mode */
-  --landing-bg: #000000;
-  --landing-gradient-1: rgba(74, 135, 243, 0.4);
-  --landing-gradient-2: rgba(124, 58, 237, 0.4);
-  --landing-gradient-3: rgba(236, 72, 153, 0.3);
-  --landing-accent: #4a87f3;
-  --landing-gradient-text-1: #4a87f3;
-  --landing-gradient-text-2: #a78bfa;
+  /* Landing page accent (Uber blue) */
+  --landing-accent: #276ef1;
+  --landing-hero-bg: #000000;
 }
 
 /* ============================================
