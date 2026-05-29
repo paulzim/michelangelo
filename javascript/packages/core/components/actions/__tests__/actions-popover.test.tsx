@@ -24,7 +24,9 @@ describe('ActionsPopover', () => {
   it('renders an "Actions" trigger button', () => {
     render(
       <ActionsPopover
-        actions={[{ display: { label: 'Delete' }, modal: { type: 'custom', component: DeleteDialog } }]}
+        actions={[
+          { display: { label: 'Delete' }, modal: { type: 'custom', component: DeleteDialog } },
+        ]}
         record={{}}
       />,
       buildWrapper([getBaseProviderWrapper(), getIconProviderWrapper(), getRouterWrapper()])
@@ -35,7 +37,9 @@ describe('ActionsPopover', () => {
   it('does not show menu items before the trigger is clicked', () => {
     render(
       <ActionsPopover
-        actions={[{ display: { label: 'Delete' }, modal: { type: 'custom', component: DeleteDialog } }]}
+        actions={[
+          { display: { label: 'Delete' }, modal: { type: 'custom', component: DeleteDialog } },
+        ]}
         record={{}}
       />,
       buildWrapper([getBaseProviderWrapper(), getIconProviderWrapper(), getRouterWrapper()])
@@ -47,7 +51,9 @@ describe('ActionsPopover', () => {
     const user = userEvent.setup();
     render(
       <ActionsPopover
-        actions={[{ display: { label: 'Delete' }, modal: { type: 'custom', component: DeleteDialog } }]}
+        actions={[
+          { display: { label: 'Delete' }, modal: { type: 'custom', component: DeleteDialog } },
+        ]}
         record={{}}
       />,
       buildWrapper([getBaseProviderWrapper(), getIconProviderWrapper(), getRouterWrapper()])
@@ -83,7 +89,9 @@ describe('ActionsPopover', () => {
     const user = userEvent.setup();
     render(
       <ActionsPopover
-        actions={[{ display: { label: 'Delete' }, modal: { type: 'custom', component: DeleteDialog } }]}
+        actions={[
+          { display: { label: 'Delete' }, modal: { type: 'custom', component: DeleteDialog } },
+        ]}
         record={{}}
       />,
       buildWrapper([getBaseProviderWrapper(), getIconProviderWrapper(), getRouterWrapper()])
@@ -98,8 +106,9 @@ describe('ActionsPopover', () => {
 
   it('passes data to the action component', async () => {
     const user = userEvent.setup();
-    const Component = ({ record }: ActionComponentProps) =>
-      <div role="dialog">{String(record.id)}</div>;
+    const Component = ({ record }: ActionComponentProps) => (
+      <div role="dialog">{String(record.id)}</div>
+    );
     const data = { id: '42', type: 'pipeline' };
     render(
       <ActionsPopover
@@ -117,7 +126,9 @@ describe('ActionsPopover', () => {
     const user = userEvent.setup();
     const { unmount } = render(
       <ActionsPopover
-        actions={[{ display: { label: 'Delete' }, modal: { type: 'custom', component: DeleteDialog } }]}
+        actions={[
+          { display: { label: 'Delete' }, modal: { type: 'custom', component: DeleteDialog } },
+        ]}
         record={{}}
       />,
       buildWrapper([getBaseProviderWrapper(), getIconProviderWrapper(), getRouterWrapper()])
@@ -132,7 +143,9 @@ describe('ActionsPopover', () => {
     const user = userEvent.setup();
     render(
       <ActionsPopover
-        actions={[{ display: { label: 'Delete' }, modal: { type: 'custom', component: DeleteDialog } }]}
+        actions={[
+          { display: { label: 'Delete' }, modal: { type: 'custom', component: DeleteDialog } },
+        ]}
         record={{}}
       />,
       buildWrapper([getBaseProviderWrapper(), getIconProviderWrapper(), getRouterWrapper()])
@@ -204,8 +217,18 @@ describe('ActionsPopover', () => {
       render(
         <ActionMenu
           actions={[
-            { display: { label: 'Delete' }, disabled: true, disabledMessage: 'Cannot delete', onClick: vi.fn() },
-            { display: { label: 'Archive' }, disabled: true, disabledMessage: 'Cannot archive', onClick: vi.fn() },
+            {
+              display: { label: 'Delete' },
+              disabled: true,
+              disabledMessage: 'Cannot delete',
+              onClick: vi.fn(),
+            },
+            {
+              display: { label: 'Archive' },
+              disabled: true,
+              disabledMessage: 'Cannot archive',
+              onClick: vi.fn(),
+            },
           ]}
           onSelectAction={vi.fn()}
         />,
@@ -225,7 +248,14 @@ describe('ActionsPopover', () => {
     it('does not show the tooltip from auto-highlight when the menu opens', async () => {
       render(
         <ActionMenu
-          actions={[{ display: { label: 'Delete' }, disabled: true, disabledMessage: 'Cannot delete', onClick: vi.fn() }]}
+          actions={[
+            {
+              display: { label: 'Delete' },
+              disabled: true,
+              disabledMessage: 'Cannot delete',
+              onClick: vi.fn(),
+            },
+          ]}
           onSelectAction={vi.fn()}
         />,
         buildWrapper([getBaseProviderWrapper(), getIconProviderWrapper()])
@@ -234,13 +264,43 @@ describe('ActionsPopover', () => {
       expect(screen.queryByText('Cannot delete')).not.toBeInTheDocument();
     });
 
+    it('shows the message from the first matching disabled rule, not earlier false ones', async () => {
+      const user = userEvent.setup();
+      render(
+        <ActionsPopover
+          actions={[
+            {
+              display: { label: 'Delete' },
+              modal: { type: 'custom', component: DeleteDialog },
+              disabled: [
+                { condition: false, message: 'Should not appear' },
+                { condition: true, message: 'First match' },
+                { condition: true, message: 'Should not appear either' },
+              ],
+            },
+          ]}
+          record={{}}
+        />,
+        buildWrapper([getBaseProviderWrapper(), getIconProviderWrapper(), getRouterWrapper()])
+      );
+      await user.click(screen.getByRole('button', { name: 'Actions' }));
+      await user.hover(await screen.findByRole('option', { name: 'Delete' }));
+      expect(await screen.findByText('First match')).toBeInTheDocument();
+      expect(screen.queryByText('Should not appear')).not.toBeInTheDocument();
+    });
+
     it('shows the tooltip when a disabled item is highlighted via keyboard', async () => {
       const user = userEvent.setup();
       render(
         <ActionMenu
           actions={[
             { display: { label: 'Edit' }, disabled: false, onClick: vi.fn() },
-            { display: { label: 'Delete' }, disabled: true, disabledMessage: 'Cannot delete', onClick: vi.fn() },
+            {
+              display: { label: 'Delete' },
+              disabled: true,
+              disabledMessage: 'Cannot delete',
+              onClick: vi.fn(),
+            },
           ]}
           onSelectAction={vi.fn()}
         />,
@@ -256,8 +316,18 @@ describe('ActionsPopover', () => {
       render(
         <ActionMenu
           actions={[
-            { display: { label: 'Delete' }, disabled: true, disabledMessage: 'Cannot delete', onClick: vi.fn() },
-            { display: { label: 'Archive' }, disabled: true, disabledMessage: 'Cannot archive', onClick: vi.fn() },
+            {
+              display: { label: 'Delete' },
+              disabled: true,
+              disabledMessage: 'Cannot delete',
+              onClick: vi.fn(),
+            },
+            {
+              display: { label: 'Archive' },
+              disabled: true,
+              disabledMessage: 'Cannot archive',
+              onClick: vi.fn(),
+            },
           ]}
           onSelectAction={vi.fn()}
         />,
