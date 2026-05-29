@@ -22,6 +22,8 @@ from ..base import BaseService, _TIMEOUT_SECONDS
 
 
 class EvaluationReportService(BaseService):
+    """CRUD client for the EvaluationReportService gRPC API."""
+
     def __init__(self, context):
         super(EvaluationReportService, self).__init__(
             context, EvaluationReportServiceStub
@@ -51,6 +53,8 @@ class EvaluationReportService(BaseService):
 
         :example:
 
+        >>> import os; os.environ.setdefault("MA_API_SERVER", "localhost:50051")
+        >>> from michelangelo.api.v2 import APIClient
         >>> from michelangelo.gen.api.v2.evaluation_report_pb2 import EvaluationReport
         >>> report = EvaluationReport()
         >>> report.metadata.namespace = 'my-project'
