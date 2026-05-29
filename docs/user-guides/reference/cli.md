@@ -34,7 +34,7 @@ All resource types support `get`, `apply`, and `delete` (see [supported resource
 | SparkJob | `spark_job` | Job submitted to a Spark cluster | get, apply, delete |
 | CachedOutput | `cached_output` | Cached task output for pipeline resume | get, apply, delete |
 
-> **Note:** In Michelangelo, a *project* is the workspace where your pipelines, models, and triggers live. In YAML files and CLI flags, your project is identified by the `namespace` field — these refer to the same thing. See the [Project Management guide](./project-management-for-ml-pipelines.md) for details.
+> **Note:** In Michelangelo, a *project* is the workspace where your pipelines, models, and triggers live. In YAML files and CLI flags, your project is identified by the `namespace` field — these refer to the same thing. See the [Project Management guide](../getting-started/project-management-for-ml-pipelines.md) for details.
 
 ## Prerequisites
 
@@ -47,7 +47,7 @@ All resource types support `get`, `apply`, and `delete` (see [supported resource
    poetry install
    ```
 
-3. **Start the sandbox environment.** Follow the [Sandbox Setup Guide](../getting-started/sandbox-setup.md) to install the required software (Docker, kubectl, k3d) and create a local development environment:
+3. **Start the sandbox environment.** Follow the [Sandbox Setup Guide](../../getting-started/sandbox-setup.md) to install the required software (Docker, kubectl, k3d) and create a local development environment:
 
    ```bash
    ma sandbox create
@@ -317,7 +317,7 @@ ma trigger_run kill --namespace=my-project --name=training-pipeline-cron-trigger
 
 ## Sandbox commands
 
-The `ma sandbox` commands manage a local K3d development environment. For prerequisites, setup walkthrough, and detailed options, see the [Sandbox Setup Guide](../getting-started/sandbox-setup.md).
+The `ma sandbox` commands manage a local K3d development environment. For prerequisites, setup walkthrough, and detailed options, see the [Sandbox Setup Guide](../../getting-started/sandbox-setup.md).
 
 | Command | Description |
 |---------|-------------|

@@ -1,4 +1,4 @@
-# Pipeline management
+# Pipeline Management
 
 In general, there are two categories of Michelangelo pipelines: those that leverage the **standard workflows** and those that depend on user-created **custom workflows**.
 
@@ -43,7 +43,7 @@ The custom workflows are fully customized Uniflow workflows.
 
 ## Pipeline creation
 
-An MA Studio project is required before creating pipelines. Please refer to [Project Management](../project-management-for-ml-pipelines.md) for project creation.
+An MA Studio project is required before creating pipelines. Please refer to [Project Management](../getting-started/project-management-for-ml-pipelines.md) for project creation.
 
 ### Pipeline creation for standard workflows
 

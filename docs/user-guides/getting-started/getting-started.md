@@ -1,4 +1,4 @@
-# Getting started with ML pipelines
+# Getting Started with ML Pipelines
 
 Build and run your first ML pipeline on Michelangelo in minutes. This guide walks you through a complete example -- from defining tasks and workflows to running locally and deploying remotely.
 
@@ -26,7 +26,7 @@ Each step runs as an isolated, containerized task. Michelangelo handles data pas
 * Python 3.9+
 * [Poetry](https://python-poetry.org/) installed
 * For remote runs: Docker and access to a Kubernetes cluster (or use the [local sandbox](../../getting-started/sandbox-setup.md))
-* [Create a project](../project-management-for-ml-pipelines.md)
+* [Create a project](./project-management-for-ml-pipelines.md)
 
 ## Environment setup
 
@@ -195,7 +195,7 @@ PYTHONPATH=. poetry run python examples/boston_housing_xgb/boston_housing_xgb.py
   --yes
 ```
 
-Remote runs execute workflow code in a Cadence/Temporal worker and task code in Kubernetes containers with full resource isolation. For detailed remote setup instructions including sandbox configuration, see [Running Uniflow pipelines](./running-uniflow.md).
+Remote runs execute workflow code in a Cadence/Temporal worker and task code in Kubernetes containers with full resource isolation. For detailed remote setup instructions including sandbox configuration, see [Running Uniflow pipelines](../ml-pipelines/running-uniflow.md).
 
 ## Step 5: Register as a pipeline
 
@@ -308,11 +308,11 @@ See the full Boston Housing XGBoost example at [`python/examples/boston_housing_
 
 ## Next steps
 
-* [Pipeline Running Modes](./pipeline-running-modes.md) -- Understand when to use Local, Remote, Dev, and Pipeline runs
-* [Pipeline Management](./pipeline-management.md) -- Learn about standard vs custom workflows
-* [Caching and Resume](./cache-and-pipelinerun-resume-form.md) -- Resume failed pipeline runs from a specific step
-* [Data Preparation](../prepare-your-data.md) -- Deep dive into data preprocessing patterns
-* [Model Training](../train-and-register-a-model.md) -- Advanced distributed training with Lightning Trainer SDK
+* [Pipeline Running Modes](../ml-pipelines/pipeline-running-modes.md) -- Understand when to use Local, Remote, Dev, and Pipeline runs
+* [Pipeline Management](../ml-pipelines/pipeline-management.md) -- Learn about standard vs custom workflows
+* [Caching and Resume](../ml-pipelines/cache-and-pipelinerun-resume-form.md) -- Resume failed pipeline runs from a specific step
+* [Data Preparation](./prepare-your-data.md) -- Deep dive into data preprocessing patterns
+* [Model Training](../train-and-deploy-models/train-and-register-a-model.md) -- Advanced distributed training with Lightning Trainer SDK
 
 ## Troubleshooting
 
