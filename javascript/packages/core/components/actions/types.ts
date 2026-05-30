@@ -67,9 +67,12 @@ export type ActionComponentProps<T = Data> = {
   onClose: () => void;
 };
 
-export type SelectedAction = {
-  component: ComponentType<ActionComponentProps>;
-  record: Data;
+export type ResolvedActionItem = {
+  display: ActionTriggerDisplay;
+  hierarchy?: ActionHierarchy;
+  disabled: boolean;
+  disabledMessage?: string;
+  onClick: () => void;
 };
 
 /**

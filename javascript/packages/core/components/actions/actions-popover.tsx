@@ -5,11 +5,11 @@ import { PLACEMENT, StatefulPopover } from 'baseui/popover';
 
 import { Icon } from '#core/components/icon/icon';
 import { ActionMenu } from './action-menu/action-menu';
+import { useResolvedActionItems } from './use-resolved-action-items';
 
 import type { ButtonProps } from 'baseui/button';
 import type { BasePopoverProps } from 'baseui/popover';
-import type { ComponentType } from 'react';
-import type { ActionComponentProps, ActionConfig, Data } from './types';
+import type { ActionConfig, Data } from './types';
 
 type ActionsPopoverProps<T extends Data> = {
   actions: ActionConfig<T>[];
@@ -25,11 +25,10 @@ export function ActionsPopover<T extends Data>({
   popoverProps,
 }: ActionsPopoverProps<T>) {
   const scrollDisabledRef = useRef(false);
-  const [activeAction, setActiveAction] = useState<{
-    component: ComponentType<ActionComponentProps>;
-    record: Data;
-  } | null>(null);
+  const [activeAction, setActiveAction] = useState<ActionConfig<T> | null>(null);
   const [, theme] = useStyletron();
+
+  const items = useResolvedActionItems(actions, setActiveAction);
 
   const disableScroll = () => {
     document.body.style.overflow = 'hidden';
@@ -64,10 +63,9 @@ export function ActionsPopover<T extends Data>({
         {...popoverProps}
         content={({ close }) => (
           <ActionMenu
-            actions={actions as ActionConfig[]}
-            record={record}
+            actions={items}
             onSelectAction={(action) => {
-              setActiveAction(action);
+              action.onClick();
               close();
             }}
             onClose={close}
@@ -93,11 +91,7 @@ export function ActionsPopover<T extends Data>({
         </Button>
       </StatefulPopover>
       {ActiveComponent && (
-        <ActiveComponent
-          record={activeAction.record}
-          isOpen
-          onClose={() => setActiveAction(null)}
-        />
+        <ActiveComponent record={record} isOpen onClose={() => setActiveAction(null)} />
       )}
     </>
   );
