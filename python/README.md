@@ -147,8 +147,67 @@ APIClient.ProjectService.create_project(proj)
 Set the API server address via environment variable:
 
 ```bash
-export MICHELANGELO_API_SERVER="localhost:12345"
+export MA_API_SERVER="localhost:12345"
 ```
+
+## Publishing Evaluation Reports
+
+Evaluation reports capture structured metric charts produced by a training run.
+If you've used MLflow or W&B, here's the conceptual mapping:
+
+| Michelangelo | MLflow | W&B |
+|---|---|---|
+| `metadata.namespace` | Experiment name | entity / project |
+| `metadata.name` | Run name | Run name |
+| Chart with one data point | `log_metric(key, value)` | `wandb.log({key: value})` |
+
+**Push a report via `APIClientEvalReportSink`:**
+
+```python
+import os
+os.environ["MA_API_SERVER"] = "localhost:50051"
+
+from michelangelo.api.v2 import APIClient
+from michelangelo.gen.api.v2.evaluation_report_pb2 import (
+    EvaluationReport,
+    EvaluationReportSpec,
+)
+from michelangelo.workflow.tasks.functions.eval_report_sinks import (
+    APIClientEvalReportSink,
+)
+
+report = EvaluationReport(spec=EvaluationReportSpec(title="Q1 Eval"))
+report.metadata.namespace = "my-project"  # analogous to MLflow experiment
+report.metadata.name = "q1-eval"
+
+APIClient.set_caller("my-trainer")
+sink = APIClientEvalReportSink()
+sink.write(report)
+```
+
+**Target a different endpoint** (e.g. multi-region, per-worker isolation):
+
+```python
+from michelangelo.api.v2 import APIClient
+from michelangelo.workflow.tasks.functions.eval_report_sinks import APIClientEvalReportSink
+
+client = APIClient(endpoint="other-server:50051", caller="my-trainer")
+sink = APIClientEvalReportSink(svc=client.EvaluationReportService)
+sink.write(report)
+client.close()
+```
+
+**Convert to a flat metrics dict for MLflow / W&B / Comet:**
+
+```python
+from michelangelo.workflow.tasks.functions.eval_report_sinks import flatten_report_to_metrics
+import mlflow
+
+mlflow.log_metrics(flatten_report_to_metrics(report))
+```
+
+For structured pipeline integration see `EvalReportPluginConfig` in the
+[ML Pipelines docs](https://michelangelo-ai.org/docs/user-guides/ml-pipelines).
 
 ## Documentation
 

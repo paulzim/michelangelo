@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import sys
+import warnings
 from typing import Any
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
@@ -14,7 +14,6 @@ from michelangelo.gen.api.v2.evaluation_report_pb2 import (
     EvaluationReport,
     EvaluationReportSpec,
 )
-from michelangelo.workflow.schema.eval_report_sinks.api import GRPCEvalReportSinkConfig
 from michelangelo.workflow.schema.eval_report_sinks.local_file import (
     LocalFileEvalReportSinkConfig,
 )
@@ -119,67 +118,242 @@ class TestLocalFileEvalReportSink(TestCase):
         self.assertNotIn("typeMeta", doc)
 
 
-class TestGRPCEvalReportSink(TestCase):
-    """Tests for GRPCEvalReportSink."""
+class TestEvaluationReportService(TestCase):
+    """Tests for EvaluationReportService CRUD methods."""
+
+    def _make_service(self):
+        """Create an EvaluationReportService with a mocked gRPC stub."""
+        from michelangelo.api.v2.services.base import Context, DefaultHeaderProvider
+        from michelangelo.api.v2.services.gen.evaluation_report import (
+            EvaluationReportService,
+        )
+
+        ctx = Context()
+        ctx._channel = MagicMock()
+        ctx._header_provider = DefaultHeaderProvider()
+        ctx._header_provider._caller = "test-caller"
+        svc = EvaluationReportService(ctx)
+        svc._service_stub = MagicMock()
+        return svc
+
+    def test_create_evaluation_report_calls_stub(self):
+        """create_evaluation_report passes the report to the stub and returns it."""
+        svc = self._make_service()
+        report = _report(name="q1-eval", namespace="my-project")
+        svc._service_stub.CreateEvaluationReport.return_value = MagicMock(
+            evaluation_report=report
+        )
+
+        result = svc.create_evaluation_report(report)
+
+        svc._service_stub.CreateEvaluationReport.assert_called_once()
+        self.assertEqual(result.metadata.name, "q1-eval")
+
+    def test_get_evaluation_report_passes_namespace_and_name(self):
+        """get_evaluation_report builds the correct GetEvaluationReportRequest."""
+        svc = self._make_service()
+        expected = _report(name="q1-eval", namespace="my-project")
+        svc._service_stub.GetEvaluationReport.return_value = MagicMock(
+            evaluation_report=expected
+        )
+
+        result = svc.get_evaluation_report(namespace="my-project", name="q1-eval")
+
+        req = svc._service_stub.GetEvaluationReport.call_args[0][0]
+        self.assertEqual(req.namespace, "my-project")
+        self.assertEqual(req.name, "q1-eval")
+        self.assertEqual(result.metadata.name, "q1-eval")
+
+    def test_update_evaluation_report_returns_server_response(self):
+        """update_evaluation_report returns the server-confirmed proto."""
+        svc = self._make_service()
+        updated = _report(name="q1-eval", namespace="my-project")
+        svc._service_stub.UpdateEvaluationReport.return_value = MagicMock(
+            evaluation_report=updated
+        )
+
+        result = svc.update_evaluation_report(_report(name="q1-eval"))
+
+        svc._service_stub.UpdateEvaluationReport.assert_called_once()
+        self.assertEqual(result.metadata.name, "q1-eval")
+
+    def test_delete_evaluation_report_sends_correct_request(self):
+        """delete_evaluation_report builds DeleteEvaluationReportRequest correctly."""
+        svc = self._make_service()
+        svc._service_stub.DeleteEvaluationReport.return_value = MagicMock()
+
+        svc.delete_evaluation_report(namespace="my-project", name="q1-eval")
+
+        req = svc._service_stub.DeleteEvaluationReport.call_args[0][0]
+        self.assertEqual(req.namespace, "my-project")
+        self.assertEqual(req.name, "q1-eval")
+
+    def test_delete_evaluation_report_collection_targets_namespace(self):
+        """delete_evaluation_report_collection targets the correct namespace."""
+        svc = self._make_service()
+        svc._service_stub.DeleteEvaluationReportCollection.return_value = MagicMock()
+
+        svc.delete_evaluation_report_collection(namespace="my-project")
+
+        req = svc._service_stub.DeleteEvaluationReportCollection.call_args[0][0]
+        self.assertEqual(req.namespace, "my-project")
+
+    def test_list_evaluation_report_returns_list(self):
+        """list_evaluation_report returns the EvaluationReportList from the stub."""
+        svc = self._make_service()
+        mock_list = MagicMock()
+        mock_list.items = [_report(name="r1"), _report(name="r2")]
+        svc._service_stub.ListEvaluationReport.return_value = MagicMock(
+            evaluation_report_list=mock_list
+        )
+
+        result = svc.list_evaluation_report(namespace="my-project")
+
+        svc._service_stub.ListEvaluationReport.assert_called_once()
+        self.assertEqual(len(result.items), 2)
+
+
+class TestAPIClientEvalReportSink(TestCase):
+    """Tests for APIClientEvalReportSink (delegates to APIClient)."""
+
+    def _make_sink(self, mock_apiclient: MagicMock):
+        """Build an APIClientEvalReportSink with a mocked APIClient."""
+        from michelangelo.workflow.tasks.functions.eval_report_sinks.api import (
+            APIClientEvalReportSink,
+        )
+
+        with patch("michelangelo.api.v2.APIClient", mock_apiclient):
+            return APIClientEvalReportSink()
 
     def _make_created(
         self, report_name: str = "api-report", namespace: str = "ns"
     ) -> EvaluationReport:
-        """Build a canned EvaluationReport response proto."""
         created = EvaluationReport()
         created.metadata.name = report_name
         created.metadata.namespace = namespace
         return created
 
-    def _make_sink(self, endpoint: str = "localhost:50051", **kwargs):
-        """Build a GRPCEvalReportSink with a mocked _svc.create."""
+    def test_delegates_to_apiclient_evaluation_report_service(self):
+        """It binds _svc to APIClient.EvaluationReportService at construction."""
+        mock_svc = MagicMock()
+        mock_apiclient = MagicMock()
+        mock_apiclient.EvaluationReportService = mock_svc
+
+        sink = self._make_sink(mock_apiclient)
+
+        self.assertIs(sink._svc, mock_svc)
+
+    def test_accepts_injected_svc_for_di(self):
+        """It accepts an explicit svc param without touching APIClient."""
         from michelangelo.workflow.tasks.functions.eval_report_sinks.api import (
-            GRPCEvalReportSink,
+            APIClientEvalReportSink,
         )
 
-        cfg = GRPCEvalReportSinkConfig(endpoint=endpoint, **kwargs)
-        with patch("grpc.insecure_channel"), patch("grpc.secure_channel"):
-            sink = GRPCEvalReportSink(cfg)
-        return sink
+        mock_svc = MagicMock()
+        sink = APIClientEvalReportSink(svc=mock_svc)
+        self.assertIs(sink._svc, mock_svc)
 
-    def test_raises_import_error_when_grpcio_missing(self):
-        """It raises ImportError when grpcio is not installed."""
-        with patch.dict(sys.modules, {"grpc": None}):
-            from michelangelo.workflow.tasks.functions.eval_report_sinks.api import (
-                GRPCEvalReportSink,
-            )
+    def test_raises_when_apiclient_service_is_none(self):
+        """It raises RuntimeError when APIClient.EvaluationReportService is None."""
+        from michelangelo.workflow.tasks.functions.eval_report_sinks.api import (
+            APIClientEvalReportSink,
+        )
 
-            with self.assertRaises(ImportError):
-                GRPCEvalReportSink(GRPCEvalReportSinkConfig(endpoint="localhost:50051"))
+        mock_apiclient = MagicMock()
+        mock_apiclient.EvaluationReportService = None
 
-    def test_creates_report_via_grpc(self):
-        """It delegates to _svc.create and returns an EvalReportSinkResult."""
-        sink = self._make_sink()
+        with (
+            patch("michelangelo.api.v2.APIClient", mock_apiclient),
+            self.assertRaises(RuntimeError) as ctx,
+        ):
+            APIClientEvalReportSink()
+        self.assertIn("MA_API_SERVER", str(ctx.exception))
+
+    def test_write_calls_create_evaluation_report(self):
+        """write() calls svc.create_evaluation_report with the report."""
+        mock_apiclient = MagicMock()
         created = self._make_created("r1", "ns1")
-        sink._svc = MagicMock()
-        sink._svc.create.return_value = created
+        report = _report(name="r1")
+        mock_apiclient.EvaluationReportService.create_evaluation_report.return_value = (
+            created
+        )
 
-        result = sink.write(_report(name="r1"))
+        sink = self._make_sink(mock_apiclient)
+        result = sink.write(report)
 
-        sink._svc.create.assert_called_once()
+        mock_apiclient.EvaluationReportService.create_evaluation_report.assert_called_once_with(
+            report
+        )
         self.assertEqual(result.name, "r1")
         self.assertEqual(result.namespace, "ns1")
-        self.assertEqual(result.output_path, "")
 
-    def test_namespace_injected_from_config(self):
-        """It sets report.metadata.namespace from config.namespace before create."""
-        sink = self._make_sink(namespace="injected-ns")
-        created = self._make_created("r1", "injected-ns")
-        sink._svc = MagicMock()
-        sink._svc.create.return_value = created
+    def test_namespace_not_injected(self):
+        """write() does not mutate report.metadata.namespace."""
+        mock_apiclient = MagicMock()
+        created = self._make_created("r1", "caller-ns")
+        mock_apiclient.EvaluationReportService.create_evaluation_report.return_value = (
+            created
+        )
 
-        report = _report(name="r1", namespace="")
+        sink = self._make_sink(mock_apiclient)
+        report = _report(name="r1", namespace="caller-ns")
+        original_ns = report.metadata.namespace
         sink.write(report)
 
-        self.assertEqual(report.metadata.namespace, "injected-ns")
+        self.assertEqual(report.metadata.namespace, original_ns)
+
+    def test_no_channel_owned(self):
+        """APIClientEvalReportSink holds no channel reference."""
+        mock_apiclient = MagicMock()
+        sink = self._make_sink(mock_apiclient)
+        self.assertFalse(hasattr(sink, "_channel"))
+
+    def test_extra_fields_emits_user_warning(self):
+        """write() emits UserWarning when extra_fields is non-empty."""
+        mock_apiclient = MagicMock()
+        created = self._make_created("r1", "ns1")
+        mock_apiclient.EvaluationReportService.create_evaluation_report.return_value = (
+            created
+        )
+
+        sink = self._make_sink(mock_apiclient)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            sink.write(_report(name="r1"), extra_fields={"key": "value"})
+
+        self.assertTrue(any(issubclass(w.category, UserWarning) for w in caught))
+        self.assertTrue(any("extra_fields" in str(w.message) for w in caught))
+
+    def test_extra_fields_none_does_not_warn(self):
+        """write() emits no warning when extra_fields is None or omitted."""
+        mock_apiclient = MagicMock()
+        created = self._make_created("r1", "ns1")
+        mock_apiclient.EvaluationReportService.create_evaluation_report.return_value = (
+            created
+        )
+
+        sink = self._make_sink(mock_apiclient)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            sink.write(_report(name="r1"))  # no extra_fields
+
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        self.assertEqual(user_warnings, [])
+
+    def test_non_rpc_error_propagates_unchanged(self):
+        """Non-gRPC exceptions from write() are not wrapped as OSError."""
+        mock_apiclient = MagicMock()
+        mock_apiclient.EvaluationReportService.create_evaluation_report.side_effect = (
+            ValueError("bad proto")
+        )
+
+        sink = self._make_sink(mock_apiclient)
+        with self.assertRaises(ValueError) as ctx:
+            sink.write(_report(name="r1"))
+        self.assertIn("bad proto", str(ctx.exception))
 
     def test_grpc_rpc_error_raised_as_oserror(self):
-        """It wraps grpc.RpcError as OSError with the endpoint in the message."""
+        """It wraps grpc.RpcError as OSError."""
         import grpc
 
         class _FakeRpcError(grpc.RpcError):
@@ -189,25 +363,15 @@ class TestGRPCEvalReportSink(TestCase):
             def details(self):
                 return "server unreachable"
 
-        sink = self._make_sink()
-        sink._svc = MagicMock()
-        sink._svc.create.side_effect = _FakeRpcError()
-
-        with self.assertRaises(OSError) as ctx:
-            sink.write(_report(name="r1"))
-        self.assertIn("localhost:50051", str(ctx.exception))
-
-    def test_default_caller_set_on_context(self):
-        """It sets a default rpc-caller; no APIClient.set_caller() needed."""
-        from michelangelo.workflow.tasks.functions.eval_report_sinks.api import (
-            GRPCEvalReportSink,
+        mock_apiclient = MagicMock()
+        mock_apiclient.EvaluationReportService.create_evaluation_report.side_effect = (
+            _FakeRpcError()
         )
 
-        with patch("grpc.insecure_channel"), patch("grpc.secure_channel"):
-            sink = GRPCEvalReportSink(
-                GRPCEvalReportSinkConfig(endpoint="localhost:50051")
-            )
-        self.assertIsNotNone(sink._svc._context.header_provider._caller)
+        sink = self._make_sink(mock_apiclient)
+        with self.assertRaises(OSError) as ctx:
+            sink.write(_report(name="r1"))
+        self.assertIn("APIClientEvalReportSink", str(ctx.exception))
 
 
 class TestFlattenReportToMetrics(TestCase):
@@ -266,6 +430,15 @@ class TestFlattenReportToMetrics(TestCase):
         )
         self.assertNotIn("bad", result)
 
+    def test_missing_value_key_skipped(self):
+        """It skips data points with no 'value' key rather than recording 0.0."""
+        result = self._run(
+            [
+                {"title": "no-val", "series": [{"data_points": [{}]}]},
+            ]
+        )
+        self.assertNotIn("no-val", result)
+
     def test_multi_point_series_skipped(self):
         """It skips charts whose series has more than one data point."""
         result = self._run(
@@ -277,3 +450,22 @@ class TestFlattenReportToMetrics(TestCase):
             ]
         )
         self.assertNotIn("loss_curve", result)
+
+    def test_multi_point_skip_emits_warning(self):
+        """Skipping a multi-point series emits a WARNING-level log."""
+        import logging
+
+        with self.assertLogs(
+            "michelangelo.workflow.tasks.functions.eval_report_sinks.base",
+            level=logging.WARNING,
+        ):
+            self._run(
+                [
+                    {
+                        "title": "curve",
+                        "series": [
+                            {"data_points": [{"value": "0.9"}, {"value": "0.8"}]}
+                        ],
+                    }
+                ]
+            )
