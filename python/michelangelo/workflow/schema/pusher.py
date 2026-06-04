@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from michelangelo.workflow.schema.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
+    from michelangelo.lib.model_manager.registry.client import ModelRegistryClient
     from michelangelo.workflow.tasks.functions.eval_report_sinks.base import (
         EvalReportSink,
     )
@@ -56,26 +57,65 @@ class ModelPluginConfig:
         model_name: Name to register the model under in the registry. A
             unique name is generated automatically when ``None``.
         description: Optional human-readable description stored in the
-            registry alongside the model.
-        extra_metadata: Additional string key-value pairs forwarded to
-            the registry at registration time as free-form tags (e.g.
-            ``{"team": "pricing", "region": "us-east"}``). These are
-            push-time registry labels and are separate from
-            ``ModelArtifact.metadata``, which carries typed artifact
-            properties (framework, deployable flag, etc.) set by the
-            assembler.
+            registry alongside the model version.
+        labels: Indexed, filterable string key-value pairs forwarded to the
+            registry at registration time (e.g.
+            ``{"owner": "ml-platform", "training_framework": "xgboost"}``).
+            All keys and values must be strings — this mirrors the constraint
+            of Vertex AI ``labels``, BentoML ``labels``, and MLflow ``tags``.
+            These complement the artifact-derived labels from ``ModelMetadata``
+            (framework, deployable flag, etc.); caller-supplied ``labels``
+            take precedence on key conflicts.
+        run_id: Optional training run identifier for lineage tracing
+            (e.g. an MLflow run ID, W&B run name, or pipeline task ID).
+            Injected into the ``metadata`` dict passed to ``register_model()``
+            under the key ``"run_id"``. Registries with native run linkage
+            (e.g. MLflow's ``create_model_version(run_id=...)``) should
+            extract this value and pass it natively in their implementation.
+            When both ``run_id`` and ``metadata`` set ``"run_id"``, ``run_id``
+            takes precedence.
+        metadata: Supplementary key-value pairs forwarded to the registry as
+            non-indexed metadata (e.g.
+            ``{"accuracy": 0.94, "git_sha": "abc123"}``).
+            Values may be any JSON-serializable type. Merged with the
+            ``run_id`` field before calling ``register_model()``; ``run_id``
+            takes precedence on key collision.
+        registry_clients: Ordered list of ``ModelRegistryClient`` instances
+            to register the model in simultaneously (fan-out). The same
+            artifact URIs are sent to every client. When non-empty, this
+            field takes precedence over the ``registry_client=`` constructor
+            argument. Use an empty list (the default) to rely on the
+            injected ``registry_client`` instead.
+
+            Example — register in both MLflow and a custom catalog::
+
+                from michelangelo.lib.model_manager.registry.client import (
+                    InMemoryRegistryClient,
+                )
+                cfg = ModelPluginConfig(
+                    model_name="clf",
+                    registry_clients=[
+                        mlflow_client,
+                        InMemoryRegistryClient(),
+                    ],
+                )
 
     Example:
         >>> cfg = ModelPluginConfig(model_name="boston-xgb")
         >>> cfg.model_name
         'boston-xgb'
-        >>> cfg.extra_metadata
+        >>> cfg.labels
+        {}
+        >>> cfg.metadata
         {}
     """
 
     model_name: str | None = None
     description: str | None = None
-    extra_metadata: dict[str, str] = field(default_factory=dict)
+    labels: dict[str, str] = field(default_factory=dict)
+    run_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    registry_clients: list[ModelRegistryClient] = field(default_factory=list)
 
 
 @dataclass
