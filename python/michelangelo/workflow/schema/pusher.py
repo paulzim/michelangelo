@@ -87,6 +87,12 @@ class ModelPluginConfig:
             argument. Use an empty list (the default) to rely on the
             injected ``registry_client`` instead.
 
+            .. warning::
+                This field holds live Python objects and is **not
+                serializable** through the UniFlow codec. ``PusherConfig``
+                must be constructed inside the ``@task`` body — do not pass
+                it as a serialized task argument across the workflow boundary.
+
             Example — register in both MLflow and a custom catalog::
 
                 from michelangelo.lib.model_manager.registry.client import (
@@ -242,6 +248,19 @@ class PusherPluginConfig:
     Exactly one of the typed plugin config fields or the extension pair
     (``plugin_name`` + ``plugin_config``) must be set. Setting zero or
     more than one raises ``ConfigurationError``.
+
+    **Two-tier configuration model:**
+
+    - *Built-in plugins* (``model_plugin``, ``dataset_plugin``,
+      ``eval_report_plugin``) use typed dataclass fields for validated,
+      IDE-discoverable configuration.
+    - *Community/third-party plugins* registered via
+      :class:`~michelangelo.workflow.tasks.pusher.registry.PluginRegistry`
+      use the ``plugin_name`` + ``plugin_config`` dict path. This is the
+      **intended extension contract** — not a second-class fallback. The
+      ``plugin_config`` dict is forwarded verbatim to the plugin's
+      constructor, so each community plugin defines its own configuration
+      schema independently.
 
     Attributes:
         name: Artifact identifier matching a key in the ``artifacts``
