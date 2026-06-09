@@ -25,6 +25,7 @@ Each step runs as an isolated, containerized task. Michelangelo handles data pas
 
 * Python 3.9+
 * [Poetry](https://python-poetry.org/) installed
+* Java 17 with `JAVA_HOME` set — required for the Spark preprocessing step. Java 21 is not compatible with PySpark 3.5 + Hadoop 3.3 (`getSubject is not supported` error). On macOS: `brew install openjdk@17` then `export JAVA_HOME=$(brew --prefix openjdk@17)/libexec/openjdk.jdk/Contents/Home`
 * For remote runs: Docker and access to a Kubernetes cluster (or use the [local sandbox](../../getting-started/sandbox-setup.md))
 * [Create a project](./project-management-for-ml-pipelines.md)
 
@@ -71,31 +72,31 @@ from michelangelo.workflow.variables import DatasetVariable
 def feature_prep(
     columns: list[str],
     test_size: float = 0.25,
+    seed: int = 1,
 ) -> tuple[DatasetVariable, DatasetVariable]:
     """Download data and split into train/validation sets."""
+    import logging
     import ray.data
-    import pandas as pd
-    import numpy as np
+    from sklearn.datasets import fetch_california_housing
 
-    data_url = "http://lib.stat.cmu.edu/datasets/boston"
-    raw_df = pd.read_csv(data_url, sep=r"\s+", skiprows=22, header=None)
-    X = np.hstack([raw_df.values[::2, :], raw_df.values[1::2, :2]])
-    y = raw_df.values[1::2, 2]
+    log = logging.getLogger(__name__)
+    housing = fetch_california_housing(as_frame=True)
+    df = housing.frame.rename(columns={"MedHouseVal": "target"})
 
-    feature_names = columns[:-1]
-    dataset = [
-        dict(zip(feature_names, features), target=target)
-        for features, target in zip(X, y)
-    ]
-    data = ray.data.from_items(dataset).select_columns(columns)
+    data = ray.data.from_pandas(df).select_columns(columns)
+
     train_data, validation_data = data.train_test_split(
-        test_size=test_size, shuffle=True, seed=1
+        test_size=test_size, shuffle=True, seed=seed
     )
 
     train_dv = DatasetVariable.create(train_data)
     train_dv.save_ray_dataset()
+
     validation_dv = DatasetVariable.create(validation_data)
     validation_dv.save_ray_dataset()
+
+    log.info("Train dataset schema: %s", train_data.schema())
+    log.info("Train dataset sample: %s", train_data.take(1))
 
     return train_dv, validation_dv
 ```
@@ -129,9 +130,12 @@ def train_workflow(dataset_cols: str):
         train_dv=train_dv,
         validation_dv=validation_dv,
         params={
-            "objective": "reg:linear",
-            "max_depth": 5,
+            "objective": "reg:squarederror",
+            "colsample_bytree": 0.3,
             "learning_rate": 0.1,
+            "max_depth": 5,
+            "alpha": 10,
+            "n_estimators": 10,
         },
     )
     return result
@@ -155,7 +159,7 @@ if __name__ == "__main__":
 
     ctx.run(
         train_workflow,
-        dataset_cols="CRIM,ZN,INDUS,CHAS,NOX,RM,AGE,DIS,RAD,TAX,PTRATIO,B,LSTAT,target",
+        dataset_cols="MedInc,HouseAge,AveRooms,AveBedrms,Population,AveOccup,Latitude,Longitude,target",
     )
 ```
 
@@ -171,7 +175,7 @@ Then run it:
 
 ```bash
 cd michelangelo/python
-PYTHONPATH=. poetry run python examples/boston_housing_xgb/boston_housing_xgb.py
+PYTHONPATH=. poetry run python examples/california_housing_xgb/california_housing_xgb.py
 ```
 
 Local runs execute everything in your Python interpreter with zero infrastructure setup. This is the fastest way to iterate on your workflow logic.
@@ -184,16 +188,19 @@ When you need more compute power or want to validate against production infrastr
 
 ```bash
 docker build -t my-workflow:latest -f ./examples/Dockerfile .
+k3d image import my-workflow:latest -c michelangelo-sandbox
 ```
 
 ### Run with remote execution
 
 ```bash
-PYTHONPATH=. poetry run python examples/boston_housing_xgb/boston_housing_xgb.py remote-run \
+PYTHONPATH=. poetry run python examples/california_housing_xgb/california_housing_xgb.py remote-run \
   --image docker.io/library/my-workflow:latest \
-  --storage-url s3://my-bucket/workflows \
+  --storage-url s3://michelangelo/workflows \
   --yes
 ```
+
+> **Sandbox storage URL**: the `michelangelo` bucket is created automatically by `ma sandbox create`. For other environments replace with your own S3-compatible bucket URL.
 
 Remote runs execute workflow code in a Cadence/Temporal worker and task code in Kubernetes containers with full resource isolation. For detailed remote setup instructions including sandbox configuration, see [Running Uniflow pipelines](../ml-pipelines/running-uniflow.md).
 
@@ -208,13 +215,13 @@ apiVersion: michelangelo.api/v2
 kind: Pipeline
 metadata:
   namespace: my-project  # Your project name
-  name: boston-housing-xgb
+  name: california-housing-xgb
   annotations:
     michelangelo/uniflow-image: ghcr.io/michelangelo-ai/examples:main
 spec:
   type: PIPELINE_TYPE_TRAIN
   manifest:
-    filePath: examples.boston_housing_xgb.boston_housing_xgb
+    filePath: examples.california_housing_xgb.california_housing_xgb
 ```
 
 ### Register the pipeline
@@ -226,7 +233,7 @@ ma pipeline apply -f pipeline.yaml
 ### Run the registered pipeline
 
 ```bash
-ma pipeline run --namespace my-project --name boston-housing-xgb
+ma pipeline run --namespace my-project --name california-housing-xgb
 ```
 
 ## Workflow constraints
@@ -299,7 +306,7 @@ def train_workflow(dataset_cols: str):
 
 ## Complete example
 
-See the full Boston Housing XGBoost example at [`python/examples/boston_housing_xgb/`](https://github.com/michelangelo-ai/michelangelo/tree/main/python/examples/boston_housing_xgb). This example demonstrates:
+See the full California Housing XGBoost example at [`python/examples/california_housing_xgb/`](https://github.com/michelangelo-ai/michelangelo/tree/main/python/examples/california_housing_xgb). This example demonstrates:
 
 * **Heterogeneous workflow**: Ray tasks for data prep and training, Spark task for preprocessing
 * **Task caching**: Reuse feature preparation results across runs
@@ -319,3 +326,4 @@ See the full Boston Housing XGBoost example at [`python/examples/boston_housing_
 * **Out of memory during training?** Increase `head_memory` or `worker_memory` in your task config, or reduce your dataset size for local runs.
 * **Remote run fails to start?** Verify your Docker image exists and is accessible. Check that `--storage-url` points to a valid S3-compatible bucket.
 * **Workflow code errors with "not supported in Starlark"?** Move the unsupported syntax (imports, try-except, f-strings) into a task function. See [Workflow constraints](#workflow-constraints).
+* **Spark fails with `getSubject is not supported`?** Java 21 is incompatible with PySpark 3.5 + Hadoop 3.3. Switch to Java 17: `brew install openjdk@17` then `export JAVA_HOME=$(brew --prefix openjdk@17)/libexec/openjdk.jdk/Contents/Home`.
