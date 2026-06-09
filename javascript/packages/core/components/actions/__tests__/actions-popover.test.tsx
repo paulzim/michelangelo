@@ -12,6 +12,7 @@ import {
   createQueryMockRouter,
   getServiceProviderWrapper,
 } from '#core/test/wrappers/get-service-provider-wrapper';
+import { getSnackbarProviderWrapper } from '#core/test/wrappers/get-snackbar-provider-wrapper';
 
 import type { ActionComponentProps } from '#core/components/actions/types';
 
@@ -430,6 +431,7 @@ describe('ActionsPopover', () => {
         getErrorProviderWrapper(),
         getRouterWrapper(),
         getServiceProviderWrapper({ request: mockRequest }),
+        getSnackbarProviderWrapper(),
       ])
     );
 
@@ -472,6 +474,7 @@ describe('ActionsPopover', () => {
         getErrorProviderWrapper(),
         getRouterWrapper(),
         getServiceProviderWrapper({ request: failingRequest }),
+        getSnackbarProviderWrapper(),
       ])
     );
 
@@ -508,6 +511,7 @@ describe('ActionsPopover', () => {
         getErrorProviderWrapper(),
         getRouterWrapper({ location: '/start' }),
         getServiceProviderWrapper({ request: vi.fn() }),
+        getSnackbarProviderWrapper(),
       ])
     );
 
@@ -517,5 +521,132 @@ describe('ActionsPopover', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Open' }));
 
     expect(screen.getByText(/Current pathname: \/dest\/page/)).toBeInTheDocument();
+  });
+
+  it('mutation-confirm action: cancel closes dialog without mutating', async () => {
+    const user = userEvent.setup();
+    const mockRequest = createQueryMockRouter({ UpdateTriggerRun: {} });
+
+    render(
+      <ActionsPopover
+        actions={[
+          {
+            display: { label: 'Kill' },
+            operation: { type: 'mutation', mutation: { mutationName: 'UpdateTriggerRun' } },
+            modal: {
+              type: 'confirm',
+              header: { title: 'Confirm kill?' },
+              button: { label: 'Kill it' },
+              destructive: true,
+            },
+          },
+        ]}
+        record={{ id: 'run-1' }}
+      />,
+      buildWrapper([
+        getBaseProviderWrapper(),
+        getIconProviderWrapper(),
+        getErrorProviderWrapper(),
+        getRouterWrapper(),
+        getServiceProviderWrapper({ request: mockRequest }),
+        getSnackbarProviderWrapper(),
+      ])
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Actions' }));
+    await user.click(await screen.findByRole('option', { name: 'Kill' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Confirm kill?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it('mutation-confirm action: shows success toast after mutation', async () => {
+    const user = userEvent.setup();
+    const mockRequest = createQueryMockRouter({ UpdateTriggerRun: {} });
+
+    render(
+      <ActionsPopover
+        actions={[
+          {
+            display: { label: 'Kill' },
+            operation: {
+              type: 'mutation',
+              mutation: { mutationName: 'UpdateTriggerRun' },
+              successOperations: [{ type: 'toast', message: 'Trigger killed' }],
+            },
+            modal: {
+              type: 'confirm',
+              header: { title: 'Confirm kill?' },
+              button: { label: 'Kill it' },
+            },
+          },
+        ]}
+        record={{ id: 'run-1' }}
+      />,
+      buildWrapper([
+        getBaseProviderWrapper(),
+        getIconProviderWrapper(),
+        getErrorProviderWrapper(),
+        getRouterWrapper(),
+        getServiceProviderWrapper({ request: mockRequest }),
+        getSnackbarProviderWrapper(),
+      ])
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Actions' }));
+    await user.click(await screen.findByRole('option', { name: 'Kill' }));
+    await user.click(
+      within(await screen.findByRole('dialog', { name: 'Confirm kill?' })).getByRole('button', {
+        name: 'Kill it',
+      })
+    );
+
+    expect(await screen.findByText('Trigger killed')).toBeInTheDocument();
+  });
+
+  it('mutation-confirm action: does not show success toast on failure', async () => {
+    const user = userEvent.setup();
+    const failingRequest = vi.fn().mockRejectedValue(new Error('rpc error'));
+
+    render(
+      <ActionsPopover
+        actions={[
+          {
+            display: { label: 'Kill' },
+            operation: {
+              type: 'mutation',
+              mutation: { mutationName: 'UpdateTriggerRun' },
+              successOperations: [{ type: 'toast', message: 'Should not appear' }],
+            },
+            modal: {
+              type: 'confirm',
+              header: { title: 'Confirm kill?' },
+              button: { label: 'Kill it' },
+            },
+          },
+        ]}
+        record={{ id: 'run-1' }}
+      />,
+      buildWrapper([
+        getBaseProviderWrapper(),
+        getIconProviderWrapper(),
+        getErrorProviderWrapper(),
+        getRouterWrapper(),
+        getServiceProviderWrapper({ request: failingRequest }),
+        getSnackbarProviderWrapper(),
+      ])
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Actions' }));
+    await user.click(await screen.findByRole('option', { name: 'Kill' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Confirm kill?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Kill it' }));
+
+    await within(dialog).findByText(/Test error/);
+    expect(screen.queryByText('Should not appear')).not.toBeInTheDocument();
   });
 });
