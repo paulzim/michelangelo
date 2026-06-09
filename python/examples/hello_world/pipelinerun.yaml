@@ -1,0 +1,13 @@
+apiVersion: michelangelo.api/v2
+kind: PipelineRun
+metadata:
+  name: run-hello-world-01
+  namespace: ma-dev-test
+spec:
+  pipeline:
+    name: hello-world
+    namespace: ma-dev-test
+  input:
+    kw_args:
+      n: 200
+      seed: 7
