@@ -46,21 +46,34 @@ fi
 # "pathspec did not match" on clones that didn't already have the tag.
 git -C "$KUBERAY_DIR" fetch --quiet --tags origin
 git -C "$KUBERAY_DIR" checkout --quiet "$KUBERAY_REF"
+# Restore Dockerfiles to original before re-patching (safe on re-runs).
+git -C "$KUBERAY_DIR" checkout -- historyserver/Dockerfile.collector historyserver/Dockerfile.historyserver
 
 cd "$KUBERAY_DIR/historyserver"
 
-# 2. Patch Dockerfiles to honor TARGETARCH (idempotent — safe to re-run).
-#    Without this, `docker buildx build --platform linux/arm64` produces an
-#    image labeled arm64 that contains an amd64 binary (because GOARCH is
-#    hardcoded), and k3d on Apple Silicon refuses it with
-#    "no match for platform in manifest".
+# 2. Export macOS system CA bundle (includes Zscaler cert) into the build
+#    context so the golang builder stage can trust HTTPS connections.
+CERT_BUNDLE="mac-ca-bundle.crt"
+echo "Exporting macOS system CA certificates for Docker build..."
+security export -t certs -f pemseq /Library/Keychains/System.keychain \
+  > "$CERT_BUNDLE" 2>/dev/null || true
+security export -t certs -f pemseq \
+  "$HOME/Library/Keychains/login.keychain-db" \
+  >> "$CERT_BUNDLE" 2>/dev/null || true
+
+# 3. Patch Dockerfiles:
+#    - Honor TARGETARCH so Apple Silicon gets a real arm64 binary.
+#    - Inject the CA bundle before `go mod download` so Zscaler-intercepted
+#      TLS connections are trusted inside the container.
 sed -i.bak \
   -e 's|^ARG ENABLE_RACE=false$|ARG ENABLE_RACE=false\nARG TARGETARCH|' \
   -e 's|GOARCH=amd64|GOARCH=${TARGETARCH:-amd64}|g' \
+  -e "s|RUN go mod download|COPY mac-ca-bundle.crt /usr/local/share/ca-certificates/\nRUN update-ca-certificates \&\& go mod download|" \
   Dockerfile.collector
 sed -i.bak \
   -e 's|^ARG GOPROXY=https://proxy.golang.org,direct$|ARG GOPROXY=https://proxy.golang.org,direct\nARG TARGETARCH|' \
   -e 's|GOARCH=amd64|GOARCH=${TARGETARCH:-amd64}|g' \
+  -e "s|RUN go mod download|COPY mac-ca-bundle.crt /usr/local/share/ca-certificates/\nRUN update-ca-certificates \&\& go mod download|" \
   Dockerfile.historyserver
 rm -f Dockerfile.*.bak
 

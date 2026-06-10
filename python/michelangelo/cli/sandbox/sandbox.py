@@ -252,6 +252,58 @@ def run(ns: argparse.Namespace):
     raise ValueError(f"Unsupported action: {ns.action}")
 
 
+def _export_mac_ca_bundle() -> Optional[str]:
+    """Export the Mac system keychain CA certs to a temp PEM file.
+
+    k3s containerd does not inherit Docker Desktop's TLS trust store, so any
+    corporate TLS proxy (e.g. Zscaler) breaks image pulls inside k3d. Mounting
+    the Mac system CA bundle into k3d nodes at cluster-creation time gives
+    containerd the same trust roots as the Mac, including the proxy CA.
+
+    Returns the path to the temp PEM file, or None if export fails or the
+    platform is not macOS.
+    """
+    import platform
+
+    if platform.system() != "Darwin":
+        return None
+    try:
+        result = subprocess.run(
+            [
+                "security",
+                "find-certificate",
+                "-a",
+                "-p",
+                "/Library/Keychains/System.keychain",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            print(
+                "Warning: Could not export Mac system CA bundle — image pulls "
+                "may fail behind a TLS-intercepting proxy (e.g. Zscaler)."
+            )
+            return None
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".pem",
+            prefix="k3d-ca-",
+            delete=False,
+        )
+        tmp.write(result.stdout)
+        tmp.close()
+        print(f"Exported Mac system CA bundle → {tmp.name}")
+        return tmp.name
+    except Exception as e:
+        print(
+            f"Warning: Could not export Mac CA bundle ({e}) — image pulls "
+            "may fail behind a TLS-intercepting proxy."
+        )
+        return None
+
+
 def _create(ns: argparse.Namespace):
     assert ns
     infra_ports = [
@@ -271,6 +323,18 @@ def _create(ns: argparse.Namespace):
 
     for p in ports:
         args += ["-p", f"{p}@agent:0"]
+
+    # Mount the Mac system CA bundle into every k3d node so that k3s
+    # containerd trusts the same roots as Docker Desktop. Without this,
+    # corporate TLS proxies (e.g. Zscaler) break all image pulls because
+    # k3s runs its own containerd that does not read the Mac keychain.
+    ca_bundle = _export_mac_ca_bundle()
+    if ca_bundle:
+        for node_filter in ("server:*", "agent:*"):
+            args += [
+                "--volume",
+                f"{ca_bundle}:/etc/ssl/certs/ca-certificates.crt@{node_filter}",
+            ]
 
     _exec(*args)
 
@@ -345,6 +409,12 @@ def _sync(ns: argparse.Namespace):
 
     if release_healthy:
         # Healthy release: upgrade in-place, keeping infra running.
+        # Download sub-chart dependencies first, then extract them into
+        # directories — Helm 4 requires extracted directories in charts/,
+        # not .tgz archives. We run dependency-update as a separate step so
+        # we can extract before helm upgrade tries to render the sub-charts.
+        _exec("helm", "dependency", "update", str(_chart_dir))
+        _helm_extract_dependencies()
         _exec(
             "helm",
             "upgrade",
@@ -352,7 +422,6 @@ def _sync(ns: argparse.Namespace):
             str(_chart_dir),
             "-f",
             str(_chart_dir / "values-k3d.yaml"),
-            "--dependency-update",
             "--reuse-values",
             *helm_args,
         )
@@ -403,6 +472,8 @@ def _sync(ns: argparse.Namespace):
         # to free their NodePorts before reinstalling.
         _helm_delete_services(helm_args)
         _helm_adopt_orphaned_resources(helm_args)
+        _exec("helm", "dependency", "update", str(_chart_dir))
+        _helm_extract_dependencies()
         _exec(
             "helm",
             "install",
@@ -410,11 +481,18 @@ def _sync(ns: argparse.Namespace):
             str(_chart_dir),
             "-f",
             str(_chart_dir / "values-k3d.yaml"),
-            "--dependency-update",
             *helm_args,
         )
 
     _helm_wait(ns)
+
+    # Register the Cadence domain if this is a Cadence sandbox. _create() does
+    # this after cluster creation, but _sync() skips it — leaving the domain
+    # absent when sync is used as the recovery path for a failed create. The
+    # function treats "domain already exists" as success, so calling it here
+    # on a healthy sync is a safe no-op.
+    if ns.workflow == "cadence":
+        _create_cadence_domain([])
 
 
 def _refresh_mysql_schema():
@@ -461,6 +539,26 @@ def _refresh_mysql_schema():
         ],
         check=True,
     )
+
+
+def _helm_extract_dependencies():
+    """Extract sub-chart .tgz archives in charts/ into directories.
+
+    Helm 4.x requires sub-charts to exist as extracted directories, not .tgz
+    archives. helm upgrade --dependency-update downloads .tgz files, so we
+    extract them immediately after and remove the archives so Helm can find the
+    sub-charts during rendering.
+    """
+    charts_dir = _chart_dir / "charts"
+    if not charts_dir.is_dir():
+        return
+    for tgz in charts_dir.glob("*.tgz"):
+        print(f"Extracting sub-chart: {tgz.name}")
+        subprocess.run(
+            ["tar", "xzf", str(tgz), "-C", str(charts_dir)],
+            check=True,
+        )
+        tgz.unlink()
 
 
 def _helm_ensure_repos():
@@ -2031,9 +2129,68 @@ def _setup_istio_with_gateway_api():
     print("✅ Istio with Gateway API setup complete")
 
 
+def _upload_demo_tars(demo_dir: Path):
+    """Upload .tar files from demo_dir to the MinIO default bucket.
+
+    The Pipeline CRs reference s3://default/<name>.tar. MinIO is exposed on
+    host port 9091 with minioadmin credentials. Uses the aws CLI if available,
+    otherwise falls back to the mc CLI. Skips gracefully if neither is found.
+    """
+    tars = list(demo_dir.glob("*.tar"))
+    if not tars:
+        return
+    minio_url = "http://localhost:9091"
+    env = {
+        **__import__("os").environ,
+        "AWS_ACCESS_KEY_ID": "minioadmin",
+        "AWS_SECRET_ACCESS_KEY": "minioadmin",
+    }
+    for tar in tars:
+        dest = f"s3://default/{tar.name}"
+        print(f"Uploading {tar.name} to MinIO ({dest})...")
+        result = subprocess.run(
+            [
+                "aws", "s3", "cp", str(tar), dest,
+                "--endpoint-url", minio_url,
+                "--no-verify-ssl",
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        if result.returncode != 0:
+            print(f"  aws CLI failed: {result.stderr.strip()}")
+            print("  Trying mc CLI...")
+            subprocess.run(
+                ["mc", "alias", "set", "_demo_sandbox", minio_url, "minioadmin", "minioadmin"],
+                capture_output=True,
+            )
+            result2 = subprocess.run(
+                ["mc", "cp", str(tar), f"_demo_sandbox/default/{tar.name}"],
+                capture_output=True,
+                text=True,
+            )
+            if result2.returncode != 0:
+                print(f"  mc CLI also failed: {result2.stderr.strip()}")
+                print(
+                    f"  Upload {tar.name} manually via MinIO console at "
+                    "http://localhost:9090 (minioadmin / minioadmin) into the 'default' bucket."
+                )
+            else:
+                print(f"  Uploaded via mc: {tar.name}")
+        else:
+            print(f"  Uploaded: {tar.name}")
+
+
 def _create_pipeline_demo_crs():
     """Create a pipeline demo for the sandbox cluster for demo purposes."""
     pipeline_demo_dir = _dir / "demo" / "pipeline"
+
+    # Upload pipeline tarballs to MinIO before applying CRs — the Pipeline CRs
+    # reference s3://default/<name>.tar and the controller will fail to start
+    # the workflow if the tar isn't present in object storage first.
+    _upload_demo_tars(pipeline_demo_dir)
+
     for yaml_file in pipeline_demo_dir.glob("*.yaml"):
         _kube_apply(yaml_file)
 
