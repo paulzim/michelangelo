@@ -41,10 +41,10 @@ class TrainResult:
     config=RayTask(
         head_cpu=4,
         head_gpu=0,
-        head_memory="4Gi",
+        head_memory="2Gi",
         worker_cpu=1,
         worker_gpu=0,
-        worker_memory="4Gi",
+        worker_memory="2Gi",
         worker_instances=0,
     ),
 )
