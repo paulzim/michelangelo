@@ -216,7 +216,53 @@ def train(
     result = trainer.fit()
     if result.error:
         raise result.error
+
+    _register_model(
+        name="california-housing-xgb",
+        artifact_uri=result.path,
+        metrics=result.metrics,
+    )
+
     return TrainResult(
         path=result.path,
         metrics=result.metrics,
     )
+
+
+def _register_model(name: str, artifact_uri: str, metrics: dict | None) -> None:
+    """Register the trained model with the MA model registry.
+
+    Non-fatal: a registry failure is logged as a warning so the pipeline task
+    still reports success and the TrainResult is returned to the caller.
+    """
+    import os
+
+    from michelangelo.lib.model_manager.registry.api_client import APIRegistryClient
+
+    # Ray workers run in ma-dev-test; the apiserver lives in default.
+    # MA_API_SERVER overrides the default if injected via ctx.environ.
+    endpoint = os.environ.get(
+        "MA_API_SERVER",
+        "michelangelo-apiserver.default.svc.cluster.local:15566",
+    )
+    namespace = os.environ.get("MA_NAMESPACE", "ma-dev-test")
+
+    try:
+        with APIRegistryClient(
+            endpoint=endpoint, namespace=namespace, insecure=True
+        ) as registry:
+            registered = registry.register_model(
+                name=name,
+                artifact_uri=artifact_uri,
+                description="XGBoost regression on California Housing dataset",
+                labels={"training_framework": "xgboost"},
+                metadata=metrics or {},
+            )
+        log.info(
+            "Model registered: %s v%s at %s",
+            registered.name,
+            registered.version,
+            registered.registry_uri,
+        )
+    except Exception as exc:
+        log.warning("Model registration failed (non-fatal): %s", exc)
