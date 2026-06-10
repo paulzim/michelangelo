@@ -26,7 +26,6 @@ class StatsResult:
         head_memory="2Gi",
         worker_instances=0,
     ),
-    cache_enabled=True,
 )
 def generate_data(n: int = 100, seed: int = 42) -> list:
     """Generate n random numbers using a fixed seed."""

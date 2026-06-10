@@ -1,0 +1,12 @@
+apiVersion: michelangelo.api/v2
+kind: PipelineRun
+metadata:
+  name: run-california-housing-01
+  namespace: ma-dev-test
+spec:
+  pipeline:
+    name: california-housing-xgb
+    namespace: ma-dev-test
+  input:
+    kw_args:
+      dataset_cols: "MedInc,HouseAge,AveRooms,AveBedrms,Population,AveOccup,Latitude,Longitude,target"

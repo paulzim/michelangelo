@@ -1,6 +1,6 @@
-"""Spark preprocessing task for the California Housing XGBoost workflow.
+"""Ray preprocessing task for the California Housing XGBoost workflow.
 
-Casts selected columns to float type using Spark and returns the preprocessed
+Casts selected columns to float type using Ray and returns the preprocessed
 training and validation datasets.
 """
 
@@ -8,14 +8,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import michelangelo.uniflow.core as uniflow
-from michelangelo.uniflow.plugins.spark import SparkTask
+from michelangelo.uniflow.plugins.ray import RayTask
 from michelangelo.workflow.variables import DatasetVariable
-
-if TYPE_CHECKING:
-    from pyspark.sql import DataFrame
 
 log = logging.getLogger(__name__)
 
@@ -36,12 +32,10 @@ class PreprocessResult:
 
 
 @uniflow.task(
-    config=SparkTask(
-        driver_cpu=1,
-        driver_memory="4G",
-        executor_cpu=1,
-        executor_memory="2G",
-        executor_instances=1,
+    config=RayTask(
+        head_cpu=1,
+        head_memory="2Gi",
+        worker_instances=0,
     ),
     cache_enabled=False,  # off for tutorial simplicity; enable in production
 )
@@ -50,36 +44,38 @@ def preprocess(
     train_dv: DatasetVariable,
     validation_dv: DatasetVariable,
 ) -> PreprocessResult:
-    """Preprocess datasets using Spark to cast columns to float type.
+    """Preprocess datasets using Ray to cast columns to float type.
 
     Args:
         cast_float_columns: List of column names to cast to float type.
-        train_dv: Training DatasetVariable containing Spark DataFrame.
-        validation_dv: Validation DatasetVariable containing Spark DataFrame.
+        train_dv: Training DatasetVariable containing Ray Dataset.
+        validation_dv: Validation DatasetVariable containing Ray Dataset.
 
     Returns:
         PreprocessResult containing preprocessed training and validation datasets.
     """
-    train_dv.load_spark_dataframe()
-    train_data: DataFrame = train_dv.value
+    train_dv.load_ray_dataset()
+    train_data = train_dv.value
 
-    validation_dv.load_spark_dataframe()
-    validation_data: DataFrame = validation_dv.value
+    validation_dv.load_ray_dataset()
+    validation_data = validation_dv.value
 
-    def cast_float(df: DataFrame) -> DataFrame:
-        cols = {col: df[col].cast("float") for col in cast_float_columns}
-        return df.withColumns(cols)
+    def cast_float(batch):
+        for col in cast_float_columns:
+            if col in batch.columns:
+                batch[col] = batch[col].astype("float32")
+        return batch
 
-    train_data_pr = cast_float(train_data)
-    validation_data_pr = cast_float(validation_data)
+    train_data = train_data.map_batches(cast_float, batch_format="pandas")
+    validation_data = validation_data.map_batches(cast_float, batch_format="pandas")
 
-    train_dv_pr = DatasetVariable.create(train_data_pr)
-    train_dv_pr.save_spark_dataframe()
+    train_dv_pr = DatasetVariable.create(train_data)
+    train_dv_pr.save_ray_dataset()
 
-    validation_dv_pr = DatasetVariable.create(validation_data_pr)
-    validation_dv_pr.save_spark_dataframe()
+    validation_dv_pr = DatasetVariable.create(validation_data)
+    validation_dv_pr.save_ray_dataset()
 
-    log.info("Processed Train Spark schema:\n%s", train_data_pr.schema.simpleString())
+    log.info("Processed train dataset schema: %s", train_data.schema())
 
     return PreprocessResult(
         train_data=train_dv_pr,

@@ -19,7 +19,6 @@ from examples.pipelines.california_housing_xgb.preprocess import (
 from examples.pipelines.california_housing_xgb.push import push_step
 from examples.pipelines.california_housing_xgb.train import TrainResult, train
 from michelangelo.uniflow.plugins.ray import RayTask
-from michelangelo.uniflow.plugins.spark import SparkTask
 
 __all__ = [
     "PreprocessResult",
@@ -61,16 +60,13 @@ def train_workflow(
         alias="feature_prep_overrides",
         config=RayTask(
             head_cpu=2,
-            worker_instances=1,
+            worker_instances=0,
         ),
     )
     train_dv, validation_dv = feature_prep_overrides(
         columns=_dataset_cols,
     )
-    pr = preprocess.with_overrides(
-        alias="preprocess_overrides",
-        config=SparkTask(executor_cpu=1, driver_cpu=1),
-    )(
+    pr = preprocess(
         cast_float_columns=_dataset_cols,
         train_dv=train_dv,
         validation_dv=validation_dv,
