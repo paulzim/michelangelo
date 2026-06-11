@@ -90,6 +90,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from michelangelo.workflow.schema.exceptions import ConfigurationError
@@ -419,7 +420,7 @@ class ModelPusherPlugin(PusherPluginBase):
         )
         raw_uri = self._storage_backend.upload(
             self._artifact.raw_model.path,
-            f"models/{model_name}/{push_id}/raw",
+            f"models/{model_name}/{push_id}/raw/{Path(self._artifact.raw_model.path).name}",
         )
 
         deployable_uri: str | None = None
@@ -429,7 +430,7 @@ class ModelPusherPlugin(PusherPluginBase):
             )
             deployable_uri = self._storage_backend.upload(
                 self._artifact.deployable_model.path,
-                f"models/{model_name}/{push_id}/deployable",
+                f"models/{model_name}/{push_id}/deployable/{Path(self._artifact.deployable_model.path).name}",
             )
 
         registrations: list[RegistrationResult] = []
