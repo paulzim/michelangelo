@@ -10,8 +10,10 @@ import grpc
 
 from michelangelo.gen.api.v2 import model_pb2
 from michelangelo.lib.model_manager.registry.api_client import (
+    _YARPC_METADATA,
     METADATA_ANNOTATION_KEY,
     APIRegistryClient,
+    _YARPCInterceptor,
 )
 
 
