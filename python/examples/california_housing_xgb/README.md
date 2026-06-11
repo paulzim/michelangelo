@@ -156,7 +156,6 @@ PYTHONPATH=. poetry run python examples/california_housing_xgb/california_housin
   --environ MINIO_SECRET_KEY=your-secret-key \
   --environ MINIO_SECURE=false \
   --environ REGISTRY_ENDPOINT=your-apiserver-host:15566 \
-  --environ REGISTRY_INSECURE=true \
   --yes
 ```
 
@@ -175,7 +174,6 @@ PYTHONPATH=. poetry run python examples/california_housing_xgb/california_housin
   --environ MINIO_SECRET_KEY=minioadmin \
   --environ MINIO_SECURE=false \
   --environ REGISTRY_ENDPOINT=michelangelo-apiserver:15566 \
-  --environ REGISTRY_INSECURE=true \
   --yes
 ```
 
