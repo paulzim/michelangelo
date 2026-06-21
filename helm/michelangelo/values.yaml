@@ -133,7 +133,7 @@ apiserver:
     qps: 300
     burst: 600
 
-  # Apiserver-specific config knobs. Defaults match the source sandbox YAML.
+  # Apiserver-specific config knobs. 
   metadataStorage:
     enable: false
   crdSync:
