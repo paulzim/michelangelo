@@ -7,6 +7,7 @@ converts the result to Ray Datasets for distributed processing.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import michelangelo.uniflow.core as uniflow
 from michelangelo.uniflow.plugins.ray import RayTask
@@ -15,6 +16,10 @@ from michelangelo.workflow.variables import DatasetVariable
 log = logging.getLogger(__name__)
 
 __all__ = ["feature_prep"]
+
+# Bundled dataset avoids network downloads at runtime (important in sandboxes
+# where the Zscaler MITM CA cert is absent from Ray containers).
+_BUNDLED_DATA = Path(__file__).parent / "data" / "california_housing.parquet"
 
 
 @uniflow.task(
@@ -36,8 +41,14 @@ def feature_prep(
 ) -> tuple[DatasetVariable, DatasetVariable]:
     """Prepare features from the California Housing dataset.
 
-    Loads the California Housing dataset via scikit-learn, performs a
-    train/test split, and converts to Ray Datasets for distributed processing.
+    Loads the California Housing dataset, performs a train/test split, and
+    converts to Ray Datasets for distributed processing.
+
+    Prefers a bundled parquet file at ``data/california_housing.parquet``
+    (generated once via ``scripts/download_california_housing.py``) to avoid
+    network calls inside environments without egress (e.g. k3d sandboxes).
+    Falls back to ``sklearn.datasets.fetch_california_housing`` when the
+    bundled file is absent.
 
     Args:
         columns: List of column names to select (features + ``"target"``).
@@ -47,11 +58,18 @@ def feature_prep(
     Returns:
         Tuple of (train_dataset, validation_dataset) as DatasetVariables.
     """
+    import pandas as pd
     import ray.data
-    from sklearn.datasets import fetch_california_housing
 
-    housing = fetch_california_housing(as_frame=True)
-    df = housing.frame.rename(columns={"MedHouseVal": "target"})
+    if _BUNDLED_DATA.exists():
+        log.info("Loading California Housing data from bundled parquet: %s", _BUNDLED_DATA)
+        df = pd.read_parquet(_BUNDLED_DATA)
+    else:
+        log.info("Bundled parquet not found; downloading via sklearn (requires network access)")
+        from sklearn.datasets import fetch_california_housing
+
+        housing = fetch_california_housing(as_frame=True)
+        df = housing.frame.rename(columns={"MedHouseVal": "target"})
 
     data = ray.data.from_pandas(df).select_columns(columns)
 
