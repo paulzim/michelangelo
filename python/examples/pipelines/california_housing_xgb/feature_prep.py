@@ -19,7 +19,7 @@ __all__ = ["feature_prep"]
 
 # Bundled dataset avoids network downloads at runtime (important in sandboxes
 # where the Zscaler MITM CA cert is absent from Ray containers).
-_BUNDLED_DATA = Path(__file__).parent / "data" / "california_housing.parquet"
+_BUNDLED_DATA = Path(__file__).parent / "data" / "california_housing.csv"
 
 
 @uniflow.task(
@@ -62,8 +62,8 @@ def feature_prep(
     import ray.data
 
     if _BUNDLED_DATA.exists():
-        log.info("Loading California Housing data from bundled parquet: %s", _BUNDLED_DATA)
-        df = pd.read_parquet(_BUNDLED_DATA)
+        log.info("Loading California Housing data from bundled CSV: %s", _BUNDLED_DATA)
+        df = pd.read_csv(_BUNDLED_DATA)
     else:
         log.info("Bundled parquet not found; downloading via sklearn (requires network access)")
         from sklearn.datasets import fetch_california_housing
