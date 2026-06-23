@@ -252,14 +252,6 @@ StateMachine:
 	case v2pb.TRIGGER_RUN_STATE_RUNNING:
 		log.Info("TRIGGER_RUN_STATE_RUNNING")
 
-		// Sync TriggerRun spec changes to workflow engine
-		if status, err := runner.Update(ctx, triggerRun); err != nil {
-			log.Error(err, "failed to sync trigger spec to workflow engine")
-			triggerRun.Status.ErrorMessage = err.Error()
-			triggerRun.Status.State = status.State
-			break StateMachine
-		}
-
 		// Handle actions using the new action field (preferred) or deprecated boolean fields (backward compatibility)
 		actionToPerform := triggerRun.Spec.Action
 
@@ -270,9 +262,27 @@ StateMachine:
 			}
 		}
 
+		// Sync TriggerRun spec changes to workflow engine, passing the action so cron
+		// update and pause/resume can be applied atomically in a single API call.
+		status, actionHandled, err := runner.Update(ctx, triggerRun, actionToPerform)
+		if err != nil {
+			log.Error(err, "failed to sync trigger spec to workflow engine")
+			triggerRun.Status.ErrorMessage = err.Error()
+			triggerRun.Status.State = status.State
+			break StateMachine
+		}
+		triggerRun.Status = status
+
+		// If Update already applied the action atomically, clear and skip
+		if actionHandled {
+			triggerRun.Spec.Action = v2pb.TRIGGER_RUN_ACTION_NO_ACTION
+			triggerRun.Spec.Kill = false
+			break StateMachine
+		}
+
 		switch actionToPerform {
 		case v2pb.TRIGGER_RUN_ACTION_KILL:
-			status, err := runner.Kill(ctx, triggerRun)
+			status, err = runner.Kill(ctx, triggerRun)
 			if err != nil {
 				log.Error(err, "failed to kill scheduled workflow")
 				triggerRun.Status.ErrorMessage = err.Error()
@@ -281,13 +291,12 @@ StateMachine:
 			}
 			log.Info("trigger run killed")
 			triggerRun.Status = status
-			// Clear action and deprecated fields after processing
 			triggerRun.Spec.Action = v2pb.TRIGGER_RUN_ACTION_NO_ACTION
 			triggerRun.Spec.Kill = false
 			break StateMachine
 
 		case v2pb.TRIGGER_RUN_ACTION_PAUSE:
-			status, err := runner.Pause(ctx, triggerRun)
+			status, err = runner.Pause(ctx, triggerRun)
 			if err != nil {
 				log.Error(err, "failed to pause scheduled workflow")
 				triggerRun.Status.ErrorMessage = err.Error()
@@ -296,30 +305,21 @@ StateMachine:
 			}
 			log.Info("trigger run paused")
 			triggerRun.Status = status
-			// Clear action after processing
 			triggerRun.Spec.Action = v2pb.TRIGGER_RUN_ACTION_NO_ACTION
 			break StateMachine
 		}
 
-		status, err := runner.GetStatus(ctx, triggerRun)
+		status2, err := runner.GetStatus(ctx, triggerRun)
 		if err != nil {
 			log.Error(err, "TriggerRun GetStatus failed")
 			triggerRun.Status.ErrorMessage = err.Error()
-			triggerRun.Status.State = status.State
+			triggerRun.Status.State = status2.State
 			break StateMachine
 		}
-		triggerRun.Status.State = status.State
+		triggerRun.Status.State = status2.State
 
 	case v2pb.TRIGGER_RUN_STATE_PAUSED:
 		log.Info("TRIGGER_RUN_STATE_PAUSED")
-
-		// Sync TriggerRun spec changes to workflow engine even when paused
-		if status, err := runner.Update(ctx, triggerRun); err != nil {
-			log.Error(err, "failed to sync trigger spec to workflow engine")
-			triggerRun.Status.ErrorMessage = err.Error()
-			triggerRun.Status.State = status.State
-			break StateMachine
-		}
 
 		// Handle actions using the new action field
 		actionToPerform := triggerRun.Spec.Action
@@ -329,9 +329,27 @@ StateMachine:
 			actionToPerform = v2pb.TRIGGER_RUN_ACTION_KILL
 		}
 
+		// Sync TriggerRun spec changes to workflow engine, passing the action so cron
+		// update and resume can be applied atomically in a single API call.
+		status, actionHandled, err := runner.Update(ctx, triggerRun, actionToPerform)
+		if err != nil {
+			log.Error(err, "failed to sync trigger spec to workflow engine")
+			triggerRun.Status.ErrorMessage = err.Error()
+			triggerRun.Status.State = status.State
+			break StateMachine
+		}
+		triggerRun.Status = status
+
+		// If Update already applied the action atomically, clear and skip
+		if actionHandled {
+			triggerRun.Spec.Action = v2pb.TRIGGER_RUN_ACTION_NO_ACTION
+			triggerRun.Spec.Kill = false
+			break StateMachine
+		}
+
 		switch actionToPerform {
 		case v2pb.TRIGGER_RUN_ACTION_KILL:
-			status, err := runner.Kill(ctx, triggerRun)
+			status, err = runner.Kill(ctx, triggerRun)
 			if err != nil {
 				log.Error(err, "failed to kill paused workflow")
 				triggerRun.Status.ErrorMessage = err.Error()
@@ -340,12 +358,11 @@ StateMachine:
 			}
 			log.Info("paused trigger run killed")
 			triggerRun.Status = status
-			// Clear action after processing
 			triggerRun.Spec.Action = v2pb.TRIGGER_RUN_ACTION_NO_ACTION
 			break StateMachine
 
 		case v2pb.TRIGGER_RUN_ACTION_RESUME:
-			status, err := runner.Resume(ctx, triggerRun)
+			status, err = runner.Resume(ctx, triggerRun)
 			if err != nil {
 				log.Error(err, "failed to resume scheduled workflow")
 				triggerRun.Status.ErrorMessage = err.Error()
@@ -354,7 +371,6 @@ StateMachine:
 			}
 			log.Info("trigger run resumed")
 			triggerRun.Status = status
-			// Clear action after processing
 			triggerRun.Spec.Action = v2pb.TRIGGER_RUN_ACTION_NO_ACTION
 			break StateMachine
 		}
