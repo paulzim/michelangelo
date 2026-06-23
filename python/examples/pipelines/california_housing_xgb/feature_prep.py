@@ -21,10 +21,10 @@ __all__ = ["feature_prep"]
     config=RayTask(
         head_cpu=1,
         head_gpu=0,
-        head_memory="2Gi",
+        head_memory="4Gi",
         worker_cpu=1,
         worker_gpu=0,
-        worker_memory="2Gi",
+        worker_memory="4Gi",
         worker_instances=0,
     ),
     cache_enabled=False,  # off for tutorial simplicity; enable in production

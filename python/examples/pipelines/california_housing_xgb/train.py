@@ -39,13 +39,13 @@ class TrainResult:
 
 @uniflow.task(
     config=RayTask(
-        head_cpu=4,
+        head_cpu=1,
         head_gpu=0,
-        head_memory="2Gi",
+        head_memory="4Gi",
         worker_cpu=1,
         worker_gpu=0,
-        worker_memory="2Gi",
-        worker_instances=0,
+        worker_memory="4Gi",
+        worker_instances=2,
     ),
 )
 def train(
@@ -239,13 +239,11 @@ def _register_model(name: str, artifact_uri: str, metrics: dict | None) -> None:
 
     from michelangelo.lib.model_manager.registry.api_client import APIRegistryClient
 
-    # Ray workers run in ma-dev-test; the apiserver lives in default.
-    # MA_API_SERVER overrides the default if injected via ctx.environ.
     endpoint = os.environ.get(
         "MA_API_SERVER",
         "michelangelo-apiserver.default.svc.cluster.local:15566",
     )
-    namespace = os.environ.get("MA_NAMESPACE", "ma-dev-test")
+    namespace = os.environ.get("MA_NAMESPACE", "ma-examples")
 
     try:
         with APIRegistryClient(
