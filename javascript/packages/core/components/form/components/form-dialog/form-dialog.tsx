@@ -47,7 +47,7 @@ export const FormDialog = <FieldValues extends FormData = FormData>({
 }: FormDialogProps<FieldValues>) => {
   const formId = useId();
 
-  const submitAndClose = async (values: FieldValues) => {
+  const handleFormSubmit = async (values: FieldValues) => {
     try {
       await onSubmit(values);
       onDismiss(); // Auto-close on successful submit
@@ -60,7 +60,7 @@ export const FormDialog = <FieldValues extends FormData = FormData>({
     <Form<FieldValues>
       id={formId}
       initialValues={initialValues}
-      onSubmit={submitAndClose}
+      onSubmit={handleFormSubmit}
       render={(formElement) => (
         <Dialog
           isOpen={isOpen}

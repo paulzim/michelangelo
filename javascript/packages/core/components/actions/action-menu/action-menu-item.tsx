@@ -47,6 +47,7 @@ export const ActionMenuItem = forwardRef<HTMLLIElement, ActionMenuItemProps>((pr
     ...baseMenuProps
   } = props;
   const isHovered = hoveredItem === action;
+  const handleActionSelect = action.disabled ? undefined : () => onSelectAction(action);
 
   const menuItem = (
     <MenuAdapter
@@ -67,7 +68,7 @@ export const ActionMenuItem = forwardRef<HTMLLIElement, ActionMenuItemProps>((pr
       // Opacity dims the entire item (icon + text) uniformly.
       overrides={{ Root: { style: { height: '44px', opacity: action.disabled ? 0.4 : 1 } } }}
       $disabled={action.disabled}
-      onClick={action.disabled ? undefined : () => onSelectAction(action)}
+      onClick={handleActionSelect}
     >
       <ListItemLabel>{action.display.label}</ListItemLabel>
     </MenuAdapter>

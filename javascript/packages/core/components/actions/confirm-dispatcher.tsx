@@ -38,7 +38,7 @@ export function ConfirmDispatcher<T extends Data>({ action, record, onClose }: P
     action.operation.type === 'mutation' ? action.operation.successOperations : undefined
   );
 
-  const executeAction = async () => {
+  const handleActionExecute = async () => {
     if (action.operation.type === 'mutation') {
       const response = await mutation.mutateAsync(applyMiddleware(record));
       runSuccessOperations(response);
@@ -52,7 +52,7 @@ export function ConfirmDispatcher<T extends Data>({ action, record, onClose }: P
     <ConfirmDialog
       isOpen
       onDismiss={onClose}
-      onConfirm={executeAction}
+      onConfirm={handleActionExecute}
       heading={modal.header.title}
       confirmLabel={modal.button.label}
       destructive={modal.destructive}

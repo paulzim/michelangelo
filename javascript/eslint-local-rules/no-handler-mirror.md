@@ -4,6 +4,8 @@
 
 Event handler names passed as JSX props must add context beyond the event type. A name that merely mirrors the prop tells the reader nothing about what is being handled.
 
+This rule works in tandem with `require-handler-prefix`, which requires all locally defined handlers to begin with `handle`. Together they enforce: the name must carry the `handle` prefix **and** go beyond repeating the event type.
+
 ## Flagged patterns
 
 ```tsx
@@ -21,21 +23,16 @@ Event handler names passed as JSX props must add context beyond the event type. 
 ## Correct patterns
 
 ```tsx
-// ✓ descriptive name without prefix
-<RadioGroup onChange={persistSelection} />
-<Select onChange={commitSelection} />
-<Form onSubmit={submitAndClose} />
-
 // ✓ "handle" prefix with a descriptive suffix
-<RadioGroup onChange={handleRowChange} />
+<RadioGroup onChange={handleSelectionChange} />
 <Select onChange={handleCommitSelection} />
-<Form onSubmit={handleSubmitAndClose} />
+<Form onSubmit={handleFormSubmit} />
 
 // ✓ member expression pass-through — explicitly forwarded
 <Child onClick={props.onClick} />
 ```
 
-The rule flags names that add no information. Whether you use a `handle` prefix is a matter of team preference — what matters is that the name describes what is handled.
+Name the **effect**, not the trigger — the suffix should describe what the handler does, not what event fired it.
 
 ## Prop forwarding
 

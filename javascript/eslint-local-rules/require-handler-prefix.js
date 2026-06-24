@@ -1,26 +1,25 @@
 /**
- * @fileoverview Disallows event handler names that mirror the prop without adding context.
+ * @fileoverview Requires locally-defined event handlers passed to on* props to use the handle* prefix.
  *
- * onClick={onClick}, onChange={handleChange}, onClick={handleOnClick} all tell
- * the reader nothing about *what* is being handled. Descriptive names like
- * onChange={handleRowChange} or onChange={commitSelection} make the intent clear.
+ * Passthrough props — values forwarded directly from component parameters — are exempt.
+ * The handle* naming already applies at the call site where the handler was defined.
+ *
+ * Does not apply to test files (configure in eslint.config.js).
  */
-
-const capitalize = (str) => str.charAt(0).toUpperCase() + str.slice(1);
 
 /** @type {import('eslint').Rule.RuleModule} */
 const rule = {
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Disallow event handler names that mirror the prop name without adding context',
+      description: 'Require handle* prefix for locally-defined functions passed to on* event props',
       recommended: true,
-      url: 'https://github.com/michelangelo-ai/michelangelo/blob/main/javascript/eslint-local-rules/no-handler-mirror.md',
+      url: 'https://github.com/michelangelo-ai/michelangelo/blob/main/javascript/eslint-local-rules/require-handler-prefix.md',
     },
     messages: {
-      noHandlerMirror:
-        "'{{valueName}}' mirrors the prop '{{propName}}' without adding context. " +
-        'Use a name that describes what is handled (e.g. handleRowChange instead of handleChange).',
+      requireHandlerPrefix:
+        "'{{valueName}}' is passed as handler for '{{propName}}' but does not start with 'handle'. " +
+        "Rename to 'handle...' to indicate it is an event handler.",
     },
     schema: [],
   },
@@ -55,7 +54,10 @@ const rule = {
           if (variable.name === name) {
             if (variable.defs.length === 0) return false;
             const def = variable.defs[0];
+            // Direct parameter destructuring: ({ onClose }) => ...
             if (def.type === 'Parameter') return true;
+            // Indirect: const { onClose } = <expr involving a parameter>.
+            // Handles: props, props ?? {}, props?.foo, etc.
             if (def.type === 'Variable' && def.node.init) {
               const identifiers = extractIdentifiers(def.node.init);
               if (identifiers.some((id) => isParamInScope(id, scope))) return true;
@@ -77,22 +79,13 @@ const rule = {
         if (!node.value || node.value.type !== 'JSXExpressionContainer') return;
         if (node.value.expression.type !== 'Identifier') return;
 
-        // Skip props that are forwarded directly from the component's own parameters
         if (isPassThroughProp(node.value.expression)) return;
 
         const valueName = node.value.expression.name;
-        const eventName = propName.slice(2); // 'onChange' -> 'Change'
-
-        const mirrors = [
-          propName, // onClick={onClick}
-          `handle${capitalize(eventName)}`, // onChange={handleChange}
-          `handle${capitalize(propName)}`, // onClick={handleOnClick}
-        ];
-
-        if (mirrors.includes(valueName)) {
+        if (!valueName.startsWith('handle')) {
           context.report({
             node,
-            messageId: 'noHandlerMirror',
+            messageId: 'requireHandlerPrefix',
             data: { propName, valueName },
           });
         }
