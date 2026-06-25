@@ -1,7 +1,7 @@
 apiVersion: michelangelo.api/v2
 kind: PipelineRun
 metadata:
-  name: run-california-housing-10
+  name: run-california-housing-11
   namespace: ma-examples
 spec:
   pipeline:
