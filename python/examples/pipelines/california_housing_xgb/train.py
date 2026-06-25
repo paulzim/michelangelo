@@ -41,11 +41,11 @@ class TrainResult:
     config=RayTask(
         head_cpu=1,
         head_gpu=0,
-        head_memory="4Gi",
+        head_memory="2Gi",
         worker_cpu=1,
         worker_gpu=0,
-        worker_memory="4Gi",
-        worker_instances=2,
+        worker_memory="2Gi",
+        worker_instances=0,
     ),
 )
 def train(
