@@ -8,7 +8,6 @@ logger / callback resolution helpers. Public APIs live in
 from __future__ import annotations
 
 import hashlib
-import importlib
 import logging
 import os
 import re
@@ -35,22 +34,12 @@ from ray.train.lightning import (
     RayLightningEnvironment,
 )
 
+from michelangelo._internal.utils.reflection_utils import get_module_attr
+from michelangelo.lib._internal.errors import UserInputError
 from michelangelo.lib.trainer.torch.pytorch_lightning._private.callbacks import (
     RayTrainReportCallback,
     RayTrainReportPerNodeCallback,
 )
-
-
-class UserInputError(Exception):
-    """Raised when a user-supplied input or path causes training to fail."""
-
-
-def _get_module_attr(module_attr: str) -> Any:
-    """Resolve a dotted ``module.attribute`` path to the attribute object."""
-    module_def, _, attr_def = module_attr.rpartition(".")
-    module = importlib.import_module(module_def)
-    return getattr(module, attr_def)
-
 
 # Plugin types accepted by the PyTorch Lightning Trainer.
 # See: https://github.com/Lightning-AI/pytorch-lightning/blob/2129fdf3622e39ba46be4e1139af408e7e951cf3/src/lightning/pytorch/trainer/trainer.py#L126
@@ -255,7 +244,7 @@ def _resolve_plugins(
         result = []
     elif isinstance(plugins, str):
         # Create the plugin instances from the provided plugins function
-        plugins_fn = _get_module_attr(plugins)
+        plugins_fn = get_module_attr(plugins)
         plugin_instances = plugins_fn(**plugin_kwargs)
         result = (
             list(plugin_instances)
@@ -311,7 +300,7 @@ def _resolve_logger(
             )
         return list(logger)
     if isinstance(logger, str):
-        logger_fn = _get_module_attr(logger)
+        logger_fn = get_module_attr(logger)
         result = logger_fn(**(logger_kwargs or {}))
         return list(result) if isinstance(result, (list, tuple)) else result
     if logger is not None:
@@ -335,6 +324,7 @@ def _resolve_callbacks(
     callback_kwargs: dict[str, Any] | None = None,
     per_node_callback_kwargs: dict[str, Any] | None = None,
     strategy: Strategy | None = None,
+    training_observer: Any | None = None,
 ) -> tuple[list[Callback], bool]:
     """Build callback list for the Lightning Trainer.
 
@@ -362,7 +352,7 @@ def _resolve_callbacks(
 
     if isinstance(callbacks, str):
         # Import the callable and invoke it — may be a Callback class or a factory returning one or more.
-        fn = _get_module_attr(callbacks)
+        fn = get_module_attr(callbacks)
         result = fn(**callback_kwargs)
         if isinstance(result, (list, tuple)):
             for obj in result:
@@ -400,10 +390,14 @@ def _resolve_callbacks(
     if _use_per_node:
         per_node_callback_kwargs = per_node_callback_kwargs or {}
         resolved_callbacks.append(
-            RayTrainReportPerNodeCallback(**per_node_callback_kwargs)
+            RayTrainReportPerNodeCallback(
+                **per_node_callback_kwargs, training_observer=training_observer
+            )
         )
     else:
-        resolved_callbacks.append(RayTrainReportCallback())
+        resolved_callbacks.append(
+            RayTrainReportCallback(training_observer=training_observer)
+        )
 
     return resolved_callbacks, has_model_checkpoint
 
@@ -528,6 +522,7 @@ def _train_loop_per_worker(train_loop_config):
         trainer_kwargs.pop("callback_kwargs", None),
         trainer_kwargs.pop(CALLBACK_REPORT_PER_NODE, None),
         strategy,
+        training_observer=train_loop_config.get("training_observer"),
     )
 
     # Update trainer_kwargs with the resolved arguments for the Lightning Trainer.
