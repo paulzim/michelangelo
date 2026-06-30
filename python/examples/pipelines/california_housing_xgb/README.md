@@ -159,27 +159,39 @@ PYTHONPATH=. poetry run python examples/pipelines/california_housing_xgb/califor
 
 ### k3d sandbox
 
-```bash
-cd michelangelo-ai/michelangelo/python
-JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home \
-PYTHONPATH=. poetry run python examples/pipelines/california_housing_xgb/california_housing_xgb.py \
-  remote-run \
-  --image docker.io/library/my-workflow:latest \
-  --storage-url s3://michelangelo/workflows \
-  --environ AWS_ENDPOINT_URL=http://minio:9091 \
-  --environ AWS_ACCESS_KEY_ID=minioadmin \
-  --environ AWS_SECRET_ACCESS_KEY=minioadmin \
-  --environ REGISTRY_ENDPOINT=michelangelo-apiserver:15566 \
-  --yes
-```
-
-Before running, rebuild and import the image into the cluster:
+Build a pipeline-specific image that bundles the example code and patches into the base image, then submit via `kubectl`:
 
 ```bash
-docker build -t my-workflow:latest -f examples/Dockerfile .
-k3d image import my-workflow:latest -c michelangelo-sandbox
-kubectl delete cachedoutputs --all   # clear stale cached task outputs
+# 1. Build the image (from python/ — the COPY paths in the Dockerfile are relative to this context)
+cd /path/to/michelangelo/python
+docker build \
+  -t michelangelo-california-housing:local \
+  -f examples/pipelines/california_housing_xgb/.docker/Dockerfile \
+  .
+
+# 2. Import into k3d (required after every ma sandbox delete/create and after Mac restarts)
+k3d image import michelangelo-california-housing:local -c michelangelo-sandbox
+
+# 3. Create the namespace if it doesn't exist (not created by ma sandbox create)
+kubectl create namespace ma-examples --dry-run=client -o yaml | kubectl apply -f -
+
+# 4. Apply the Pipeline CRD, then submit a PipelineRun
+kubectl apply -f examples/pipelines/california_housing_xgb/pipeline.yaml
+kubectl apply -f examples/pipelines/california_housing_xgb/pipelinerun.yaml
 ```
+
+Monitor progress:
+
+```bash
+kubectl get pods -n ma-examples -w
+kubectl get pipelinerun -n ma-examples
+```
+
+**Notes:**
+- `pipeline.yaml` sets `michelangelo/uniflow-image: michelangelo-california-housing:local` and `imagePullPolicy: IfNotPresent` — do not change these to the ghcr.io image, the cluster cannot pull it.
+- The bundled `data/california_housing.csv` is loaded at runtime; no network access or sklearn download is needed inside the cluster.
+- `worker_instances=0` in all three tasks (feature_prep, preprocess, train) keeps each Ray cluster head-only to fit within the k3d sandbox memory budget (~8 GB). The `create_scaling_config()` helper in `train.py` dynamically allocates workers from whatever CPUs are available on the head node.
+- After a Mac restart, run `ma sandbox start` followed by `ma sandbox sync` to bring Michelangelo pods back, then reimport the image (step 2) before resubmitting.
 
 ### Environment variables
 
