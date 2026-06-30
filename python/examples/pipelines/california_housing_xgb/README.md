@@ -172,8 +172,9 @@ docker build \
 # 2. Import into k3d (required after every ma sandbox delete/create and after Mac restarts)
 k3d image import michelangelo-california-housing:local -c michelangelo-sandbox
 
-# 3. Create the namespace if it doesn't exist (not created by ma sandbox create)
+# 3. Create the namespace and Project CR (not created by ma sandbox create; lost on delete)
 kubectl create namespace ma-examples --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f examples/config/project.yaml
 
 # 4. Apply the Pipeline CRD, then submit a PipelineRun
 kubectl apply -f examples/pipelines/california_housing_xgb/pipeline.yaml
