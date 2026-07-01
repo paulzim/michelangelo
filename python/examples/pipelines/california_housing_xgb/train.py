@@ -39,7 +39,7 @@ class TrainResult:
 
 @uniflow.task(
     config=RayTask(
-        head_cpu=1,
+        head_cpu=4,
         head_gpu=0,
         head_memory="2Gi",
         worker_cpu=1,
