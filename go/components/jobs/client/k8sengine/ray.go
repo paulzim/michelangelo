@@ -438,9 +438,15 @@ func getRayClusterStateFromKubeRayState(kubeRayState rayv1.ClusterState) v2pb.Ra
 func isFailureCondition(cond metav1.Condition) bool {
 	switch rayv1.RayClusterConditionType(cond.Type) {
 	case rayv1.HeadPodReady:
+		// HeadPodNotFound is the transient initial state kuberay sets immediately after
+		// creating the head pod, before the informer cache reflects the new pod. It is
+		// semantically equivalent to RayClusterPodsProvisioning and clears within one
+		// reconcile cycle once the pod is visible. Treating it as a failure here would
+		// cause the cluster to be killed before the pod has a chance to start.
 		return cond.Status == metav1.ConditionFalse &&
 			cond.Reason != "" &&
-			cond.Reason != rayv1.RayClusterPodsProvisioning
+			cond.Reason != rayv1.RayClusterPodsProvisioning &&
+			cond.Reason != rayv1.HeadPodNotFound
 	case rayv1.RayClusterReplicaFailure:
 		return cond.Status == metav1.ConditionTrue
 	default:
