@@ -21,6 +21,7 @@ from michelangelo.workflow.schema.pusher import (
     PusherPluginConfig,
 )
 from michelangelo.workflow.tasks.pusher import push
+from michelangelo.workflow.variables.metadata import ModelMetadata
 from michelangelo.workflow.variables.types import (
     AssembledModel,
     ModelArtifact,
@@ -310,7 +311,12 @@ def push_step(
         ]
     )
 
-    assembled = AssembledModel(raw_model=ModelArtifact(path=checkpoint_path))
+    assembled = AssembledModel(
+        raw_model=ModelArtifact(
+            path=checkpoint_path,
+            metadata=ModelMetadata(assembled=True),
+        )
+    )
     eval_report = EvaluationReport(
         spec=EvaluationReportSpec(title="California Housing XGBoost Evaluation")
     )
