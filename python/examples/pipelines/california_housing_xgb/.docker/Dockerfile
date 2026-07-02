@@ -2,7 +2,7 @@ FROM ghcr.io/michelangelo-ai/examples:main
 # Install optional deps not bundled in the base examples image.
 # minio: MinioStorageBackend + checkpoint download in push_step.
 # s3fs: PandasIO reads s3:// dataset paths (e.g. preprocess output).
-RUN pip3 install --no-cache-dir "minio>=7,<8" "s3fs>=2024.9.0"
+RUN python3 -m pip install --no-cache-dir "minio>=7,<8" "s3fs>=2024.9.0"
 COPY examples/pipelines/california_housing_xgb /app/examples/pipelines/california_housing_xgb/
 # Patch ref.py and codec.py to filter __init__ params when reconstructing
 # dataclasses. The base image predates the fix for DatasetVariable.__init__
