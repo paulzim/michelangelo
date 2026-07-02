@@ -21,12 +21,6 @@ from michelangelo.workflow.schema.pusher import (
     PusherPluginConfig,
 )
 from michelangelo.workflow.tasks.pusher import push
-from michelangelo.workflow.variables.metadata import ModelMetadata
-from michelangelo.workflow.variables.types import (
-    AssembledModel,
-    ModelArtifact,
-    PusherResult,
-)
 
 if TYPE_CHECKING:
     from examples.pipelines.california_housing_xgb.preprocess import PreprocessResult
@@ -100,6 +94,9 @@ def push_step(
     secure = parsed.scheme == "https" if parsed else False
     access_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
     secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+
+    from michelangelo.workflow.variables.metadata import ModelMetadata
+    from michelangelo.workflow.variables.types import AssembledModel, ModelArtifact, PusherResult
 
     # ── Locate XGBoost checkpoint ────────────────────────────────────────────
     # In a remote run, train_result.path is an S3 path (e.g.
