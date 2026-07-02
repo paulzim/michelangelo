@@ -20,7 +20,12 @@ COPY michelangelo/lib/model_manager/ /app/michelangelo/lib/model_manager/
 # Required at module-load time by pusher.plugins.__init__ and push.py.
 COPY michelangelo/gen/api/v2/evaluation_report_pb2.py /app/michelangelo/gen/api/v2/evaluation_report_pb2.py
 COPY michelangelo/gen/api/v2/evaluation_report_svc_pb2.py /app/michelangelo/gen/api/v2/evaluation_report_svc_pb2.py
-# Diagnostic: verify the full module-load chain works in the container.
-# Build fails here (with the real Python traceback) if any import is broken.
+# io.py: base image calls _ensure_s3a_config() at module level (old version),
+# which invokes SparkSession.builder.getOrCreate() at import time and fails in
+# the k3d driver pod. Current version is lazy (called only from read_data /
+# SparkIO.write). Overlay with the current lazy version to fix the import crash.
+COPY michelangelo/uniflow/plugins/spark/io.py /app/michelangelo/uniflow/plugins/spark/io.py
+# Diagnostic: verify non-JVM import chain works in the container at build time.
+# SparkTask / push module are skipped here (they need a live JVM/SparkContext).
 COPY examples/pipelines/california_housing_xgb/.docker/diagnostic.py /tmp/diagnostic.py
 RUN python3 /tmp/diagnostic.py
