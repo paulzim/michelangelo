@@ -81,6 +81,8 @@ jobs:
         run: poetry config pypi-token.pypi ${{ secrets.PYPI_API_TOKEN }}
 
       - name: Publish to PyPI (pre-release)
+        env:
+          POETRY_DYNAMIC_VERSIONING_BYPASS: ${{ steps.version.outputs.nightly_version }}
         run: poetry publish --no-interaction
 
   # ---------------------------------------------------------------------------
@@ -288,21 +290,23 @@ jobs:
         run: |
           DATE_TAG="${{ needs.check-changes.outputs.date_tag }}"
           NIGHTLY_VERSION="0.3.0-nightly.${DATE_TAG}"
-          cd packages/core && npm version "$NIGHTLY_VERSION" --no-git-tag-version && cd ../..
-          cd packages/rpc  && npm version "$NIGHTLY_VERSION" --no-git-tag-version && cd ../..
+          jq ".version = \"$NIGHTLY_VERSION\"" packages/core/package.json > /tmp/core-pkg.json && mv /tmp/core-pkg.json packages/core/package.json
+          jq ".version = \"$NIGHTLY_VERSION\""  packages/rpc/package.json  > /tmp/rpc-pkg.json  && mv /tmp/rpc-pkg.json  packages/rpc/package.json
           echo "Publishing npm nightly: $NIGHTLY_VERSION"
 
       - name: Build packages
         run: |
           yarn workspace @michelangelo-ai/core build
-          yarn workspace @michelangelo/rpc build
+          yarn workspace @michelangelo-ai/rpc build
 
       - name: Publish @michelangelo-ai/core
         run: cd packages/core && npm publish --tag nightly --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_LEGACY_PEER_DEPS: 'true'
 
-      - name: Publish @michelangelo/rpc
+      - name: Publish @michelangelo-ai/rpc
         run: cd packages/rpc && npm publish --tag nightly --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_LEGACY_PEER_DEPS: 'true'
