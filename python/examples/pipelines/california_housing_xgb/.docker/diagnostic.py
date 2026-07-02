@@ -14,6 +14,8 @@ steps = [
     ("types",         "from michelangelo.workflow.variables.types import AssembledModel, ModelArtifact, PusherResult"),
     ("model_mgr",     "from michelangelo.lib.model_manager.registry.client import InMemoryRegistryClient"),
     ("artifact_mgr",  "from michelangelo.lib.artifact_manager.storage_backend import LocalStorageBackend"),
+    ("sinks schema",  "from michelangelo.workflow.schema.sinks.s3 import S3SinkConfig; from michelangelo.workflow.schema.sinks.local import LocalFileSinkConfig"),
+    ("sinks funcs",   "from michelangelo.workflow.tasks.functions.sinks import S3Sink, LocalFileSink"),
     ("push module",   "from examples.pipelines.california_housing_xgb.push import push_step"),
 ]
 

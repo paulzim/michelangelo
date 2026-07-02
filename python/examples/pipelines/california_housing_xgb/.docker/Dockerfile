@@ -34,7 +34,12 @@ COPY michelangelo/gen/api/v2/evaluation_report_svc_pb2.py /app/michelangelo/gen/
 # (Kept as a precaution; push_step now uses RayTask so SparkTask is not imported
 # by any example code, but other SDK code may still pull in spark/io.py.)
 COPY michelangelo/uniflow/plugins/spark/io.py /app/michelangelo/uniflow/plugins/spark/io.py
+# Overlay sink packages added after the base image was published.
+# schema/sinks/ provides S3SinkConfig and LocalFileSinkConfig (used in push.py).
+# tasks/functions/sinks/ provides S3Sink and LocalFileSink concrete classes.
+COPY michelangelo/workflow/schema/sinks/ /app/michelangelo/workflow/schema/sinks/
+COPY michelangelo/workflow/tasks/functions/__init__.py /app/michelangelo/workflow/tasks/functions/__init__.py
+COPY michelangelo/workflow/tasks/functions/sinks/ /app/michelangelo/workflow/tasks/functions/sinks/
 # Diagnostic: verify non-JVM import chain works in the container at build time.
-# SparkTask / push module are skipped here (they need a live JVM/SparkContext).
 COPY examples/pipelines/california_housing_xgb/.docker/diagnostic.py /tmp/diagnostic.py
 RUN python3 /tmp/diagnostic.py
