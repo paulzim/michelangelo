@@ -317,17 +317,22 @@ def push_step(
         spec=EvaluationReportSpec(title="California Housing XGBoost Evaluation")
     )
 
-    results = push(
-        config=config,
-        artifacts={
-            "model": assembled,
-            "eval_report": eval_report,
-            "train_data": pr.train_data,
-            "validation_data": pr.validation_data,
-        },
-        storage_backend=storage_backend,
-        registry_client=registry_client,
-    )
+    import traceback as _tb
+    try:
+        results = push(
+            config=config,
+            artifacts={
+                "model": assembled,
+                "eval_report": eval_report,
+                "train_data": pr.train_data,
+                "validation_data": pr.validation_data,
+            },
+            storage_backend=storage_backend,
+            registry_client=registry_client,
+        )
+    except Exception:
+        log.error("push() failed — full traceback:\n%s", _tb.format_exc())
+        raise
 
     for r in results:
         log.info(
