@@ -317,6 +317,7 @@ def push_step(
         spec=EvaluationReportSpec(title="California Housing XGBoost Evaluation")
     )
 
+    import sys as _sys
     import traceback as _tb
     try:
         results = push(
@@ -331,7 +332,11 @@ def push_step(
             registry_client=registry_client,
         )
     except Exception:
-        log.error("push() failed — full traceback:\n%s", _tb.format_exc())
+        print(
+            "push() FAILED — full traceback:\n" + _tb.format_exc(),
+            file=_sys.stderr,
+            flush=True,
+        )
         raise
 
     for r in results:

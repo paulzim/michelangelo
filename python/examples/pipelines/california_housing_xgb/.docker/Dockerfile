@@ -27,6 +27,14 @@ COPY michelangelo/lib/model_manager/ /app/michelangelo/lib/model_manager/
 # Required at module-load time by pusher.plugins.__init__ and push.py.
 COPY michelangelo/gen/api/v2/evaluation_report_pb2.py /app/michelangelo/gen/api/v2/evaluation_report_pb2.py
 COPY michelangelo/gen/api/v2/evaluation_report_svc_pb2.py /app/michelangelo/gen/api/v2/evaluation_report_svc_pb2.py
+# model_pb2 / model_svc_pb2 / model_svc_pb2_grpc: base image predates the
+# model_artifact_uri and deployable_artifact_uri fields on ModelSpec (added
+# after the image was published). api_client.py (overlaid) calls
+# model.spec.model_artifact_uri.append(...) — fails with AttributeError
+# against the old proto. Overlay all three model gen files to match.
+COPY michelangelo/gen/api/v2/model_pb2.py /app/michelangelo/gen/api/v2/model_pb2.py
+COPY michelangelo/gen/api/v2/model_svc_pb2.py /app/michelangelo/gen/api/v2/model_svc_pb2.py
+COPY michelangelo/gen/api/v2/model_svc_pb2_grpc.py /app/michelangelo/gen/api/v2/model_svc_pb2_grpc.py
 # io.py: base image calls _ensure_s3a_config() at module level (old version),
 # which invokes SparkSession.builder.getOrCreate() at import time and fails in
 # the k3d driver pod. Current version is lazy (called only from read_data /
