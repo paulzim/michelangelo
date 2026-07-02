@@ -20,3 +20,7 @@ COPY michelangelo/lib/model_manager/ /app/michelangelo/lib/model_manager/
 # Required at module-load time by pusher.plugins.__init__ and push.py.
 COPY michelangelo/gen/api/v2/evaluation_report_pb2.py /app/michelangelo/gen/api/v2/evaluation_report_pb2.py
 COPY michelangelo/gen/api/v2/evaluation_report_svc_pb2.py /app/michelangelo/gen/api/v2/evaluation_report_svc_pb2.py
+# Diagnostic: verify the full module-load chain works in the container.
+# Build fails here (with the real Python traceback) if any import is broken.
+COPY examples/pipelines/california_housing_xgb/.docker/diagnostic.py /tmp/diagnostic.py
+RUN python3 /tmp/diagnostic.py
