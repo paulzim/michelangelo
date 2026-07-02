@@ -13,5 +13,6 @@ RUN python3 /tmp/patch_codec.py
 COPY michelangelo/workflow/tasks/pusher/ /app/michelangelo/workflow/tasks/pusher/
 COPY michelangelo/workflow/schema/pusher.py /app/michelangelo/workflow/schema/pusher.py
 COPY michelangelo/workflow/variables/types.py /app/michelangelo/workflow/variables/types.py
+COPY michelangelo/workflow/variables/metadata.py /app/michelangelo/workflow/variables/metadata.py
 COPY michelangelo/lib/artifact_manager/ /app/michelangelo/lib/artifact_manager/
 COPY michelangelo/lib/model_manager/ /app/michelangelo/lib/model_manager/
