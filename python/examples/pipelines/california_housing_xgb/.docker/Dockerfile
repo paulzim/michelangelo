@@ -7,3 +7,11 @@ COPY examples/pipelines/california_housing_xgb/.docker/ref.py \
      /app/michelangelo/uniflow/core/ref.py
 COPY examples/pipelines/california_housing_xgb/.docker/patch_codec.py /tmp/patch_codec.py
 RUN python3 /tmp/patch_codec.py
+# Overlay SDK modules added after the GHCR base image was published
+# (PRs #1261 #1276 #1282 #1429: pusher, artifact_manager, model_manager, variables).
+# The base image has PYTHONPATH=/app and the SDK lives at /app/michelangelo/.
+COPY michelangelo/workflow/tasks/pusher/ /app/michelangelo/workflow/tasks/pusher/
+COPY michelangelo/workflow/schema/pusher.py /app/michelangelo/workflow/schema/pusher.py
+COPY michelangelo/workflow/variables/types.py /app/michelangelo/workflow/variables/types.py
+COPY michelangelo/lib/artifact_manager/ /app/michelangelo/lib/artifact_manager/
+COPY michelangelo/lib/model_manager/ /app/michelangelo/lib/model_manager/
