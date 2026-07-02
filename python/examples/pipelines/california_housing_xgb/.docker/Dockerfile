@@ -24,6 +24,8 @@ COPY michelangelo/gen/api/v2/evaluation_report_svc_pb2.py /app/michelangelo/gen/
 # which invokes SparkSession.builder.getOrCreate() at import time and fails in
 # the k3d driver pod. Current version is lazy (called only from read_data /
 # SparkIO.write). Overlay with the current lazy version to fix the import crash.
+# (Kept as a precaution; push_step now uses RayTask so SparkTask is not imported
+# by any example code, but other SDK code may still pull in spark/io.py.)
 COPY michelangelo/uniflow/plugins/spark/io.py /app/michelangelo/uniflow/plugins/spark/io.py
 # Diagnostic: verify non-JVM import chain works in the container at build time.
 # SparkTask / push module are skipped here (they need a live JVM/SparkContext).

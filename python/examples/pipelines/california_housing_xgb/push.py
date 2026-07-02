@@ -12,7 +12,7 @@ import logging
 from typing import TYPE_CHECKING
 
 import michelangelo.uniflow.core as uniflow
-from michelangelo.uniflow.plugins.spark import SparkTask
+from michelangelo.uniflow.plugins.ray import RayTask
 from michelangelo.workflow.schema.pusher import (
     DatasetPluginConfig,
     EvalReportPluginConfig,
@@ -32,12 +32,11 @@ __all__ = ["push_step"]
 
 
 @uniflow.task(
-    config=SparkTask(
-        driver_cpu=1,
-        driver_memory="4G",
-        executor_cpu=1,
-        executor_memory="2G",
-        executor_instances=1,
+    config=RayTask(
+        head_cpu=1,
+        head_gpu=0,
+        head_memory="2Gi",
+        worker_instances=0,
     ),
 )
 def push_step(
