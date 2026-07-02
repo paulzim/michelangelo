@@ -16,3 +16,7 @@ COPY michelangelo/workflow/variables/types.py /app/michelangelo/workflow/variabl
 COPY michelangelo/workflow/variables/metadata.py /app/michelangelo/workflow/variables/metadata.py
 COPY michelangelo/lib/artifact_manager/ /app/michelangelo/lib/artifact_manager/
 COPY michelangelo/lib/model_manager/ /app/michelangelo/lib/model_manager/
+# evaluation_report_pb2 added in PR #1236 — not present in the base image.
+# Required at module-load time by pusher.plugins.__init__ and push.py.
+COPY michelangelo/gen/api/v2/evaluation_report_pb2.py /app/michelangelo/gen/api/v2/evaluation_report_pb2.py
+COPY michelangelo/gen/api/v2/evaluation_report_svc_pb2.py /app/michelangelo/gen/api/v2/evaluation_report_svc_pb2.py
