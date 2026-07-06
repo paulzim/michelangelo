@@ -517,6 +517,42 @@ class TestTrainTabularLightning(TestCase):
 
 
 # ---------------------------------------------------------------------------
+# train_tabular — default RunConfig storage
+# ---------------------------------------------------------------------------
+
+
+class TestTrainTabularDefaultRunConfig(TestCase):
+    """Tests for train_tabular's default-RunConfig construction."""
+
+    _CREATE_RUN_CONFIG = "michelangelo.uniflow.plugins.ray.run_config.create_run_config"
+
+    def test_none_run_config_delegates_to_create_run_config(self):
+        """run_config=None builds the default via the shared UniFlow helper."""
+        with patch(self._CREATE_RUN_CONFIG) as mock_create:
+            _, _, mt = _run_train()
+        mock_create.assert_called_once()
+        self.assertIs(mt.call_args.kwargs["run_config"], mock_create.return_value)
+
+    def test_create_run_config_receives_checkpoint_config(self):
+        """The default RunConfig is built with the resolved CheckpointConfig."""
+        config = make_tabular_config(checkpoint_config=CheckpointConfig(num_to_keep=3))
+        with patch(self._CREATE_RUN_CONFIG) as mock_create:
+            _run_train(config=config)
+        checkpoint_config = mock_create.call_args.kwargs["checkpoint_config"]
+        self.assertEqual(checkpoint_config.num_to_keep, 3)
+
+    def test_explicit_run_config_not_overridden(self):
+        """An explicitly-passed run_config skips create_run_config entirely."""
+        import ray.train
+
+        explicit = ray.train.RunConfig(storage_path="/explicit/path")
+        with patch(self._CREATE_RUN_CONFIG) as mock_create:
+            _, _, mt = _run_train(run_config=explicit)
+        mock_create.assert_not_called()
+        self.assertIs(mt.call_args.kwargs["run_config"], explicit)
+
+
+# ---------------------------------------------------------------------------
 # train_tabular — dispatch tests
 # ---------------------------------------------------------------------------
 

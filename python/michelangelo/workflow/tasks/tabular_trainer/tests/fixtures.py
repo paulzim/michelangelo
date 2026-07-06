@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, Mock
 
 import numpy as np
 
+from michelangelo.lib.artifact_manager.storage_backend import StorageBackend
 from michelangelo.workflow.schema.tabular_trainer import (
     ColumnConfig,
     LightningTrainerConfig,
@@ -52,7 +53,7 @@ def mock_validation_dataset() -> Mock:
 
 def mock_storage_backend() -> Mock:
     """Return a Mock ``StorageBackend`` that records calls."""
-    backend = MagicMock()
+    backend = MagicMock(spec=StorageBackend)
     backend.upload.return_value = "s3://bucket/models/abc123"
     return backend
 
