@@ -4,7 +4,7 @@ metadata:
   namespace: "ma-examples"
   name: "california-housing-xgb"
   annotations:
-    michelangelo/uniflow-image: california-housing-xgb-local:run-30
+    michelangelo/uniflow-image: california-housing-xgb-local:latest
     michelangelo/uniflow-image-pull-policy: IfNotPresent
 spec:
   type: "PIPELINE_TYPE_TRAIN"
