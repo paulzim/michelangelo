@@ -5,7 +5,9 @@ metadata:
   name: "hello-world"
   annotations:
     michelangelo/uniflow-image: michelangelo-hello-world:local
+    michelangelo/uniflow-image-pull-policy: IfNotPresent
 spec:
   type: "PIPELINE_TYPE_TRAIN"
   manifest:
     filePath: examples.hello_world.hello_world
+    uniflowTar: "s3://michelangelo/uniflow/ma-dev-test_hello-world.tar.gz"
