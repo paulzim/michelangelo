@@ -25,6 +25,18 @@ All notable changes to this project will be documented in this file.
   same variable `DatasetVariable`/`ModelVariable` already use), so worker
   pods on a multi-node Ray cluster share checkpoint storage with the head
   pod. Falls back to a local tempdir when `UF_STORAGE_URL` is unset.
+- `train_tabular()` now returns the trained model as a `ModelVariable`
+  instead of eagerly packaging and uploading it as a `ModelArtifact`. The
+  trained model is an intra-pipeline intermediate, not a registry-ready
+  artifact — packaging and uploading into the consolidated model manager /
+  artifact store is a downstream packaging task's job (no such task exists
+  in OSS yet). The now-unused `storage_backend` parameter has been removed
+  from `train_tabular()`; for a lightning warm-start, `initial_model.path`
+  must now point directly to the local state-dict file (e.g. as written by
+  `ModelVariable.save_lightning_model()`), not a directory — this matches
+  what `LightningTrainerParam.initial_weights_path` always expected. No
+  storage backend is involved, and a missing file now raises
+  `ConfigurationError` eagerly instead of failing deep inside Ray Train.
 
 ### Removed
 
