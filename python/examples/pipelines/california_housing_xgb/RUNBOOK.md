@@ -159,3 +159,63 @@ Expected output:
 | PipelineRun disappears immediately after apply | Missing Project CR in namespace | Step 3: apply project.yaml |
 | push_step fails: `PusherPluginError` | Proto/module mismatch in image | Rebuild image (step 5); check diagnostic.py output |
 | Stale cache error: `failed to read object: key does not exist` | Cache entry from a previous failed run | `kubectl delete configmap -n ma-examples -l michelangelo/uniflow-task-path` |
+| MA Studio tables show "Unable to fetch data", DevTools shows HTTP 415 | Envoy `http_filters` regressed to `grpc_web`, but the browser client uses the Connect protocol | See "MA Studio 415 errors" below |
+
+---
+
+## MA Studio 415 errors (all tables fail to load)
+
+**Symptom**: `http://localhost:8090/ma-examples` loads navigation, but every table
+shows "Unable to fetch data for table". Browser DevTools → Network tab shows HTTP
+415 (Unsupported Media Type) on the XHR/fetch calls. The backend itself is healthy
+(`poetry run ma model get --namespace ma-examples` works fine via gRPC).
+
+**Cause**: The Studio frontend (`javascript/packages/rpc/services.ts`) uses
+`createConnectTransport` — the Connect protocol, sent as `application/json`. Envoy's
+`michelangelo-envoy` deployment must run the `envoy.filters.http.connect_grpc_bridge`
+filter to translate that into native gRPC for the apiserver. If that filter is instead
+`envoy.filters.http.grpc_web` (which only accepts `application/grpc-web+proto`),
+Connect's JSON requests aren't recognized and get rejected with 415.
+
+This is a one-line regression that has recurred at least once before (an earlier
+sandbox debugging session swapped the filter to `grpc_web` for an unrelated fix and
+never swapped it back) — check this first before assuming a new bug.
+
+**Diagnose**:
+
+```bash
+kubectl get configmap -n default -o yaml | grep -A2 "http_filters"
+```
+
+Should show `envoy.filters.http.connect_grpc_bridge`. If it shows `envoy.filters.http.grpc_web`,
+that's the bug.
+
+**Fix**: edit `helm/michelangelo/templates/core/envoy-configmap.yaml` on the devpod so the
+`http_filters` block reads:
+
+```yaml
+http_filters:
+  - name: envoy.filters.http.connect_grpc_bridge
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.filters.http.connect_grpc_bridge.v3.FilterConfig
+```
+
+Commit and push it, then on the Mac:
+
+```bash
+cd /Users/pzimme1/GitHub/michelangelo
+git fetch paulzim feat/pipeline-local-run-example
+git merge paulzim/feat/pipeline-local-run-example
+ma sandbox sync
+kubectl get configmap -n default -o yaml | grep -A2 "http_filters"   # confirm connect_grpc_bridge
+```
+
+**Note**: `ma sandbox sync`'s Helm upgrade does restart `michelangelo-envoy` as part of its
+flow, so a manual `kubectl rollout restart` typically isn't needed after `sync` — but if
+you ever patch the ConfigMap directly (`kubectl edit configmap` / `kubectl apply` outside
+of `sandbox sync`), you must restart the deployment manually, since there's no checksum
+annotation on `envoy-deployment.yaml` to trigger an automatic rollout:
+
+```bash
+kubectl rollout restart deployment/michelangelo-envoy -n default
+```
