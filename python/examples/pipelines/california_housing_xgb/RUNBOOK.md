@@ -87,6 +87,13 @@ k3d image import california-housing-xgb-local:latest -c michelangelo-sandbox
 
 If you don't have the image locally, rebuild it first (step 6 below).
 
+**Patch the michelangelo-config ConfigMap** to add the registry endpoint (fresh clusters are missing it, causing `push_step` to use in-memory registration instead of the API):
+
+```bash
+kubectl patch configmap michelangelo-config -n default \
+  --patch '{"data":{"REGISTRY_ENDPOINT":"michelangelo-apiserver:15566","REGISTRY_NAMESPACE":"ma-examples"}}'
+```
+
 **Rebuild the uniflowTar** (MinIO is empty on a fresh cluster):
 
 ```bash
@@ -210,6 +217,7 @@ Expected output:
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
+| `ma model get --namespace ma-examples` returns empty after successful push_step | `REGISTRY_ENDPOINT` missing from `michelangelo-config` ConfigMap on fresh cluster | Step 3: patch configmap with `REGISTRY_ENDPOINT` and `REGISTRY_NAMESPACE`, resubmit run |
 | `ma sandbox sync` fails: `conflict with "kubectl-set"` | Helm SSA field manager conflict | `kubectl delete deployment <name>` then re-sync |
 | `create_cluster` returns nil, task fails before Python runs | Zombie RayClusters filling namespace | Step 2: delete all rayclusters + failed pods |
 | `ma sandbox sync` fails: `CalledProcessError` on MySQL exec | MySQL pod not running (chart never deployed) | `ma sandbox delete` then `ma sandbox create` |
