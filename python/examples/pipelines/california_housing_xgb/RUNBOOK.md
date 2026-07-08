@@ -28,7 +28,7 @@ Check whether Michelangelo pods came back (they usually don't after a restart):
 kubectl get pods -n default
 ```
 
-If you see Michelangelo pods (`Running`): skip to step 2.
+If you see Michelangelo pods (`Running`): skip to step 3.
 
 If you see only `kube-system` pods, run sync to redeploy the Helm chart:
 
@@ -44,6 +44,9 @@ kubectl delete deployment michelangelo-controllermgr   # or whichever is named
 ma sandbox sync
 ```
 
+**If the k3d server container is missing** (k3d reports "All servers already running" but
+`kubectl get pods` refuses to connect), the cluster is unrecoverable — go to step 3.
+
 Wait for all pods to reach `Running`:
 
 ```bash
@@ -52,7 +55,50 @@ kubectl get pods -n default
 
 ---
 
-## 3. Pre-run cleanup (always do this before submitting a pipeline run)
+## 3. After a full sandbox recreation (if step 2 fails unrecoverably)
+
+If the sandbox is too broken to recover with `sync`, delete and recreate:
+
+```bash
+k3d cluster delete michelangelo-sandbox   # or: ma sandbox delete
+ma sandbox create
+```
+
+`ma sandbox create` takes 10–20 minutes. If helm times out on kuberay-operator or
+spark-operator, check `kubectl get pods --all-namespaces` — if those pods are `Running`,
+continue with `ma sandbox sync` rather than retrying create.
+
+After a full recreation, three extra steps are required because MinIO and the k3d
+image store are wiped:
+
+**Re-apply one-time prerequisites** (namespace and Project CR are lost on delete):
+
+```bash
+kubectl create namespace ma-examples
+kubectl apply -f /Users/pzimme1/GitHub/michelangelo/python/examples/config/project.yaml
+```
+
+**Reimport the pipeline image** (k3d's image store is wiped on cluster delete):
+
+```bash
+docker tag california-housing-xgb-local:latest california-housing-xgb-local:latest 2>/dev/null || true
+k3d image import california-housing-xgb-local:latest -c michelangelo-sandbox
+```
+
+If you don't have the image locally, rebuild it first (step 6 below).
+
+**Rebuild the uniflowTar** (MinIO is empty on a fresh cluster):
+
+```bash
+cd /Users/pzimme1/GitHub/michelangelo/python
+poetry run python examples/pipelines/california_housing_xgb/.docker/rebuild_tar.py
+```
+
+Then continue from step 4.
+
+---
+
+## 4. Pre-run cleanup (always do this before submitting a pipeline run)
 
 Zombie RayCluster objects accumulate across failed runs and eventually cause
 `create_cluster` to return nil with no obvious error. Clean them up first:
@@ -64,7 +110,7 @@ kubectl delete pod -n default --field-selector=status.phase=Failed
 
 ---
 
-## 4. Verify one-time prerequisites
+## 5. Verify one-time prerequisites
 
 These survive `stop/start` but are lost on `ma sandbox delete`:
 
@@ -79,7 +125,7 @@ kubectl get project ma-examples -n ma-examples 2>/dev/null || \
 
 ---
 
-## 5. Pull latest changes from fork (if needed)
+## 6. Pull latest changes from fork (if needed)
 
 ```bash
 cd /Users/pzimme1/GitHub/michelangelo
@@ -90,7 +136,7 @@ git merge paulzim/feat/pipeline-local-run-example
 
 ---
 
-## 6. Build and import the pipeline image
+## 7. Build and import the pipeline image
 
 Only needed when you change the Dockerfile or pipeline Python code.
 The image survives `sandbox stop/start` — skip this step if nothing changed.
@@ -105,7 +151,7 @@ k3d image import california-housing-xgb-local:latest -c michelangelo-sandbox
 
 ---
 
-## 7. Rebuild the uniflowTar (only when @uniflow.task config changes)
+## 8. Rebuild the uniflowTar (only when @uniflow.task config changes)
 
 Required when you change the `@uniflow.task(config=...)` decorator on any task
 (e.g. switching between RayTask and SparkTask, or changing resource limits).
@@ -118,7 +164,7 @@ poetry run python examples/pipelines/california_housing_xgb/.docker/rebuild_tar.
 
 ---
 
-## 8. Submit the pipeline run
+## 9. Submit the pipeline run
 
 ```bash
 kubectl apply -f /Users/pzimme1/GitHub/michelangelo/python/examples/pipelines/california_housing_xgb/pipeline.yaml
@@ -130,7 +176,7 @@ kubectl apply -f /Users/pzimme1/GitHub/michelangelo/python/examples/pipelines/ca
 
 ---
 
-## 9. Watch the run
+## 10. Watch the run
 
 ```bash
 kubectl logs -n default deployment/michelangelo-worker --tail=50 -f | \
@@ -145,7 +191,7 @@ Expected sequence (each ~1 min apart):
 
 ---
 
-## 10. Verify model registration
+## 11. Verify model registration
 
 ```bash
 cd /Users/pzimme1/GitHub/michelangelo/python
