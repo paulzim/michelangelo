@@ -4,10 +4,21 @@ All commands run on the **Mac** (`/Users/pzimme1/GitHub/michelangelo`).
 
 ---
 
-## 1. After a Mac restart — bring the sandbox back
+## 1. Activate the Python environment
 
 ```bash
 cd /Users/pzimme1/GitHub/michelangelo/python
+source .venv/bin/activate
+```
+
+All `ma` and `kubectl` commands below assume the venv is active. Alternatively,
+prefix any `ma` command with `poetry run` instead of activating.
+
+---
+
+## 2. After a Mac restart — bring the sandbox back
+
+```bash
 ma sandbox start
 ```
 
@@ -41,7 +52,7 @@ kubectl get pods -n default
 
 ---
 
-## 2. Pre-run cleanup (always do this before submitting a pipeline run)
+## 3. Pre-run cleanup (always do this before submitting a pipeline run)
 
 Zombie RayCluster objects accumulate across failed runs and eventually cause
 `create_cluster` to return nil with no obvious error. Clean them up first:
@@ -53,7 +64,7 @@ kubectl delete pod -n default --field-selector=status.phase=Failed
 
 ---
 
-## 3. Verify one-time prerequisites
+## 4. Verify one-time prerequisites
 
 These survive `stop/start` but are lost on `ma sandbox delete`:
 
@@ -68,7 +79,7 @@ kubectl get project ma-examples -n ma-examples 2>/dev/null || \
 
 ---
 
-## 4. Pull latest changes from fork (if needed)
+## 5. Pull latest changes from fork (if needed)
 
 ```bash
 cd /Users/pzimme1/GitHub/michelangelo
@@ -79,7 +90,7 @@ git merge paulzim/feat/pipeline-local-run-example
 
 ---
 
-## 5. Build and import the pipeline image
+## 6. Build and import the pipeline image
 
 Only needed when you change the Dockerfile or pipeline Python code.
 The image survives `sandbox stop/start` — skip this step if nothing changed.
@@ -94,7 +105,7 @@ k3d image import california-housing-xgb-local:latest -c michelangelo-sandbox
 
 ---
 
-## 6. Rebuild the uniflowTar (only when @uniflow.task config changes)
+## 7. Rebuild the uniflowTar (only when @uniflow.task config changes)
 
 Required when you change the `@uniflow.task(config=...)` decorator on any task
 (e.g. switching between RayTask and SparkTask, or changing resource limits).
@@ -107,7 +118,7 @@ poetry run python examples/pipelines/california_housing_xgb/.docker/rebuild_tar.
 
 ---
 
-## 7. Submit the pipeline run
+## 8. Submit the pipeline run
 
 ```bash
 kubectl apply -f /Users/pzimme1/GitHub/michelangelo/python/examples/pipelines/california_housing_xgb/pipeline.yaml
@@ -119,7 +130,7 @@ kubectl apply -f /Users/pzimme1/GitHub/michelangelo/python/examples/pipelines/ca
 
 ---
 
-## 8. Watch the run
+## 9. Watch the run
 
 ```bash
 kubectl logs -n default deployment/michelangelo-worker --tail=50 -f | \
@@ -134,7 +145,7 @@ Expected sequence (each ~1 min apart):
 
 ---
 
-## 9. Verify model registration
+## 10. Verify model registration
 
 ```bash
 cd /Users/pzimme1/GitHub/michelangelo/python
