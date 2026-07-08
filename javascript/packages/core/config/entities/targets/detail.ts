@@ -12,6 +12,8 @@ export const TARGET_DETAIL_CONFIG: DetailViewConfig = {
       label: 'Created',
       type: CellType.DATE,
       accessor: (data: unknown) => {
+        // cast: accessor receives unknown data; narrowing to expected proto shape for property
+        // access; see #1425
         const ts = (data as { status?: { createTime?: string } })?.status?.createTime;
         return ts ? Math.floor(new Date(ts).getTime() / 1000) : undefined;
       },

@@ -73,6 +73,8 @@ function resolveTableState(
   };
 
   if (disablePagination) {
+    // cast: baseState.pagination only allows { pageSize? }, so this can produce a pagination object
+    // missing pageIndex despite the asserted shape; see #1460
     return baseState as Partial<ControlledTableState>;
   }
 

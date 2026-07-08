@@ -30,6 +30,8 @@ export function toFlatDotPathMap(
     }
 
     if (value !== null && typeof value === 'object') {
+      // cast: typeof 'object' narrows to the opaque built-in object type, not Record<string,
+      // unknown>; see #1456
       Object.assign(result, toFlatDotPathMap(value as Record<string, unknown>, path));
     } else {
       result[path] = value;

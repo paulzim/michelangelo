@@ -41,6 +41,8 @@ export function withStickySides<P extends object>(
     const isContainerHovered = useHover(hoverContainerRef);
 
     if (!enableStickySides) {
+      // cast: TypeScript cannot simplify Omit<P & WithStickySidesProps, keyof WithStickySidesProps>
+      // back to P after rest destructuring
       return <Component {...(componentProps as P)}>{children}</Component>;
     }
 
@@ -50,6 +52,8 @@ export function withStickySides<P extends object>(
         : theme.colors.tableHeadBackgroundColor;
 
     const sharedStickyStyles = {
+      // cast: CSS-in-JS requires the literal 'sticky'; the !important suffix makes the string not
+      // assignable without cast
       position: 'sticky !important' as 'sticky',
       backgroundColor: `${backgroundColor} !important`,
     };
@@ -57,17 +61,21 @@ export function withStickySides<P extends object>(
     const stickyConfigs = getTableStickyConfigs(enableRowSelection, lastColumnIndex);
 
     return (
+      // cast: TypeScript cannot simplify Omit<P & WithStickySidesProps, keyof WithStickySidesProps>
+      // back to P after rest destructuring
       <Component {...(componentProps as P)} ref={hoverContainerRef}>
         {React.Children.map(children, (child, index) => {
           const config = stickyConfigs[index];
-          if (!config) return child;
+          if (!config || !React.isValidElement<Record<string, unknown>>(child)) return child;
 
           const stickyStyles = {
             ...sharedStickyStyles,
             [config.stickySide]: `${config.position}px !important`,
           };
 
-          return React.cloneElement(child as React.ReactElement<Record<string, unknown>>, {
+          // cast: child is narrowed to ReactElement<Record<string, unknown>> by isValidElement
+          // guard above
+          return React.cloneElement(child, {
             className: `${css(stickyStyles)} ${css(buildShadowStyles(config.shadowSide, scrollRatio))}`,
             'data-testid': `sticky-cell-${config.stickySide}-sticky`,
           });

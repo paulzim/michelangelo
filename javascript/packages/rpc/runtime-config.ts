@@ -23,6 +23,7 @@ export async function getRuntimeConfig(): Promise<RuntimeConfig> {
 
   let config: RuntimeConfig;
   try {
+    // cast: response.json() returns any; the config endpoint's shape is asserted, not validated
     config = (await response.json()) as RuntimeConfig;
   } catch (error) {
     console.error(

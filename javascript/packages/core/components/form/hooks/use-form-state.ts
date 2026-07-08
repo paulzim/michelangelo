@@ -43,19 +43,21 @@ export function useFormState<FieldValues extends FormData = FormData>(
       }
     : undefined;
 
-  const formState = useReactFinalFormState({
-    subscription: reactFinalFormSubscription as Record<string, boolean>,
+  const formState = useReactFinalFormState<FieldValues>({
+    subscription: reactFinalFormSubscription,
   });
 
   return {
     submitting: formState.submitting,
-    submitError: formState.submitError as unknown,
-    values: formState.values as FieldValues | undefined,
+    // cast: react-final-form types submitError as any; matches SubmitErrors[FORM_ERROR]'s string |
+    // Error shape
+    submitError: formState.submitError as string | Error | undefined,
+    values: formState.values,
     submitFailed: formState.submitFailed,
     hasValidationErrors: formState.hasValidationErrors,
-    errors: formState.errors as Record<string, unknown> | undefined,
-    submitErrors: formState.submitErrors as Record<string, unknown> | undefined,
-    touched: formState.touched as Record<string, boolean> | undefined,
+    errors: formState.errors,
+    submitErrors: formState.submitErrors,
+    touched: formState.touched,
     modifiedSinceLastSubmit: formState.modifiedSinceLastSubmit,
-  } as FormState<FieldValues> | Partial<FormState<FieldValues>>;
+  };
 }

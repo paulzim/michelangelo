@@ -38,6 +38,8 @@ export function normalizeUniversalError(error: unknown): ApplicationError {
   }
 
   if (typeof error === 'object' && error !== null) {
+    // cast: typeof 'object' narrows to the opaque built-in object type, not Record<string,
+    // unknown>; see #1456
     const errorObj = error as Record<string, unknown>;
 
     if (errorObj.message) {
