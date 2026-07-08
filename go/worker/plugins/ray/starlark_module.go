@@ -18,8 +18,6 @@ import (
 	v2pb "github.com/michelangelo-ai/michelangelo/proto-go/api/v2"
 )
 
-// TODO(#559): andrii: implement Ray starlark plugin here
-
 var _ starlark.HasAttrs = (*module)(nil)
 var poll int64 = 10
 
