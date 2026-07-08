@@ -108,10 +108,15 @@ Then continue from step 4.
 ## 4. Pre-run cleanup (always do this before submitting a pipeline run)
 
 Zombie RayCluster objects accumulate across failed runs and eventually cause
-`create_cluster` to return nil with no obvious error. Clean them up first:
+`create_cluster` to return nil with no obvious error. There are **two CRD groups**
+that must both be cleaned up — `rayclusters.michelangelo.api` (Michelangelo's own
+CRDs) and `rayclusters.ray.io` (kuberay's CRDs). `kubectl delete raycluster` without
+a group qualifier only deletes the `ray.io` ones; the Michelangelo CRDs pile up
+silently and continuously saturate the controllermgr reconcile queue.
 
 ```bash
-kubectl delete raycluster -n default --all
+kubectl delete raycluster.michelangelo.api -n default --all
+kubectl delete raycluster.ray.io -n default --all
 kubectl delete pod -n default --field-selector=status.phase=Failed
 ```
 
@@ -219,7 +224,7 @@ Expected output:
 |---------|-------|-----|
 | `ma model get --namespace ma-examples` returns empty after successful push_step | `REGISTRY_ENDPOINT` missing from `michelangelo-config` ConfigMap on fresh cluster | Step 3: patch configmap with `REGISTRY_ENDPOINT` and `REGISTRY_NAMESPACE`, resubmit run |
 | `ma sandbox sync` fails: `conflict with "kubectl-set"` | Helm SSA field manager conflict | `kubectl delete deployment <name>` then re-sync |
-| `create_cluster` returns nil, task fails before Python runs | Zombie RayClusters filling namespace | Step 2: delete all rayclusters + failed pods |
+| `create_cluster` returns nil, task fails before Python runs | Zombie RayClusters filling namespace | Step 4: delete both `raycluster.michelangelo.api` and `raycluster.ray.io` in default namespace |
 | `ma sandbox sync` fails: `CalledProcessError` on MySQL exec | MySQL pod not running (chart never deployed) | `ma sandbox delete` then `ma sandbox create` |
 | PipelineRun disappears immediately after apply | Missing Project CR in namespace | Step 3: apply project.yaml |
 | push_step fails: `PusherPluginError` | Proto/module mismatch in image | Rebuild image (step 5); check diagnostic.py output |
