@@ -19,6 +19,8 @@ export function transformRows<T extends TableData = TableData>(
         row,
         columnIndex,
       }),
+      // cast: our ColumnMeta augmentation is an empty interface (TS can't have it extend the
+      // Cell<TData> union); always ColumnConfig<T> per our column setup; see #1417
       column: cell.column.columnDef.meta! as ColumnConfig<T>,
       value: cell.getValue(),
       isVisible: cell.column.getIsVisible(),

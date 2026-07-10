@@ -1,7 +1,6 @@
 import type { BannerProps } from 'baseui/banner';
 import type { Size as DialogSize } from 'baseui/dialog';
 import type { ComponentType, ReactNode } from 'react';
-import type { MiddlewareSchema } from '#core/hooks/use-schema-middleware/types';
 import type { DeepInterpolatable } from '#core/interpolation/types';
 import type { MutationConfig } from '#core/types/query-types';
 
@@ -48,13 +47,10 @@ export type ActionConfigBase = {
   disabled?: DisabledRule[];
 };
 
-/** Action that fires a mutation against the API, with optional middleware to shape the record first. */
+/** Action that fires a mutation against the API. Configure `mutation.middleware` to shape the record first. */
 export type MutationActionConfig = {
   type: 'mutation';
   mutation: MutationConfig;
-  middleware?: MiddlewareSchema;
-  /** Side-effects to run after the mutation succeeds (in order). */
-  successOperations?: SuccessOperation[];
 };
 
 /**
@@ -63,7 +59,7 @@ export type MutationActionConfig = {
  * Use `invalidate` to refresh related queries explicitly after a mutation
  * succeeds, either broadly by query name or narrowly by name + args.
  */
-export type SuccessOperation = InvalidateOperation | ToastOperation;
+export type SuccessOperation = InvalidateOperation | ToastOperation | RouteSuccessOperation;
 
 export type InvalidateOperation = {
   type: 'invalidate';
@@ -93,6 +89,12 @@ export type ToastOperation = {
 };
 
 export type RouteActionConfig = {
+  type: 'route';
+  route: string;
+};
+
+/** Navigates without showing a toast. Use {@link ToastOperation.action} instead when the navigation should be user-initiated. */
+export type RouteSuccessOperation = {
   type: 'route';
   route: string;
 };

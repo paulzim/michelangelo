@@ -43,11 +43,14 @@ export function composeTableState(combinedState: InputTableState): {
         );
       }
 
+      // cast: does not actually verify per-key correctness; see #1453
       state[propertyName] = combinedState[propertyName] as TableState[keyof TableState];
+      // cast: does not actually verify per-key correctness; see #1453
       state[setterName] = combinedState[
         setterName
       ] as ControlledTableState[keyof ControlledTableState];
     } else if (propertyName in combinedState) {
+      // cast: does not actually verify per-key correctness; see #1453
       initialState[propertyName] = combinedState[propertyName] as TableState[keyof TableState];
     }
   });

@@ -1,5 +1,3 @@
-import { get } from 'lodash';
-
 import { getObjectValue } from '#core/utils/object-utils';
 import { TASK_STATE } from '../constants';
 
@@ -40,11 +38,12 @@ export function buildTaskList<TData extends object, TTaskRecord extends object>(
     });
 
     const primaryHeading = getObjectValue(taskRecord, tasks.header.heading);
-    const fallbackName = get(taskRecord, 'name');
+    const fallbackName = getObjectValue<string>(taskRecord, 'name');
 
     return {
       name: (primaryHeading?.trim() ? primaryHeading : fallbackName)!,
       state: schema.tasks.stateBuilder(taskRecord, taskIndex, siblingTasks, data),
+      // getObjectValue's return type doesn't narrow away `| undefined` even when a defaultValue is passed; see #1454
       subTasks: subTasksAccessor
         ? getObjectValue(taskRecord, subTasksAccessor, [])!.map(buildTask)
         : [],
@@ -55,6 +54,7 @@ export function buildTaskList<TData extends object, TTaskRecord extends object>(
     };
   }
 
+  // getObjectValue's return type doesn't narrow away `| undefined` even when a defaultValue is passed; see #1454
   const taskArray = getObjectValue(data, accessor, [])!;
   return taskArray.map(buildTask);
 }

@@ -1,6 +1,8 @@
-import { useStudioMutation as _useStudioMutation } from '#core/hooks/use-studio-mutation';
+import { useStudioMutation as _useStudioMutation } from '#core/hooks/use-studio-mutation/use-studio-mutation';
 import { useStudioQuery as _useStudioQuery } from '#core/hooks/use-studio-query';
 
+import type { SuccessOperation } from '#core/components/actions/types';
+import type { MiddlewareSchema } from '#core/hooks/use-schema-middleware/types';
 import type { ApplicationError } from '#core/types/error-types';
 
 /**
@@ -37,6 +39,12 @@ export interface MutationConfig {
 
   /** Options to pass to the mutation, e.g. 'onSuccess', 'onError' */
   clientOptions?: MutationOptions;
+
+  /** Side-effects to run after the mutation succeeds (in order). */
+  successOperations?: SuccessOperation[];
+
+  /** Schema-driven transformations applied to variables before the request is sent. */
+  middleware?: MiddlewareSchema;
 }
 
 /**

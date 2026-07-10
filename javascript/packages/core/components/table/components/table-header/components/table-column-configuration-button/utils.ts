@@ -1,10 +1,7 @@
 import { arrayMove } from 'baseui/dnd-list';
 
 import type { TableData } from '#core/components/table/types/data-types';
-import type {
-  ColumnOrderState,
-  ControlledTableState,
-} from '#core/components/table/types/table-types';
+import type { ControlledTableState } from '#core/components/table/types/table-types';
 import type { ConfigurableColumn } from './types';
 
 /**
@@ -37,7 +34,7 @@ export function createColumnListChangeHandler<T extends TableData = TableData>(
           columns.map((c) => c.id),
           oldIndex,
           newIndex
-        ) as ColumnOrderState
+        )
       );
     }
   };

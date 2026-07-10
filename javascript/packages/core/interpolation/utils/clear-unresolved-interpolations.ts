@@ -32,12 +32,14 @@ import { isInterpolation } from './is-interpolation';
  * Unresolved interpolations become `undefined` rather than being removed entirely.
  */
 export function clearUnresolvedInterpolations<T extends object>(input: T): T {
+  // cast: mapValues<T> with one type argument resolves to an overload whose inferred value type is
+  // unrelated to the callback's real return type (a lodash typing quirk, not a meaningful signal)
   return mapValues<T>(input, (value: unknown) => {
     if (isNil(value) || Array.isArray(value)) return value;
 
     if (isInterpolation(value)) return undefined;
 
-    if (typeof value === 'object') return clearUnresolvedInterpolations(value as T);
+    if (typeof value === 'object' && value !== null) return clearUnresolvedInterpolations(value);
 
     return value;
   }) as T;

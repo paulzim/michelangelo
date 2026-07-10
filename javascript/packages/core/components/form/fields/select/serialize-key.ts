@@ -6,9 +6,7 @@
 export function serializeKey(value: unknown): string {
   return JSON.stringify(value, (_, val: unknown) => {
     if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
-      return Object.fromEntries(
-        Object.entries(val as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))
-      );
+      return Object.fromEntries(Object.entries(val).sort(([a], [b]) => a.localeCompare(b)));
     }
     return val;
   });

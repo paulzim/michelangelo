@@ -24,6 +24,8 @@ export function CategoricalFilter<TData = unknown>({
   });
 
   const availableDisplayValues = Object.keys(displayValueToFilterValue);
+  // cast: FilteringCapability.getFilterValue returns unknown; categorical filter values are always
+  // an array; see #1418, #1464
   const currentDisplaySelection = ((getFilterValue() as unknown[]) ?? [])
     .map((value) => filterValueToDisplayValue[safeStringify(value)])
     .filter(Boolean);

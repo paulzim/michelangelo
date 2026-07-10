@@ -1,5 +1,6 @@
 import { cloneDeep, get, isNil, set, unset } from 'lodash';
 
+import { getObjectValue } from '#core/utils/object-utils';
 import { applyScaffold } from './apply-scaffold';
 
 import type { StudioParamsBase } from '#core/hooks/routing/use-studio-params/types';
@@ -18,7 +19,8 @@ export function applyMiddleware<T extends object>(
   const sourceObject = options?.sourceFromObject ?? clone;
 
   for (const op of schema.operations) {
-    if (op.subTypes && !op.subTypes.includes(get(clone, schema.subTypePath!) as string)) {
+    const subType = getObjectValue<string>(clone, schema.subTypePath!) ?? '';
+    if (op.subTypes && !op.subTypes.includes(subType)) {
       continue;
     }
 
@@ -33,9 +35,7 @@ export function applyMiddleware<T extends object>(
       set(clone, op.destination, op.transformation(sourceValue));
     } else if (isNil(sourceValue) && 'default' in op) {
       const defaultVal =
-        typeof op.default === 'function'
-          ? (op.default as (args: { studio: StudioParamsBase }) => unknown)({ studio: context! })
-          : op.default;
+        typeof op.default === 'function' ? op.default({ studio: context! }) : op.default;
       set(clone, op.destination, defaultVal);
     }
   }

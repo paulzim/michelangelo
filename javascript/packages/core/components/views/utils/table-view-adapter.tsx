@@ -38,7 +38,11 @@ export function adaptTableConfigToTableProps<T extends TableData = TableData>(
             // Actions require Record<string, unknown> but TableData is `unknown` — cast at the
             // table/actions boundary since entity records are always objects in practice.
             <InterpolatableActionsPopover
+              // cast: entity records are always plain objects; Data is the typed narrowing over
+              // TableData = unknown; see #1416
               actions={config.actions as ActionConfigSchema<Data>[]}
+              // cast: entity records are always plain objects; Data is the typed narrowing over
+              // TableData = unknown; see #1416
               record={row.record as Data}
             />
           )

@@ -75,6 +75,7 @@ Understanding scope helps you decide if Michelangelo is the right tool.
 - [GitHub Repository](https://github.com/michelangelo-ai/michelangelo)
 - [CLI Reference](./user-guides/reference/cli.md)
 - [ML Pipelines Overview](./user-guides/ml-pipelines/index.md)
+- [Support & Community](./getting-started/support.md)
 
 ## Support & Community
 
@@ -82,4 +83,4 @@ Connect with the Michelangelo core team and developer community through our dedi
 
 - **[GitHub Discussions](https://github.com/michelangelo-ai/michelangelo/discussions):** Our primary channel for general Q&A, troubleshooting, technical support, and sharing ideas.
 - **[Slack Workspace](https://michelangelo-ai.slack.com/):** For real-time chat, networking, and focused conversations with other developers in the ecosystem.
-- **[Email](mailto:michelangelo-oss@uber.com):** For private, sensitive, or 1-on-1 inquiries that cannot be discussed publicly (for example, security disclosures or enterprise partnerships).
+- **[Email](mailto:michelangelo-oss@uber.com):** For private, sensitive, or 1-on-1 inquiries that cannot be discussed publicly (for example, security disclosures or enterprise partnerships), feel free to email us at michelangelo-oss@uber.com.

@@ -5,9 +5,7 @@ import { Banner } from '#core/components/banner/banner';
 import { Icon } from '#core/components/icon/icon';
 import { Markdown } from '#core/components/markdown/markdown';
 import { ConfirmDialog } from '#core/components/modal/confirm-dialog/confirm-dialog';
-import { useSchemaMiddleware } from '#core/hooks/use-schema-middleware/use-schema-middleware';
-import { useStudioMutation } from '#core/hooks/use-studio-mutation';
-import { useSuccessOperations } from './use-success-operations';
+import { useStudioMutation } from '#core/hooks/use-studio-mutation/use-studio-mutation';
 
 import type {
   ActionConfig,
@@ -28,20 +26,13 @@ type Props<T extends Data> = {
 
 export function ConfirmDispatcher<T extends Data>({ action, record, onClose }: Props<T>) {
   const navigate = useNavigate();
-  const { applyMiddleware } = useSchemaMiddleware(
-    action.operation.type === 'mutation' ? (action.operation.middleware ?? null) : null
-  );
   const mutation = useStudioMutation<unknown, T>(
     action.operation.type === 'mutation' ? action.operation.mutation : null
-  );
-  const runSuccessOperations = useSuccessOperations(
-    action.operation.type === 'mutation' ? action.operation.successOperations : undefined
   );
 
   const handleActionExecute = async () => {
     if (action.operation.type === 'mutation') {
-      const response = await mutation.mutateAsync(applyMiddleware(record));
-      runSuccessOperations(response);
+      await mutation.mutateAsync(record);
     } else {
       navigate(action.operation.route);
     }

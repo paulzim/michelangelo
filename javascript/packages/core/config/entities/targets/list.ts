@@ -16,6 +16,8 @@ const TARGET_COLUMNS: ColumnConfig<object>[] = [
     label: 'Last updated',
     type: CellType.DATE,
     accessor: (data: unknown) => {
+      // cast: accessor receives unknown data; narrowing to expected proto shape for property
+      // access; see #1425
       const ts = (data as { status?: { updateTime?: string } })?.status?.updateTime;
       return ts ? Math.floor(new Date(ts).getTime() / 1000) : undefined;
     },

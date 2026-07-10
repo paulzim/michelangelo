@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   getCoreRowModel,
   getExpandedRowModel,
@@ -42,7 +41,8 @@ export function Table<T extends TableData = TableData>(inputProps: TableProps<T>
     initialState,
   });
 
-  const { scrollRatio, tableRef, handleScrollRatioUpdate } = useScrollRatio(columns);
+  const { scrollRatio, tableRef, handleScrollRatioUpdate } =
+    useScrollRatio<HTMLDivElement>(columns);
 
   const table = useReactTable<T>({
     data: props.data,
@@ -96,6 +96,8 @@ export function Table<T extends TableData = TableData>(inputProps: TableProps<T>
     error: props.error,
     loading: props.loading || isResetting,
     hasFiltersApplied:
+      // cast: TanStack types globalFilter as any; always string, the value passed to
+      // setGlobalFilter
       (table.getState().globalFilter as string)?.length > 0 ||
       (table.getState().columnFilters?.length ?? 0) > 0,
     filteredLength: table.getRowModel().rows.length,
@@ -125,6 +127,8 @@ export function Table<T extends TableData = TableData>(inputProps: TableProps<T>
         }}
       >
         <TableActionBar<T>
+          // cast: TanStack types globalFilter as any; always string, the value passed to
+          // setGlobalFilter
           globalFilter={table.getState().globalFilter as string}
           setGlobalFilter={table.setGlobalFilter}
           columnFilters={table.getState().columnFilters}
@@ -138,7 +142,7 @@ export function Table<T extends TableData = TableData>(inputProps: TableProps<T>
 
         <div
           className={css({ overflow: 'auto', position: 'relative' })}
-          ref={tableRef as React.RefObject<HTMLDivElement>}
+          ref={tableRef}
           onScroll={handleScrollRatioUpdate}
         >
           <StyledTable>

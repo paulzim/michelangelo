@@ -1,3 +1,4 @@
+import type { FORM_ERROR } from 'final-form';
 import type { DeepPartial } from '#core/types/utility-types';
 
 export type FormData = Record<string, unknown>;
@@ -71,14 +72,23 @@ export interface FormInstance {
   fieldRegistry: FieldRegistry;
 }
 
+/**
+ * `FORM_ERROR` is final-form's own convention for form-level submission errors:
+ * any `onSubmit` can return `{ [FORM_ERROR]: ... }` directly (typically a string
+ * message), or an `Error`. Preserving `Error` (rather than collapsing to its message)
+ * keeps properties like an error code available to consumers that want to render
+ * more specific messaging than the raw message string.
+ */
+export type SubmitErrors = { [FORM_ERROR]?: string | Error } & Record<string, unknown>;
+
 export interface FormState<FieldValues extends FormData = FormData> {
   submitting: boolean;
-  submitError?: string;
+  submitError?: string | Error;
   values?: FieldValues;
   submitFailed?: boolean;
   hasValidationErrors?: boolean;
   errors?: Record<string, unknown>;
-  submitErrors?: Record<string, unknown>;
+  submitErrors?: SubmitErrors;
   touched?: Record<string, boolean>;
   modifiedSinceLastSubmit?: boolean;
 }

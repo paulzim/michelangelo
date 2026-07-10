@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { get } from 'lodash';
 
+import { getObjectValue } from '#core/utils/object-utils';
 import { getAllTableUserSettings, updateUserTableSettings } from './utils';
 
 import type { Dispatch, SetStateAction } from 'react';
@@ -20,8 +20,10 @@ export function usePersistedTableState<StateType>(
   defaultValue: StateType
 ): [StateType, Dispatch<SetStateAction<StateType>>] {
   const settings = getAllTableUserSettings();
-  // lodash.get can return Partial<StateType> so we need to cast to StateType
-  const [state, setState] = useState<StateType>(get(settings, id, defaultValue) as StateType);
+  const [state, setState] = useState<StateType>(
+    // getObjectValue's return type doesn't narrow away `| undefined` even when defaultValue is passed; the `?? defaultValue` re-applies it only to satisfy the type checker; see #1454
+    getObjectValue(settings, id, defaultValue) ?? defaultValue
+  );
 
   const updateAndPersistState = (updater: SetStateAction<StateType>) => {
     const newStateValue = updater instanceof Function ? updater(state) : updater;

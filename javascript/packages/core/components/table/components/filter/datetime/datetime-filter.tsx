@@ -18,11 +18,15 @@ export function DatetimeFilter<TData = unknown>({
   }).renderFilter;
 
   const filterRange = [UNIFIED_API_ORIGIN_DATE, new Date()];
+  // cast: FilteringCapability.getFilterValue returns unknown; datetime filter is always
+  // DatetimeFilterValue here; see #1418, #1464
   const currentFilterValue = convertStringParamsToDate(getFilterValue() as DatetimeFilterValue);
 
   return (
     <DatetimeFilterPanel
       data={filterRange}
+      // cast: FilteringCapability.setFilterValue accepts unknown; our filter passes
+      // DatetimeFilterValue; see #1418
       setFilter={setFilterValue as (value: DatetimeFilterValue) => void}
       close={close}
       // @ts-expect-error Michelangelo DatetimeFilterValue does not match BaseUI's FilterParameters type

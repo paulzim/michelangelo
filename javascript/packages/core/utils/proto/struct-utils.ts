@@ -1,5 +1,3 @@
-import { toPairs } from 'lodash';
-
 import { STRUCT_KINDS } from './constants';
 
 import type { DecodedStruct, Fields, ProtobufValue, Struct } from './types';
@@ -24,8 +22,10 @@ function getDistinctKindValue(value: ProtobufValue): {
   kind: keyof typeof STRUCT_KINDS;
   kindValue: unknown;
 } {
-  const pairs = toPairs(value);
+  const pairs = Object.entries(value);
   const [kind, kindValue] = pairs[0] || [];
+  // cast: Object.entries returns string keys; kind is always one of the STRUCT_KINDS keys in a
+  // valid protobuf value
   return { kind: kind as keyof typeof STRUCT_KINDS, kindValue };
 }
 
@@ -35,7 +35,7 @@ function getDistinctKindValue(value: ProtobufValue): {
 function decodeStructFields(fields: Fields): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
-  for (const [key, value] of toPairs(fields)) {
+  for (const [key, value] of Object.entries(fields)) {
     result[key] = decodeStruct(value);
   }
 
@@ -58,12 +58,16 @@ export function decodeStruct(struct: unknown): DecodedStruct {
 
   // Handle value objects
   if (typeof struct === 'object' && struct !== null) {
+    // cast: struct passed the typeof object check; ProtobufValue is the expected shape for protobuf
+    // value objects
     const value = struct as ProtobufValue;
     const { kind, kindValue } = getDistinctKindValue(value);
 
     switch (kind) {
       case STRUCT_KINDS.listValue:
         if (kindValue && typeof kindValue === 'object' && 'values' in kindValue) {
+          // cast: kindValue passed the object + 'values' checks; narrowing to the listValue proto
+          // shape
           const listValue = kindValue as { values: ProtobufValue[] };
           return listValue.values.map((item) => decodeStruct(item));
         }
