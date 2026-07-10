@@ -17,6 +17,9 @@ const dependencies = {
   service: {
     request,
   },
+  navigationBar: {
+    links: [{ label: 'Docs', href: 'https://michelangelo-ai.github.io/michelangelo/' }],
+  },
 };
 
 const engine = new Styletron();
