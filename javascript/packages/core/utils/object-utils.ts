@@ -3,6 +3,14 @@ import { get } from 'lodash';
 import type { Accessor } from '#core/types/common/studio-types';
 
 /**
+ * Excludes arrays and null, unlike a plain `typeof x === 'object'` check.
+ * Use to narrow `unknown` before accessing properties by key.
+ */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
  * Recursively flattens a nested object into a flat map with dot-notation keys.
  * Numeric keys (array indices) are formatted with bracket notation.
  *
@@ -13,7 +21,7 @@ import type { Accessor } from '#core/types/common/studio-types';
  * @returns { 'items[0].name': 'item1', 'items[1].name': 'item2' }
  */
 export function toFlatDotPathMap(
-  obj: Record<string, unknown>,
+  obj: Record<string, unknown> | unknown[],
   prefix = ''
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {};
@@ -29,10 +37,8 @@ export function toFlatDotPathMap(
       path = `${prefix}.${key}`;
     }
 
-    if (value !== null && typeof value === 'object') {
-      // cast: typeof 'object' narrows to the opaque built-in object type, not Record<string,
-      // unknown>; see #1456
-      Object.assign(result, toFlatDotPathMap(value as Record<string, unknown>, path));
+    if (Array.isArray(value) || isRecord(value)) {
+      Object.assign(result, toFlatDotPathMap(value, path));
     } else {
       result[path] = value;
     }
