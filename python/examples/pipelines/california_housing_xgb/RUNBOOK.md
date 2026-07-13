@@ -129,6 +129,16 @@ kubectl create namespace ma-examples
 kubectl apply -f /Users/pzimme1/GitHub/michelangelo/python/examples/config/project.yaml
 ```
 
+**Register the Cadence domain** (`ma sandbox sync` registers it after `_helm_wait()`, but if either sync timed out the domain will be absent):
+
+```bash
+kubectl run cadence-reg --restart=Never --image ubercadence/cli:v1.2.6 \
+  --env=CADENCE_CLI_ADDRESS=michelangelo-cadence-frontend:7933 \
+  --command -- cadence --domain default domain register --rd 1
+kubectl logs cadence-reg   # should print: Domain default successfully registered.
+kubectl delete pod cadence-reg
+```
+
 **Reimport the pipeline image** (k3d's image store is wiped on cluster delete):
 
 ```bash
@@ -273,6 +283,7 @@ Expected output:
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
+| PipelineRun fails immediately: `EntityNotExistsError Domain default does not exist` | Cadence domain not registered (`_helm_wait` timed out during sync, skipping registration) | Run `kubectl run cadence-reg --restart=Never --image ubercadence/cli:v1.2.6 --env=CADENCE_CLI_ADDRESS=michelangelo-cadence-frontend:7933 --command -- cadence --domain default domain register --rd 1`; check logs; delete pod; resubmit run |
 | Task 2+ immediately fail: `internal error: nil (not None) returned from create_cluster` | Deployed controllermgr treats `HeadPodNotFound` as terminal (bug predating `cfeb1dd0`) | Step 3: deploy the fixed controllermgr image |
 | `ma model get --namespace ma-examples` returns empty after successful push_step | `REGISTRY_ENDPOINT` missing from `michelangelo-config` ConfigMap on fresh cluster | Step 4: patch configmap with `REGISTRY_ENDPOINT` and `REGISTRY_NAMESPACE`, resubmit run |
 | `ma sandbox sync` fails: `conflict with "kubectl-set"` | Helm SSA field manager conflict | `kubectl delete deployment <name>` then re-sync |

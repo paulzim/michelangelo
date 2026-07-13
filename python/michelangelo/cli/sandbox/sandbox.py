@@ -484,15 +484,18 @@ def _sync(ns: argparse.Namespace):
             *helm_args,
         )
 
-    _helm_wait(ns)
-
-    # Register the Cadence domain if this is a Cadence sandbox. _create() does
-    # this after cluster creation, but _sync() skips it — leaving the domain
-    # absent when sync is used as the recovery path for a failed create. The
-    # function treats "domain already exists" as success, so calling it here
-    # on a healthy sync is a safe no-op.
-    if ns.workflow == "cadence":
-        _create_cadence_domain([])
+    try:
+        _helm_wait(ns)
+    finally:
+        # Register the Cadence domain even if _helm_wait() times out. Both
+        # _create() and the install path above call _create_cadence_domain()
+        # after helm succeeds, but _helm_wait() uses kubectl wait (not helm
+        # --wait) and can time out while Cadence is still initialising. Running
+        # this in a finally block ensures the domain is always registered,
+        # regardless of whether all pods became ready within the timeout.
+        # _create_cadence_domain treats "domain already exists" as success.
+        if ns.workflow == "cadence":
+            _create_cadence_domain([])
 
 
 def _refresh_mysql_schema():
