@@ -22,6 +22,20 @@ prefix any `ma` command with `poetry run` instead of activating.
 ma sandbox start
 ```
 
+**If `ma sandbox start` fails** with an error about a missing `.pem` file or a CA cert path:
+the k3d cluster bakes a temp-file path into its volume mount at creation time; that temp file
+is gone after a restart. Fix:
+
+```bash
+# The path in the error message will look like /private/var/folders/.../k3d-ca-*.pem
+# If that path now exists as a directory (not a file), remove it first:
+rmdir /private/var/folders/6v/xw0sb1r12gsb5mcfyvk__nzr0000gq/T/k3d-ca-5_5t8snb.pem
+# Then recreate the file:
+security find-certificate -a -p /Library/Keychains/System.keychain \
+  > /private/var/folders/6v/xw0sb1r12gsb5mcfyvk__nzr0000gq/T/k3d-ca-5_5t8snb.pem
+ma sandbox start
+```
+
 Check whether Michelangelo pods came back (they usually don't after a restart):
 
 ```bash
@@ -30,7 +44,7 @@ kubectl get pods -n default
 
 If you see Michelangelo pods (`Running`): skip to step 3.
 
-If you see only `kube-system` pods, run sync to redeploy the Helm chart:
+If you see only `kube-system` pods (or no pods), run sync to redeploy the Helm chart:
 
 ```bash
 ma sandbox sync
@@ -39,13 +53,33 @@ ma sandbox sync
 **If sync fails** with `conflict with "kubectl-set" using apps/v1` (Helm SSA field manager conflict):
 
 ```bash
-# Find the conflicting deployment name in the error message, then:
-kubectl delete deployment michelangelo-controllermgr   # or whichever is named
+kubectl delete deployment michelangelo-controllermgr   # or whichever name is in the error
 ma sandbox sync
 ```
 
+**If sync fails** with `CalledProcessError` on MySQL exec — MySQL pod isn't running yet.
+Neither `create` (cluster already exists) nor `sync` (MySQL absent) will work. Delete and
+recreate:
+
+```bash
+ma sandbox delete
+ma sandbox create    # takes 10-20 min; if helm times out on kuberay/spark, see step 4
+```
+
+**If pods are stuck in `CreateContainerConfigError`** after sync completes — the k3d kubelet
+cached a stale "secret not found" state. Flush it by restarting the k3d server container:
+
+```bash
+docker restart k3d-michelangelo-sandbox-server-0
+# Wait ~30s, then check:
+kubectl get pods -n default
+```
+
+Pods should now start. If `ma sandbox start` or `docker restart` forced a full cluster
+recreation, go to **step 4** for the post-recreation checklist before continuing.
+
 **If the k3d server container is missing** (k3d reports "All servers already running" but
-`kubectl get pods` refuses to connect), the cluster is unrecoverable — go to step 3.
+`kubectl get pods` refuses to connect), the cluster is unrecoverable — go to step 4.
 
 Wait for all pods to reach `Running`:
 
