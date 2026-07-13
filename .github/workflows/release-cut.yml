@@ -25,6 +25,8 @@ jobs:
       issues: write
       pull-requests: write
       actions: write
+    outputs:
+      branch: ${{ steps.vars.outputs.branch }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -88,6 +90,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Trigger changelog generation for the RC tag
+        run: |
+          gh workflow run changelog.yml --ref "${{ steps.vars.outputs.tag }}" -f tag="${{ steps.vars.outputs.tag }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Ensure the release tracking label exists
         run: gh label create release --color ededed --description "Release tracking issue" --force
         env:
@@ -148,8 +156,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  notify-on-failure:
+  publish-npm:
     needs: cut
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/npm-publish.yml
+    with:
+      ref: ${{ needs.cut.outputs.branch }}
+    secrets: inherit
+
+  notify-on-failure:
+    needs: [cut, publish-npm]
     if: failure()
     runs-on: ubuntu-latest
     steps:
