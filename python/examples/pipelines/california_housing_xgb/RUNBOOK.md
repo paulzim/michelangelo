@@ -55,7 +55,58 @@ kubectl get pods -n default
 
 ---
 
-## 3. After a full sandbox recreation (if step 2 fails unrecoverably)
+## 3. Deploy the fixed controllermgr (required once per sandbox — do this before the first run)
+
+The published `ghcr.io/michelangelo-ai/controllermgr:main` image predates a fix for
+`HeadPodNotFound` being incorrectly treated as a terminal pod error. Without this fix, every
+task after the first one fails immediately: kuberay sets `HeadPodNotFound` on the `HeadPodReady`
+condition as a transient state right after cluster creation (informer cache lag), but the old
+binary treats it as fatal and marks the cluster FAILED before the head pod ever starts.
+
+The fix is in the fork branch (`cfeb1dd0 fix(ray): treat HeadPodNotFound as transient
+provisioning state`) but not yet in the upstream published image.
+
+**One-time setup per sandbox lifecycle** (survives `stop/start`, lost on `delete/create`):
+
+```bash
+# On Mac — pull the fixed binary from the devpod
+scp pzimme1-codebuddy.devpod-us-or:/tmp/controllermgr_arm64 ~/controllermgr-build/controllermgr
+
+# Create the build dir and Dockerfile (if not already present)
+mkdir -p ~/controllermgr-build
+cat > ~/controllermgr-build/Dockerfile << 'EOF'
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY controllermgr /controllermgr
+ENTRYPOINT ["/controllermgr"]
+EOF
+
+# Build and import
+cd ~/controllermgr-build
+docker build --platform linux/arm64 -t michelangelo-controllermgr-local:fixed .
+k3d image import michelangelo-controllermgr-local:fixed -c michelangelo-sandbox
+
+# Update the deployment
+kubectl set image deployment/michelangelo-controllermgr \
+  app=michelangelo-controllermgr-local:fixed -n default
+kubectl rollout status deployment/michelangelo-controllermgr -n default
+```
+
+**Note**: `kubectl set image` takes field ownership from Helm, so `ma sandbox sync` will fail
+with an SSA conflict on the controllermgr deployment. Fix: `kubectl delete deployment
+michelangelo-controllermgr -n default` then `ma sandbox sync`, then re-run the
+`kubectl set image` command above.
+
+**If the devpod binary is stale** (e.g. after a devpod rebuild): rebuild it on the devpod:
+
+```bash
+# On devpod
+cd /home/user/michelangelo/go
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /tmp/controllermgr_arm64 ./cmd/controllermgr/...
+```
+
+---
+
+## 4. After a full sandbox recreation (if step 2 fails unrecoverably)
 
 If the sandbox is too broken to recover with `sync`, delete and recreate:
 
@@ -85,7 +136,7 @@ docker tag california-housing-xgb-local:latest california-housing-xgb-local:late
 k3d image import california-housing-xgb-local:latest -c michelangelo-sandbox
 ```
 
-If you don't have the image locally, rebuild it first (step 6 below).
+If you don't have the image locally, rebuild it first (step 8 below).
 
 **Patch the michelangelo-config ConfigMap** to add the registry endpoint (fresh clusters are missing it, causing `push_step` to use in-memory registration instead of the API):
 
@@ -101,23 +152,28 @@ cd /Users/pzimme1/GitHub/michelangelo/python
 poetry run python examples/pipelines/california_housing_xgb/.docker/rebuild_tar.py
 ```
 
-Then continue from step 4.
+Then continue from step 6.
 
 ---
 
-## 4. Pre-run cleanup (always do this before submitting a pipeline run)
+## 5. Pre-run cleanup (always do this before submitting a pipeline run)
 
 Zombie RayCluster objects accumulate across failed runs and eventually cause
-`create_cluster` to return nil with no obvious error. Clean them up first:
+`create_cluster` to return nil with no obvious error. There are **two CRD groups**
+that must both be cleaned up — `rayclusters.michelangelo.api` (Michelangelo's own
+CRDs) and `rayclusters.ray.io` (kuberay's CRDs). `kubectl delete raycluster` without
+a group qualifier only deletes the `ray.io` ones; the Michelangelo CRDs pile up
+silently and continuously saturate the controllermgr reconcile queue.
 
 ```bash
-kubectl delete raycluster -n default --all
+kubectl delete raycluster.michelangelo.api -n default --all
+kubectl delete raycluster.ray.io -n default --all
 kubectl delete pod -n default --field-selector=status.phase=Failed
 ```
 
 ---
 
-## 5. Verify one-time prerequisites
+## 6. Verify one-time prerequisites
 
 These survive `stop/start` but are lost on `ma sandbox delete`:
 
@@ -132,7 +188,7 @@ kubectl get project ma-examples -n ma-examples 2>/dev/null || \
 
 ---
 
-## 6. Pull latest changes from fork (if needed)
+## 7. Pull latest changes from fork (if needed)
 
 ```bash
 cd /Users/pzimme1/GitHub/michelangelo
@@ -143,7 +199,7 @@ git merge paulzim/feat/pipeline-local-run-example
 
 ---
 
-## 7. Build and import the pipeline image
+## 8. Build and import the pipeline image
 
 Only needed when you change the Dockerfile or pipeline Python code.
 The image survives `sandbox stop/start` — skip this step if nothing changed.
@@ -158,7 +214,7 @@ k3d image import california-housing-xgb-local:latest -c michelangelo-sandbox
 
 ---
 
-## 8. Rebuild the uniflowTar (only when @uniflow.task config changes)
+## 9. Rebuild the uniflowTar (only when @uniflow.task config changes)
 
 Required when you change the `@uniflow.task(config=...)` decorator on any task
 (e.g. switching between RayTask and SparkTask, or changing resource limits).
@@ -171,7 +227,7 @@ poetry run python examples/pipelines/california_housing_xgb/.docker/rebuild_tar.
 
 ---
 
-## 9. Submit the pipeline run
+## 10. Submit the pipeline run
 
 ```bash
 kubectl apply -f /Users/pzimme1/GitHub/michelangelo/python/examples/pipelines/california_housing_xgb/pipeline.yaml
@@ -183,7 +239,7 @@ kubectl apply -f /Users/pzimme1/GitHub/michelangelo/python/examples/pipelines/ca
 
 ---
 
-## 10. Watch the run
+## 11. Watch the run
 
 ```bash
 kubectl logs -n default deployment/michelangelo-worker --tail=50 -f | \
@@ -198,7 +254,7 @@ Expected sequence (each ~1 min apart):
 
 ---
 
-## 11. Verify model registration
+## 12. Verify model registration
 
 ```bash
 cd /Users/pzimme1/GitHub/michelangelo/python
@@ -217,12 +273,13 @@ Expected output:
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `ma model get --namespace ma-examples` returns empty after successful push_step | `REGISTRY_ENDPOINT` missing from `michelangelo-config` ConfigMap on fresh cluster | Step 3: patch configmap with `REGISTRY_ENDPOINT` and `REGISTRY_NAMESPACE`, resubmit run |
+| Task 2+ immediately fail: `internal error: nil (not None) returned from create_cluster` | Deployed controllermgr treats `HeadPodNotFound` as terminal (bug predating `cfeb1dd0`) | Step 3: deploy the fixed controllermgr image |
+| `ma model get --namespace ma-examples` returns empty after successful push_step | `REGISTRY_ENDPOINT` missing from `michelangelo-config` ConfigMap on fresh cluster | Step 4: patch configmap with `REGISTRY_ENDPOINT` and `REGISTRY_NAMESPACE`, resubmit run |
 | `ma sandbox sync` fails: `conflict with "kubectl-set"` | Helm SSA field manager conflict | `kubectl delete deployment <name>` then re-sync |
-| `create_cluster` returns nil, task fails before Python runs | Zombie RayClusters filling namespace | Step 2: delete all rayclusters + failed pods |
+| `create_cluster` returns nil, task fails before Python runs | Zombie RayClusters filling namespace | Step 5: delete both `raycluster.michelangelo.api` and `raycluster.ray.io` in default namespace |
 | `ma sandbox sync` fails: `CalledProcessError` on MySQL exec | MySQL pod not running (chart never deployed) | `ma sandbox delete` then `ma sandbox create` |
-| PipelineRun disappears immediately after apply | Missing Project CR in namespace | Step 3: apply project.yaml |
-| push_step fails: `PusherPluginError` | Proto/module mismatch in image | Rebuild image (step 5); check diagnostic.py output |
+| PipelineRun disappears immediately after apply | Missing Project CR in namespace | Step 4: apply project.yaml |
+| push_step fails: `PusherPluginError` | Proto/module mismatch in image | Rebuild image (step 8); check diagnostic.py output |
 | Stale cache error: `failed to read object: key does not exist` | Cache entry from a previous failed run | `kubectl delete configmap -n ma-examples -l michelangelo/uniflow-task-path` |
 | MA Studio tables show "Unable to fetch data", DevTools shows HTTP 415 | Envoy `http_filters` regressed to `grpc_web`, but the browser client uses the Connect protocol | See "MA Studio 415 errors" below |
 
