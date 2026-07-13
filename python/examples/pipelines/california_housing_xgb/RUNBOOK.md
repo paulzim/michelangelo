@@ -122,6 +122,22 @@ continue with `ma sandbox sync` rather than retrying create.
 After a full recreation, three extra steps are required because MinIO and the k3d
 image store are wiped:
 
+**Run the compute cluster setup** (`ma sandbox create` normally does this; `sync` skips it — without it the scheduler logs "No clusters found for assignment" and every RayCluster stays unscheduled):
+
+```bash
+cd /Users/pzimme1/GitHub/michelangelo/python
+poetry run python3 - <<'EOF'
+from michelangelo.cli.sandbox.sandbox import (
+    _create_compute_cluster_crd, _apply_compute_cluster_rbac,
+    _create_compute_cluster_secrets, _michelangelo_sandbox_kube_cluster_name,
+)
+name = _michelangelo_sandbox_kube_cluster_name
+_create_compute_cluster_crd(name)
+_apply_compute_cluster_rbac(name)
+_create_compute_cluster_secrets(name)
+EOF
+```
+
 **Re-apply one-time prerequisites** (namespace and Project CR are lost on delete):
 
 ```bash
@@ -283,6 +299,7 @@ Expected output:
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
+| RayCluster stays unscheduled, task never starts: `No clusters found for assignment` in controllermgr | Compute cluster not registered (`ma sandbox create` timed out before running compute cluster setup; `sync` skips it) | Run `_create_compute_cluster_crd`, `_apply_compute_cluster_rbac`, `_create_compute_cluster_secrets` from Python REPL (see step 4) |
 | PipelineRun fails immediately: `EntityNotExistsError Domain default does not exist` | Cadence domain not registered (`_helm_wait` timed out during sync, skipping registration) | Run `kubectl run cadence-reg --restart=Never --image ubercadence/cli:v1.2.6 --env=CADENCE_CLI_ADDRESS=michelangelo-cadence-frontend:7933 --command -- cadence --domain default domain register --rd 1`; check logs; delete pod; resubmit run |
 | Task 2+ immediately fail: `internal error: nil (not None) returned from create_cluster` | Deployed controllermgr treats `HeadPodNotFound` as terminal (bug predating `cfeb1dd0`) | Step 3: deploy the fixed controllermgr image |
 | `ma model get --namespace ma-examples` returns empty after successful push_step | `REGISTRY_ENDPOINT` missing from `michelangelo-config` ConfigMap on fresh cluster | Step 4: patch configmap with `REGISTRY_ENDPOINT` and `REGISTRY_NAMESPACE`, resubmit run |
