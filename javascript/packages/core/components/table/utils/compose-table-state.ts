@@ -35,7 +35,14 @@ export function composeTableState(combinedState: InputTableState): {
   const state = {};
   const initialState = {};
 
-  Object.entries(STATE_NAME_TO_STATE_SETTER_NAME).forEach(([propertyName, setterName]) => {
+  // cast: Object.keys returns string[]; single boundary cast to preserve key types
+  const stateKeys = Object.keys(
+    STATE_NAME_TO_STATE_SETTER_NAME
+  ) as (keyof typeof STATE_NAME_TO_STATE_SETTER_NAME)[];
+
+  for (const propertyName of stateKeys) {
+    const setterName = STATE_NAME_TO_STATE_SETTER_NAME[propertyName];
+
     if (setterName in combinedState) {
       if (!(propertyName in combinedState)) {
         console.warn(
@@ -43,17 +50,12 @@ export function composeTableState(combinedState: InputTableState): {
         );
       }
 
-      // cast: does not actually verify per-key correctness; see #1453
-      state[propertyName] = combinedState[propertyName] as TableState[keyof TableState];
-      // cast: does not actually verify per-key correctness; see #1453
-      state[setterName] = combinedState[
-        setterName
-      ] as ControlledTableState[keyof ControlledTableState];
+      state[propertyName] = combinedState[propertyName];
+      state[setterName] = combinedState[setterName];
     } else if (propertyName in combinedState) {
-      // cast: does not actually verify per-key correctness; see #1453
-      initialState[propertyName] = combinedState[propertyName] as TableState[keyof TableState];
+      initialState[propertyName] = combinedState[propertyName];
     }
-  });
+  }
 
   return { initialState, state };
 }
