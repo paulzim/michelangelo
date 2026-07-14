@@ -1,0 +1,120 @@
+// This file defines the LaneRun related messages in Michelangelo API.
+//
+// LaneRun is a demo-purpose CRD for the "Michelangelo Pit Stop" KubeCon
+// exhibit: one LaneRun represents a single visitor's race configuration for
+// one physical lane. booth-api writes the spec; the LaneRun controller
+// drives it through DeployPhase, optionally querying the Pit Crew Advisor
+// InferenceServer when Mode is recommended.
+
+syntax = "proto3";
+
+package michelangelo.api.v2;
+
+option go_package = "v2";
+
+import "k8s.io/apimachinery/pkg/apis/meta/v1/generated.proto";
+import "michelangelo/api/options.proto";
+import "michelangelo/api/conditions.proto";
+import "michelangelo/api/v2/user.proto";
+
+// Lane identifies which physical track lane a LaneRun controls.
+enum Lane {
+  LANE_INVALID = 0;
+  LANE_A = 1;
+  LANE_B = 2;
+}
+
+// LaneRunMode selects whether the visitor set speed/caution settings
+// directly, or asked the Pit Crew Advisor to recommend them.
+enum LaneRunMode {
+  LANE_RUN_MODE_INVALID = 0;
+  LANE_RUN_MODE_MANUAL = 1;
+  LANE_RUN_MODE_RECOMMENDED = 2;
+}
+
+// LaneRunSpec is the desired configuration for one lane's race, written by
+// booth-api in response to a visitor's `POST /race`.
+message LaneRunSpec {
+  // Which physical lane this run controls. Required.
+  Lane lane = 1;
+
+  // Manual or recommended settings mode. Required.
+  LaneRunMode mode = 2;
+
+  // Speed cap in cm/s. Set directly by the visitor when mode is MANUAL;
+  // ignored (the controller fills in the advisor's recommendation into
+  // status instead) when mode is RECOMMENDED.
+  int32 speed_cap_cms = 3;
+
+  // Minimum obstacle clearance buffer in cm, same MANUAL/RECOMMENDED
+  // handling as speed_cap_cms.
+  int32 caution_buffer_cm = 4;
+
+  // Last user (or service account) who created or updated this LaneRun.
+  UserInfo owner = 5;
+}
+
+// DeployPhase tracks how far the controller has progressed a LaneRun
+// towards being ready to race. Mirrors the `deploy_phase` values booth-api
+// surfaces on `GET /status`.
+enum DeployPhase {
+  DEPLOY_PHASE_INVALID = 0;
+  DEPLOY_PHASE_SPEC_WRITTEN = 1;
+  DEPLOY_PHASE_CONTROLLER_SYNCED = 2;
+  DEPLOY_PHASE_ADVISOR_QUERIED = 3;
+  DEPLOY_PHASE_READY = 4;
+}
+
+// LaneRunStatus is the controller's observed state for a LaneRun.
+message LaneRunStatus {
+  // How far the controller has progressed this LaneRun.
+  DeployPhase deploy_phase = 1;
+
+  // Speed cap recommended by the Pit Crew Advisor. Only set when
+  // spec.mode is RECOMMENDED and DeployPhase has reached ADVISOR_QUERIED.
+  int32 recommended_speed_cap_cms = 2;
+
+  // Caution buffer recommended by the Pit Crew Advisor. Only set when
+  // spec.mode is RECOMMENDED and DeployPhase has reached ADVISOR_QUERIED.
+  int32 recommended_caution_buffer_cm = 3;
+
+  // Whether the advisor InferenceServer answered the most recent query.
+  // False (with a condition explaining why) after a failed or timed-out
+  // query; booth-api falls back to the static "Balanced" preset in that
+  // case rather than blocking the race.
+  bool advisor_healthy = 4;
+
+  // Conditions relevant to this LaneRun's reconciliation.
+  repeated Condition conditions = 5;
+}
+
+// LaneRun represents one visitor's race configuration for one lane of the
+// Michelangelo Pit Stop demo track.
+message LaneRun {
+  option (michelangelo.api.resource) = {};
+
+  option (michelangelo.api.index) = {
+    path: "status.deploy_phase",
+    key: "deploy_phase",
+  };
+
+  k8s.io.apimachinery.pkg.apis.meta.v1.TypeMeta type_meta = 1;
+  k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta metadata = 2;
+
+  // Spec of the desired behavior of the LaneRun.
+  LaneRunSpec spec = 3;
+
+  // Most recently observed status of the LaneRun.
+  LaneRunStatus status = 4;
+}
+
+// A list of LaneRun objects.
+message LaneRunList {
+  option (michelangelo.api.resource_list) = {};
+
+  k8s.io.apimachinery.pkg.apis.meta.v1.TypeMeta type_meta = 1;
+  k8s.io.apimachinery.pkg.apis.meta.v1.ListMeta metadata = 2;
+
+  // A list of LaneRun objects
+  repeated LaneRun items = 3;
+}

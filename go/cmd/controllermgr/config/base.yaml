@@ -81,3 +81,14 @@ inferenceServer:
     serviceName: ma-gateway-istio
     serviceNamespace: default
     portName: http
+
+# Pit Crew Advisor endpoint the LaneRun controller queries when a LaneRun's
+# mode is RECOMMENDED. Defaults point at the sandbox's `ma sandbox demo
+# inference`-provisioned InferenceServer and the pitstop_advisor example's
+# Deployment (see python/examples/pipelines/pitstop_advisor/deployment.yaml) —
+# update these if the advisor is deployed to a dedicated InferenceServer instead.
+lanerun:
+  advisorNamespace: default
+  advisorInferenceServerName: inference-server-example
+  advisorDeploymentName: pitstop-advisor-deployment
+  advisorTimeout: 5s

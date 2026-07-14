@@ -27,6 +27,7 @@ import (
 	"github.com/michelangelo-ai/michelangelo/go/components/jobs/client"
 	"github.com/michelangelo-ai/michelangelo/go/components/jobs/cluster"
 	"github.com/michelangelo-ai/michelangelo/go/components/jobs/scheduler"
+	"github.com/michelangelo-ai/michelangelo/go/components/lanerun"
 	"github.com/michelangelo-ai/michelangelo/go/components/pipeline"
 	"github.com/michelangelo-ai/michelangelo/go/components/pipelinerun"
 	"github.com/michelangelo-ai/michelangelo/go/components/ray"
@@ -126,6 +127,10 @@ func options() fx.Option {
 		gatewayapi.Module,
 		inferenceserverOSSPlugin.Module,
 		inferenceserver.Module,
+		// lanerun.Module depends on maconfig.InferenceServerConfig, which it
+		// does not provide itself — it's supplied by inferenceserver.Module's
+		// endpoints.Module (see go/components/lanerun's doc comment).
+		lanerun.Module,
 		scheduler.Module,
 		cluster.Module,
 		client.Module,

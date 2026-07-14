@@ -1,0 +1,31 @@
+# Fallback/reference template for a dedicated InferenceServer. On the
+# sandbox, `ma sandbox demo inference` already provisions
+# `inference-server-example` in the `default` namespace (see
+# docs/user-guides/train-and-deploy-models/deploy-a-model.md's sandbox
+# note), and deployment.yaml in this directory targets that one directly —
+# so applying this file is NOT part of the normal sandbox demo flow. Keep it
+# only for a non-sandbox cluster, or if you want a dedicated server instead
+# of sharing inference-server-example with other demos.
+apiVersion: michelangelo.api/v2
+kind: InferenceServer
+metadata:
+  name: pitstop-advisor-server
+  namespace: ma-examples
+  labels:
+    app: pitstop-advisor-server
+spec:
+  backendType: BACKEND_TYPE_TRITON
+  initSpec:
+    resourceSpec:
+      cpu: 2
+      memory: "4Gi"
+    numInstances: 1
+  owner:
+    name: "<your-username>"
+  clusterTargets:
+    - clusterId: michelangelo-sandbox
+      kubernetes:
+        host: https://kubernetes.default.svc
+        port: "443"
+        tokenTag: cluster-michelangelo-sandbox-is-token
+        caDataTag: cluster-michelangelo-sandbox-ca-data

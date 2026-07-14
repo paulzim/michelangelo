@@ -1,0 +1,14 @@
+apiVersion: michelangelo.api/v2
+kind: Revision
+metadata:
+  name: pitstop-advisor-v1
+  namespace: ma-examples
+spec:
+  baseType:
+    kind: Model
+    apiVersion: michelangelo.api/v2
+  baseResource:
+    name: pitstop-advisor
+    namespace: ma-examples
+  owner:
+    name: "<your-username>"

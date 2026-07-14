@@ -1,0 +1,13 @@
+apiVersion: michelangelo.api/v2
+kind: PipelineRun
+metadata:
+  name: pitstop-advisor-run
+  namespace: ma-examples
+spec:
+  pipeline:
+    name: pitstop-advisor
+    namespace: ma-examples
+  input:
+    kw_args:
+      num_samples: 2000
+      seed: 0

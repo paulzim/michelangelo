@@ -1,0 +1,13 @@
+apiVersion: michelangelo.api/v2
+kind: Pipeline
+metadata:
+  namespace: "ma-examples"
+  name: "pitstop-advisor"
+  annotations:
+    michelangelo/uniflow-image: pitstop-advisor-local:latest
+    michelangelo/uniflow-image-pull-policy: IfNotPresent
+spec:
+  type: "PIPELINE_TYPE_TRAIN"
+  manifest:
+    filePath: examples.pipelines.pitstop_advisor.pitstop_advisor
+    uniflowTar: "s3://michelangelo/uniflow/ma-examples_pitstop-advisor.tar.gz"

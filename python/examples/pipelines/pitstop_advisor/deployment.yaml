@@ -1,0 +1,16 @@
+apiVersion: michelangelo.api/v2
+kind: Deployment
+metadata:
+  name: pitstop-advisor-deployment
+  namespace: ma-examples
+spec:
+  # Reuses the sandbox's built-in demo server rather than a dedicated one —
+  # see the note in inferenceserver.yaml.
+  inferenceServer:
+    name: inference-server-example
+    namespace: default
+  desiredRevision:
+    name: pitstop-advisor-v1
+    namespace: ma-examples
+  strategy:
+    blast: {}

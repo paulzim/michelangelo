@@ -1,0 +1,38 @@
+# Sample LaneRun CRs for manually exercising the controller after the custom
+# controllermgr image (see CLAUDE.md gotcha #16) is built with the lanerun
+# package included.
+#
+#   kubectl apply -f lanerun-example.yaml
+#   kubectl get lanerun -n default -o wide
+#
+# lane-a-manual: visitor set their own settings directly — the controller
+# should reach DEPLOY_PHASE_READY without ever calling the advisor.
+apiVersion: michelangelo.api/v2
+kind: LaneRun
+metadata:
+  name: lane-a-manual
+  namespace: default
+spec:
+  lane: LANE_A
+  mode: LANE_RUN_MODE_MANUAL
+  speedCapCms: 250
+  cautionBufferCm: 15
+  owner:
+    name: "<your-username>"
+---
+# lane-b-recommended: controller must query the Pit Crew Advisor
+# InferenceServer (see lanerun's config in
+# go/cmd/controllermgr/config/base.yaml) and populate
+# status.recommendedSpeedCapCms / status.recommendedCautionBufferCm before
+# reaching DEPLOY_PHASE_READY. speedCapCms/cautionBufferCm are ignored by the
+# controller in this mode.
+apiVersion: michelangelo.api/v2
+kind: LaneRun
+metadata:
+  name: lane-b-recommended
+  namespace: default
+spec:
+  lane: LANE_B
+  mode: LANE_RUN_MODE_RECOMMENDED
+  owner:
+    name: "<your-username>"
