@@ -264,7 +264,7 @@ describe('useGetCellRenderer', () => {
       expect(screen.queryByText('Badge: test value')).not.toBeInTheDocument();
     });
 
-    it('should prioritize provider custom renderers over built-in renderers', () => {
+    it('should prioritize provider renderers over built-in renderers', () => {
       const CustomTextRenderer: CellRenderer<string> = (props: CellRendererProps<string>) => (
         <div data-testid="custom-text">Custom Text: {props.value}</div>
       );
