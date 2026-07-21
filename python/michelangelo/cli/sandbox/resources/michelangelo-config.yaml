@@ -10,3 +10,4 @@ data:
   AWS_SECRET_ACCESS_KEY: minioadmin
   AWS_ENDPOINT_URL: http://minio:9091
   REGISTRY_ENDPOINT: michelangelo-apiserver:15566
+  REGISTRY_NAMESPACE: ma-examples
