@@ -73,11 +73,16 @@ def adaptive_training(data_url: str, use_gpu: bool, epochs: int):
 You can also use branching to short-circuit a pipeline early:
 
 ```python
+from michelangelo.workflow.variables import DatasetVariable
+
+
 @uniflow.task(config=SparkTask(driver_cpu=1, driver_memory="4G", executor_instances=2))
 def load_data(data_url: str):
     from pyspark.sql import SparkSession
     df = SparkSession.getActiveSession().read.parquet(data_url)
-    return df, df.count()
+    dv = DatasetVariable.create(df)
+    dv.save_spark_dataframe()
+    return dv, df.count()
 
 
 @uniflow.workflow()
