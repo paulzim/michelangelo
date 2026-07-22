@@ -91,12 +91,13 @@ data:
             {{- end }}
     {{- end }}
 
+    {{- $gateway := dig "inferenceServer" "gateway" dict .Values.controllermgr }}
     inferenceServer:
       gateway:
-        name: {{ .Values.controllermgr.inferenceServer.gateway.name | default "ma-gateway" | quote }}
-        serviceName: {{ .Values.controllermgr.inferenceServer.gateway.serviceName | default "ma-gateway-istio" | quote }}
-        serviceNamespace: {{ .Values.controllermgr.inferenceServer.gateway.serviceNamespace | default "default" | quote }}
-        portName: {{ .Values.controllermgr.inferenceServer.gateway.portName | default "http" | quote }}
+        name: {{ $gateway.name | default "ma-gateway" | quote }}
+        serviceName: {{ $gateway.serviceName | default "ma-gateway-istio" | quote }}
+        serviceNamespace: {{ $gateway.serviceNamespace | default "default" | quote }}
+        portName: {{ $gateway.portName | default "http" | quote }}
 
     notification:
       {{- $notif := default dict .Values.notification }}
