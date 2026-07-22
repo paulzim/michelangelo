@@ -56,7 +56,6 @@ export { useStudioQuery } from '#core/hooks/use-studio-query';
 export { useStudioMutation } from '#core/hooks/use-studio-mutation/use-studio-mutation';
 export type { UseStudioMutationResult } from '#core/hooks/use-studio-mutation/types';
 export type { MutationConfig, MutationOptions } from '#core/types/query-types';
-export { ServiceProvider } from '#core/providers/service-provider/service-provider';
 
 export { useCellToString } from '#core/components/cell/use-cell-to-string';
 export { cellTooltipHoc } from '#core/components/cell/components/tooltip/cell-tooltip-hoc';
@@ -77,29 +76,6 @@ export { TagCell } from '#core/components/cell/renderers/tag/tag-cell';
 export { TextCell } from '#core/components/cell/renderers/text/text-cell';
 export { TypeCell } from '#core/components/cell/renderers/type/type-cell';
 
-export { Box } from '#core/components/box/box';
-export * from '#core/components/box/styled-components';
-export { DateTime } from '#core/components/date-time/date-time';
-export { DescriptionText } from '#core/components/description-text';
-export { HelpTooltip } from '#core/components/help-tooltip';
-export { Link } from '#core/components/link/link';
-export * from '#core/components/link/styled-components';
-export { Markdown } from '#core/components/markdown/markdown';
-export { Row } from '#core/components/row/row';
-export type { RowCell, RowProps } from '#core/components/row/types';
-export { Tag } from '#core/components/tag/tag';
-export * from '#core/components/tag/constants';
-export type { TagColor, TagHierarchy, TagBehavior, TagSize } from '#core/components/tag/types';
-export { TruncatedText } from '#core/components/truncated-text/truncated-text';
-export { Banner } from '#core/components/banner/banner';
-
-export { Icon } from '#core/components/icon/icon';
-export { IconKind } from '#core/components/icon/types';
-export { IconProvider } from '#core/providers/icon-provider/icon-provider';
-export * from '#core/providers/icon-provider/types';
-
-export { ThemeProvider };
-
 export { useStudioParams } from '#core/hooks/routing/use-studio-params/use-studio-params';
 export * from '#core/hooks/routing/use-studio-params/types';
 export { useUrlQueryString } from '#core/hooks/routing/use-url-query-string';
@@ -112,15 +88,9 @@ export { TimeZone } from '#core/types/time-types';
 export * from '#core/types/common/studio-types';
 export * from '#core/types/common/view-types';
 
-// Cell Provider
-export { CellProvider } from '#core/providers/cell-provider/cell-provider';
-export { useCellProvider } from '#core/providers/cell-provider/use-cell-provider';
-export type { CellContextType } from '#core/providers/cell-provider/types';
-
 // Error Provider
 export { ApplicationError } from '#core/types/error-types';
 export type { ErrorNormalizer } from '#core/types/error-types';
-export { ErrorProvider } from '#core/providers/error-provider/error-provider';
 export { useErrorNormalizer } from '#core/providers/error-provider/use-error-normalizer';
 export { GrpcStatusCode } from '#core/constants/grpc-status-codes';
 
@@ -213,9 +183,5 @@ export type {
   DetailViewPagesProps,
 } from '#core/components/views/detail-view/types/detail-view-component-types';
 
-// User Provider
-// UserProvider is re-exported for consumers that build their own provider tree.
-// CoreApp mounts UserProvider internally via dependencies.user — prefer that
-// path for new integrations.
-export { UserProvider } from '#core/providers/user-provider/user-provider';
+// User Types
 export { UserRole } from '#core/providers/user-provider/types';
