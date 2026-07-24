@@ -3,6 +3,13 @@
   "python.analysis.extraPaths": [
     "./python"
   ],
+  "python.analysis.exclude": [
+    "**/.venv/**",
+    "**/node_modules/**",
+    "**/bazel-*/**",
+    "/pkg/**",
+    "**/.claude/worktrees/**"
+  ],
   // yaml
   "[yaml]": {
     "editor.formatOnSave": false
