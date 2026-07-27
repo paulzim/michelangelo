@@ -73,7 +73,9 @@ export function useGetCellRenderer(): (args: CellRendererProps<unknown>) => Cell
     }
 
     if (columnType && columnType in CELL_RENDERERS) {
-      return CELL_RENDERERS[columnType];
+      // cast: registry lookup returns a specific CellRenderer<T>; caller works with
+      // CellRenderer<unknown> and passes unknown values at runtime
+      return CELL_RENDERERS[columnType] as CellRenderer<unknown>;
     }
 
     if (typeof value === 'string' && isURL(value, { require_protocol: true, require_tld: false })) {

@@ -1,10 +1,10 @@
-# Michelangelo User Guides
+# Michelangelo AI User Guides
 
-Build, train, and deploy machine learning models at scale using Michelangelo's unified ML platform.
+Build, train, and deploy machine learning models at scale using Michelangelo AI's unified ML platform.
 
 ## Getting Started
 
-New to Michelangelo? Follow this path:
+New to Michelangelo AI? Follow this path:
 
 1. **[Getting Started with Pipelines](./getting-started/getting-started.md)** — Build your first pipeline in 30 minutes
 2. **[Prepare Your Data](./getting-started/prepare-your-data.md)** — Load, clean, and split datasets using Ray and Spark
@@ -47,9 +47,4 @@ New to Michelangelo? Follow this path:
 
 ## Examples
 
-| Example | Description |
-|---------|-------------|
-| [California Housing Regression](https://github.com/michelangelo-ai/michelangelo/tree/main/python/examples/pipelines/california_housing_xgb) | Predict house prices with XGBoost |
-| [BERT Text Classification](https://github.com/michelangelo-ai/michelangelo/tree/main/python/examples/bert_cola) | Classify text with pre-trained transformers |
-| [GPT Fine-tuning](https://github.com/michelangelo-ai/michelangelo/tree/main/python/examples/gpt_oss_20b_finetune) | Fine-tune large language models with LoRA |
-| [Amazon Books Recommendation](https://github.com/michelangelo-ai/michelangelo/tree/main/python/examples/amazon_books_qwen) | Dual-encoder recommendation system |
+Browse the full **[Examples Gallery](./examples/index.md)** — 9 end-to-end workflows covering training, inference, recommendation systems, and model packaging, organized by use case with difficulty levels.

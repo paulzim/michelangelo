@@ -1,8 +1,8 @@
-# Michelangelo Helm Chart
+# Michelangelo AI Helm Chart
 
 [![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/michelangelo)](https://artifacthub.io/packages/helm/michelangelo/michelangelo)
 
-The `michelangelo` Helm chart installs the Michelangelo control plane — apiserver, gRPC-Web proxy (envoy), UI, workflow worker, controller manager, CRDs, and RBAC — into any Kubernetes cluster.
+The `michelangelo` Helm chart installs the Michelangelo AI control plane — apiserver, gRPC-Web proxy (envoy), UI, workflow worker, controller manager, CRDs, and RBAC — into any Kubernetes cluster.
 
 The chart owns only the **control plane**. Infrastructure (metadata storage, object storage, workflow engine) is your responsibility — bring your own RDS / Cloud SQL, S3 / GCS, and Cadence / Temporal, or use the local development setup below.
 
@@ -22,7 +22,7 @@ The chart owns only the **control plane**. Infrastructure (metadata storage, obj
 
 ### Local development (k3d)
 
-The Michelangelo CLI provisions a local k3d cluster, MySQL, and MinIO, then installs this chart with `values-k3d.yaml` (which enables the bundled Cadence or Temporal subchart based on `--workflow`):
+The Michelangelo AI CLI provisions a local k3d cluster, MySQL, and MinIO, then installs this chart with `values-k3d.yaml` (which enables the bundled Cadence or Temporal subchart based on `--workflow`):
 
 ```bash
 pip install michelangelo
@@ -125,7 +125,7 @@ GRANT ALL PRIVILEGES ON cadence.* TO 'your_user'@'%';
 GRANT ALL PRIVILEGES ON cadence_visibility.* TO 'your_user'@'%';
 ```
 
-The Michelangelo control plane uses the `michelangelo` database — there is no conflict. You can share a single MySQL instance by setting both `metadataStorage.host` and `cadence.config.persistence.database.sql.hosts` to the same hostname.
+The Michelangelo AI control plane uses the `michelangelo` database — there is no conflict. You can share a single MySQL instance by setting both `metadataStorage.host` and `cadence.config.persistence.database.sql.hosts` to the same hostname.
 
 ### Mutual exclusivity with Temporal
 
@@ -253,10 +253,11 @@ Top-level keys. See [`values.yaml`](./values.yaml) for the full annotated schema
 | `workflow.engine` | string | `cadence` | yes | `cadence` or `temporal`. Mutually exclusive — selects which worker config block renders. |
 | `workflow.endpoint` | string | `""` | **yes** | Workflow engine address (e.g. `cadence-frontend:7833`, `temporal-frontend:7233`). |
 | `workflow.domain` | string | `default` | no | Cadence domain or Temporal namespace. |
-| `images.apiserver` | string | `ghcr.io/michelangelo-ai/apiserver:main` | no | Override to pin a version or use a private registry. |
-| `images.worker` | string | `ghcr.io/michelangelo-ai/worker:main` | no | |
-| `images.ui` | string | `ghcr.io/michelangelo-ai/ui:main` | no | |
-| `images.controllermgr` | string | `ghcr.io/michelangelo-ai/controllermgr:main` | no | |
+| `images.apiserver.repository` | string | `ghcr.io/michelangelo-ai/apiserver` | no | Override for a private registry/mirror. |
+| `images.apiserver.tag` | string | `""` | no | Defaults to the chart's `appVersion` (i.e. the release version). Override to pin a different version or a floating tag like `main`. |
+| `images.worker.repository` / `.tag` | string | `ghcr.io/michelangelo-ai/worker` / `""` | no | Same pattern as `images.apiserver`. |
+| `images.ui.repository` / `.tag` | string | `ghcr.io/michelangelo-ai/ui` / `""` | no | Same pattern as `images.apiserver`. |
+| `images.controllermgr.repository` / `.tag` | string | `ghcr.io/michelangelo-ai/controllermgr` / `""` | no | Same pattern as `images.apiserver`. |
 | `images.envoy` | string | `envoyproxy/envoy:v1.29-latest` | no | |
 | `images.pullPolicy` | string | `IfNotPresent` | no | |
 | `imagePullSecrets` | list | `[]` | no | List of Secret names for private registries. |
@@ -422,14 +423,14 @@ See [`values.yaml`](./values.yaml) for the full annotated schema.
 helm upgrade michelangelo ./helm/michelangelo --reuse-values
 ```
 
-`--reuse-values` keeps your previous `--set` and `-f` overrides. Pass new flags only for the values you want to change. To pin to a specific image tag during upgrade:
+`--reuse-values` keeps your previous `--set` and `-f` overrides. Pass new flags only for the values you want to change. Image tags default to the chart's own `appVersion`, so upgrading to a new chart version upgrades the images automatically — no `--set` needed. To pin to a specific image tag instead (e.g. to roll back one service, or track `main`):
 
 ```bash
 helm upgrade michelangelo ./helm/michelangelo --reuse-values \
-  --set images.apiserver=ghcr.io/michelangelo-ai/apiserver:v0.3.1 \
-  --set images.worker=ghcr.io/michelangelo-ai/worker:v0.3.1 \
-  --set images.ui=ghcr.io/michelangelo-ai/ui:v0.3.1 \
-  --set images.controllermgr=ghcr.io/michelangelo-ai/controllermgr:v0.3.1
+  --set images.apiserver.tag=v0.3.1 \
+  --set images.worker.tag=v0.3.1 \
+  --set images.ui.tag=v0.3.1 \
+  --set images.controllermgr.tag=v0.3.1
 ```
 
 The `object-storage-credentials` Secret is annotated `helm.sh/resource-policy: keep` and will not be overwritten on upgrade. To rotate credentials, update the Secret in place with `kubectl edit secret object-storage-credentials` or delete and re-apply it.

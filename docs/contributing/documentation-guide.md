@@ -1,6 +1,6 @@
 # Documentation Guide
 
-This guide explains how to contribute to Michelangelo's documentation site.
+This guide explains how to contribute to Michelangelo AI's documentation site.
 
 ## Quick Start
 
@@ -155,8 +155,8 @@ Reference co-located images:
 Use relative paths with `.md` extension for internal links:
 
 ```markdown
-[See the CLI guide](./cli.md)
-[Back to setup](../getting-started/sandbox-setup.md)
+[See the CI guide](./ci.md)
+[Back to getting started](../user-guides/getting-started/getting-started.md)
 ```
 
 - Always include the `.md` extension (Docusaurus converts them)

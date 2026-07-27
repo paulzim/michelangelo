@@ -1,7 +1,7 @@
 # California Housing XGBoost
 
 End-to-end ML pipeline for California Housing price prediction using XGBoost.
-Demonstrates the full Michelangelo workflow: feature preparation, Spark
+Demonstrates the full Michelangelo AI workflow: feature preparation, Spark
 preprocessing, distributed Ray training, and a pusher step that exports the
 model, evaluation report, and preprocessed datasets to storage and registry.
 
@@ -23,7 +23,7 @@ The workflow is orchestrated in `california_housing_xgb.py`, which imports each 
 
 ## Prerequisites
 
-- A Michelangelo sandbox running (`ma sandbox create`)
+- A Michelangelo AI sandbox running (`ma sandbox create`)
 - A project created: `ma project apply -f examples/config/project.yaml`
 - Python 3.9+
 - Java 17 with `JAVA_HOME` set — required for Spark. Java 21 is incompatible with PySpark 3.5 + Hadoop 3.3 (`getSubject is not supported`). On macOS: `brew install openjdk@17` then `export JAVA_HOME=$(brew --prefix openjdk@17)/libexec/openjdk.jdk/Contents/Home`
@@ -204,7 +204,7 @@ kubectl get pipelinerun -n ma-examples
 | `AWS_S3_BUCKET` | No | Parsed from `MA_FILE_SYSTEM` or `UF_STORAGE_URL` | Target bucket name |
 | `REGISTRY_ENDPOINT` | No | — | Model registry gRPC endpoint (`host:port`). Unset → in-memory only |
 | `REGISTRY_INSECURE` | No | `true` | Set `false` to enable TLS for the registry connection |
-| `REGISTRY_NAMESPACE` | No | `default` | Model registry namespace |
+| `REGISTRY_NAMESPACE` | No | `MA_NAMESPACE` (the pipeline's own namespace), else `default` | Model registry namespace |
 
 > **Sandbox note:** in a k3d sandbox, `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`,
 > and `AWS_SECRET_ACCESS_KEY` are automatically injected into Ray/Spark pods

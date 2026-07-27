@@ -182,3 +182,8 @@ export type CellToStringParams<T = unknown, CellConfig = SharedCell> = Pick<
   CellRendererProps<T, CellConfig>,
   'column' | 'value'
 >;
+
+// CellRendererRegistry is defined in constants.ts because it is typeof CELL_RENDERERS —
+// the type is the implementation. Defining it here would require importing the value,
+// creating a circular dependency. Re-exported so consumers can import from either module.
+export type { CellRendererRegistry } from './constants';

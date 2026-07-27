@@ -62,7 +62,7 @@ jobs:
             echo "branch (or otherwise trigger CI) and re-run once checks are green."
             exit 1
           fi
-          STATES=$(gh api --paginate "repos/${{ github.repository }}/commits/$SHA/check-runs" --jq '.check_runs[] | select(.status != "completed" or (.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral")) | .name')
+          STATES=$(gh api --paginate "repos/${{ github.repository }}/commits/$SHA/check-runs" --jq '.check_runs[] | select(.name != "promote" and .name != "publish-npm" and .name != "notify-on-failure") | select(.status != "completed" or (.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral")) | .name')
           if [ -n "$STATES" ]; then
             echo "ERROR: the following checks are not green on ${{ steps.vars.outputs.branch }}@$SHA:"
             echo "$STATES"
@@ -92,6 +92,13 @@ jobs:
       - name: Trigger changelog generation for the final tag
         run: |
           gh workflow run changelog.yml --ref "${{ steps.vars.outputs.tag }}" -f tag="${{ steps.vars.outputs.tag }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger container image publish for the final tag
+        run: |
+          gh workflow run ui-release.yml --ref "${{ steps.vars.outputs.tag }}"
+          gh workflow run dev-release.yml --ref "${{ steps.vars.outputs.tag }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -1,7 +1,7 @@
-Sandbox is a lightweight version of the Michelangelo cluster, designed specifically for development and testing. It also serves as an excellent tool for users to quickly explore the platform and familiarize themselves with its interface.
+Sandbox is a lightweight version of the Michelangelo AI cluster, designed specifically for development and testing. It also serves as an excellent tool for users to quickly explore the platform and familiarize themselves with its interface.
 
 > **Note:** The Sandbox deployment is intended for development and testing purposes only and is not suitable for production environments.
-> For guidance on creating a production-ready Michelangelo deployment, please refer to the `helm/michelangelo/` chart and its README.
+> For guidance on creating a production-ready Michelangelo AI deployment, please refer to the `helm/michelangelo/` chart and its README.
 
 ## User Guide
 
@@ -16,7 +16,7 @@ Please install the following software before proceeding:
 - [k3d](https://k3d.io)
 - [Helm 3.12+](https://helm.sh/docs/intro/install/)
 
-### Install Michelangelo CLI
+### Install Michelangelo AI CLI
 
 ```bash
 pip install michelangelo
@@ -98,11 +98,25 @@ To skip Cadence, use `--workflow temporal` instead — Cadence is bundled with t
 ma sandbox create --include-experimental fluent-bit mlflow
 ```
 
+## Pinning Image Tags
+
+By default the control plane images (`apiserver`, `worker`, `ui`, `controllermgr`) track `main`. Use `--set` to pin them to a specific released version instead — for example, to validate a release candidate:
+
+```bash
+ma sandbox create \
+  --set images.apiserver.tag=0.5.0-rc.1 \
+  --set images.worker.tag=0.5.0-rc.1 \
+  --set images.ui.tag=0.5.0-rc.1 \
+  --set images.controllermgr.tag=0.5.0-rc.1
+```
+
+`--set KEY=VALUE` accepts any Helm value override and can be repeated; it's passed straight through to `helm install`/`helm upgrade`. `ma sandbox sync` supports the same flag.
+
 ## Local Service URLs
 
 | Service | URL | Notes |
 |---|---|---|
-| Michelangelo UI | http://localhost:8090 | |
+| Michelangelo AI UI | http://localhost:8090 | |
 | Envoy (gRPC-Web) | http://localhost:8081 | |
 | Apiserver (gRPC) | localhost:15566 | |
 | Cadence Web | http://localhost:8088 | Only when `--workflow cadence` (default) — NodePort 30004 |

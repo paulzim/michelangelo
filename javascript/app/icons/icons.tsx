@@ -4,6 +4,7 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import AutorenewIcon from '@mui/icons-material/Autorenew';
 import CancelIcon from '@mui/icons-material/Cancel';
+import CheckIcon from '@mui/icons-material/Check';
 import CheckCircle from '@mui/icons-material/CheckCircle';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CloseIcon from '@mui/icons-material/Close';
@@ -12,6 +13,7 @@ import Delete from '@mui/icons-material/Delete';
 import ErrorIcon from '@mui/icons-material/Error';
 import Info from '@mui/icons-material/Info';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardBackspaceIcon from '@mui/icons-material/KeyboardBackspace';
 import Launch from '@mui/icons-material/Launch';
 import MenuIcon from '@mui/icons-material/Menu';
@@ -30,8 +32,10 @@ export const ICONS = {
   arrowLaunch: createMuiIconAdapter(Launch),
   arrowLeft: createMuiIconAdapter(KeyboardBackspaceIcon),
   chartLine: createMuiIconAdapter(ShowChartIcon),
-  chevronRight: createMuiIconAdapter(ChevronRightIcon),
+  check: createMuiIconAdapter(CheckIcon),
   chevronDown: createMuiIconAdapter(KeyboardArrowDownIcon),
+  chevronRight: createMuiIconAdapter(ChevronRightIcon),
+  chevronUp: createMuiIconAdapter(KeyboardArrowUpIcon),
   circleI: createMuiIconAdapter(Info),
   circleX: createMuiIconAdapter(CancelIcon),
   circleCheck: createMuiIconAdapter(CheckCircle),

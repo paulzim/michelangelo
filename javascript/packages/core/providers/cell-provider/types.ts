@@ -9,14 +9,16 @@ import type { CellRenderer } from '#core/components/cell/types';
 export type CellContextType = {
   /**
    * @description
-   * Custom cell renderers that extend the built-in CELL_RENDERERS.
-   * These will be checked first before falling back to default behavior.
+   * Cell renderers registered at the application level. Checked before built-in
+   * renderers, so a registered renderer for a known CellType will override the
+   * default. Use this for app-wide customization. For per-column overrides, use
+   * the column-level `Cell` prop instead.
    *
    * @example
    * ```tsx
    * const renderers = {
    *   'CUSTOM_BADGE': MyBadgeRenderer,
-   *   'SPECIAL_TYPE': MySpecialRenderer
+   *   [CellType.BOOLEAN]: MyBooleanRenderer,
    * };
    * ```
    */

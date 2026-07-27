@@ -13,6 +13,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	proto "github.com/gogo/protobuf/proto"
 	gogotypes "github.com/gogo/protobuf/types"
+	api "github.com/michelangelo-ai/michelangelo/go/api"
 	"github.com/michelangelo-ai/michelangelo/go/api/utils"
 	"github.com/michelangelo-ai/michelangelo/go/storage"
 	apipb "github.com/michelangelo-ai/michelangelo/proto-go/api"
@@ -147,20 +148,23 @@ func (m *mysqlMetadataStorage) Upsert(ctx context.Context, object runtime.Object
 		return m.directUpdate(ctx, tx, tableName, metaObj, object)
 	}
 
-	// Full upsert: update all fields
+	// Full upsert: update all fields. Compute the stable primary key once so the main
+	// object row and its label/annotation child rows are all keyed consistently.
+	primaryKey := metadataStoragePrimaryKey(metaObj)
+
 	err = m.fullUpsert(ctx, tx, tableName, groupVer, metaObj, protoBytes, jsonBytes, indexedFields)
 	if err != nil {
 		return err
 	}
 
 	// Upsert labels
-	err = m.upsertLabels(ctx, tx, tableName, string(metaObj.GetUID()), metaObj.GetLabels())
+	err = m.upsertLabels(ctx, tx, tableName, primaryKey, metaObj.GetLabels())
 	if err != nil {
 		return err
 	}
 
 	// Upsert annotations
-	err = m.upsertAnnotations(ctx, tx, tableName, string(metaObj.GetUID()), metaObj.GetAnnotations())
+	err = m.upsertAnnotations(ctx, tx, tableName, primaryKey, metaObj.GetAnnotations())
 	if err != nil {
 		return err
 	}
@@ -1097,6 +1101,20 @@ func (m *mysqlMetadataStorage) Close() {
 
 // Helper functions
 
+// metadataStoragePrimaryKey returns the stable primary key for metadata storage: the
+// MetadataStoragePrimaryKeyAnnotation value when present and non-empty, otherwise the
+// object's K8s UID. The main object row and its label/annotation child rows must all be
+// keyed by this same value so they remain joinable across cluster migrations, where the
+// K8s UID changes but the annotation preserves the original logical identity.
+func metadataStoragePrimaryKey(metaObj metav1.Object) string {
+	if annotations := metaObj.GetAnnotations(); annotations != nil {
+		if pk, ok := annotations[api.MetadataStoragePrimaryKeyAnnotation]; ok && pk != "" {
+			return pk
+		}
+	}
+	return string(metaObj.GetUID())
+}
+
 func (m *mysqlMetadataStorage) fullUpsert(ctx context.Context, tx *sql.Tx, tableName string, groupVer string, metaObj metav1.Object, protoBytes, jsonBytes []byte, indexedFields []storage.IndexedField) error {
 	// Build indexed fields map
 	indexedFieldsMap := make(map[string]interface{})
@@ -1104,11 +1122,15 @@ func (m *mysqlMetadataStorage) fullUpsert(ctx context.Context, tx *sql.Tx, table
 		indexedFieldsMap[field.Key] = field.Value
 	}
 
+	// Determine primary key: use MetadataStoragePrimaryKeyAnnotation if set, else UID.
+	// This enables stable identity across cluster migrations.
+	primaryKey := metadataStoragePrimaryKey(metaObj)
+
 	// Build dynamic SQL based on indexed fields
 	columns := []string{"uid", "group_ver", "namespace", "name", "res_version", "create_time", "update_time", "proto", "json"}
 	placeholders := []string{"?", "?", "?", "?", "?", "?", "?", "?", "?"}
 	values := []interface{}{
-		string(metaObj.GetUID()),
+		primaryKey, // Use annotation-based PK if available
 		groupVer,
 		metaObj.GetNamespace(),
 		metaObj.GetName(),
