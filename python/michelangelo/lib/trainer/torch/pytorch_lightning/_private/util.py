@@ -501,6 +501,59 @@ def _resolve_callbacks(
     return resolved_callbacks, has_model_checkpoint
 
 
+def _maybe_track_experiment(train_loop_config: dict, rank: int) -> None:
+    """Record this run's experiment directory via the configured ExperimentStore.
+
+    Best-effort and rank-0-only: called once near the start of the worker loop so
+    a future re-run with the same ``RunConfig(storage_path=..., name=...)`` can
+    locate and resume this run's Ray Train experiment directory. A non-rank-0
+    worker or a missing store is skipped silently; an incomplete
+    ``(storage_path, run_name)`` identity is logged once (auto-resume needs both)
+    and skipped; any failure (including a misbehaving custom store) is caught and
+    logged — tracking must never fail an otherwise-successful training run.
+
+    The recorded ``experiment_path`` is reconstructed from the driver-provided
+    ``storage_path`` (scheme-qualified, e.g. ``s3://bucket/runs``) rather than
+    the storage context's scheme-stripped ``storage_fs_path``, so a later resume
+    can address the directory on remote filesystems.
+
+    Args:
+        train_loop_config: The per-worker config dict. May carry
+            ``experiment_store`` plus the ``storage_path`` / ``run_name``
+            identity injected by :class:`LightningTrainer` when a store and a
+            ``RunConfig`` are both set.
+        rank: This worker's global rank; tracking runs only on rank 0.
+    """
+    if rank != 0:
+        return
+    store = train_loop_config.get("experiment_store")
+    if store is None:
+        return
+    storage_path = train_loop_config.get("storage_path")
+    run_name = train_loop_config.get("run_name")
+    if not storage_path or not run_name:
+        _logger.info(
+            "experiment_store is set but the run identity is incomplete "
+            "(storage_path=%r, run_name=%r); skipping experiment tracking and "
+            "auto-resume.",
+            storage_path,
+            run_name,
+        )
+        return
+    try:
+        storage_context = ray.train.get_context().get_storage()
+        experiment_path = (
+            f"{storage_path.rstrip('/')}/{storage_context.experiment_dir_name}"
+        )
+        store.track(
+            storage_path=storage_path,
+            run_name=run_name,
+            experiment_path=experiment_path,
+        )
+    except Exception:
+        _logger.warning("experiment_store.track failed", exc_info=True)
+
+
 # Training loop.
 def _train_loop_per_worker(train_loop_config):
     """Execute one Lightning training run on a single Ray Train worker.
@@ -521,6 +574,8 @@ def _train_loop_per_worker(train_loop_config):
     rank = ray.train.get_context().get_world_rank()
     world_sz = ray.train.get_context().get_world_size()
     _logger.info("rank: %d, world_sz: %d", rank, world_sz)
+
+    _maybe_track_experiment(train_loop_config, rank)
 
     # Read configurations.
     batch_size = train_loop_config["batch_size"]
@@ -638,6 +693,19 @@ def _train_loop_per_worker(train_loop_config):
     trainer = ray.train.lightning.prepare_trainer(trainer)
 
     checkpoint = ray.train.get_checkpoint()
+    if checkpoint is None:
+        # Ray Train V2 resumes natively from a reused run directory; when it has
+        # no checkpoint to restore, fall back to the checkpoint the driver
+        # located via the ExperimentStore (if any). Native restoration always
+        # takes priority.
+        seed_path = train_loop_config.get("resume_checkpoint_path")
+        if seed_path:
+            _logger.info(
+                "No native Ray checkpoint found; seeding auto-resume from "
+                "store-located checkpoint: %s",
+                seed_path,
+            )
+            checkpoint = ray.train.Checkpoint(seed_path)
     _logger.info(
         "Resuming from checkpoint.path=%s", checkpoint.path if checkpoint else None
     )

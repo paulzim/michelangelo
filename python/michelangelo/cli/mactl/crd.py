@@ -2,24 +2,28 @@
 
 import json
 from argparse import ArgumentParser
-from collections.abc import MutableMapping, Sequence
+from collections.abc import Iterator, MutableMapping, Sequence
+from contextlib import redirect_stdout
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
 from inspect import Parameter, Signature
+from io import StringIO
 from logging import getLogger
 from pathlib import Path
 from types import MethodType
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, TypedDict
 
 from google.protobuf.json_format import MessageToDict, MessageToJson, ParseDict
 from google.protobuf.message import Message
+from google.protobuf.wrappers_pb2 import StringValue
 from grpc import (
     Channel,
     RpcError,
     StatusCode,
 )
+from typing_extensions import NotRequired
 from yaml import YAMLError
 from yaml import safe_dump as yaml_safe_dump
 from yaml import safe_load as yaml_safe_load
@@ -32,6 +36,17 @@ from michelangelo.cli.mactl.grpc_tools import (
 
 _LOG = getLogger(__name__)
 METADATA_STUB = []
+
+
+class Criterion(TypedDict):
+    """Shape of a criterion returned by a callable-form filter_field_map entry."""
+
+    field: str
+    value: str
+    operator: NotRequired[int]  # defaults to CRITERION_OPERATOR_EQUAL (1)
+
+
+FilterCallable = Callable[[dict], list[Criterion]]
 
 
 def bind_signature(signature):
@@ -113,6 +128,46 @@ def yaml_to_dict(yaml_path_string: str) -> dict[str, Any]:
     return res
 
 
+def resolve_yaml_path(file: str, external_root: str) -> str:
+    """Prepend ``external_root`` to ``file`` when set (idempotent).
+
+    Returns ``file`` unchanged when ``external_root`` is empty OR when
+    ``file`` is already absolute under ``external_root`` — so a double
+    call with the same root is a no-op, and users passing an absolute
+    path already under the root are handled correctly.
+    """
+    if not external_root:
+        return file
+    root = str(Path(external_root))
+    if file == root or file.startswith(root + "/"):
+        return file
+    return str(Path(root) / file.lstrip("/"))
+
+
+def walk_crd_yamls(directory: str, kind: str) -> Iterator[Path]:
+    """Yield yaml files under ``directory`` whose top-level ``kind:`` matches.
+
+    Sorted (lexical, stable across runs). Symlinks not followed. Files that
+    fail to parse or don't match ``kind`` are skipped with a message on stdout.
+    Raises ``FileNotFoundError`` if ``directory`` does not exist.
+    """
+    root = Path(directory)
+    if not root.exists():
+        raise FileNotFoundError(f"directory not found: {directory}")
+    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+        if path.suffix != ".yaml":
+            continue
+        try:
+            doc = yaml_safe_load(path.read_text())
+        except (OSError, YAMLError):
+            print(f"Skipped {path} since file can't be opened")
+            continue
+        if not isinstance(doc, dict) or doc.get("kind") != kind:
+            print(f"Skipped {path} since file is not of Kind {kind}")
+            continue
+        yield path
+
+
 def get_crd_namespace_and_name_from_yaml(yaml_path_string: str) -> tuple[str, str]:
     """Reads a YAML file and returns its content as a dictionary."""
     _LOG.info("Start to Read YAML file: %r", yaml_path_string)
@@ -181,6 +236,30 @@ def read_yaml_to_crd_request(
     ParseDict(crd_dict, crd_instance)
     _LOG.info("Parsed CRD instance (%r): %r", type(crd_instance), crd_instance)
     return crd_instance
+
+
+def apply_dry_run_to_request(
+    request: Message,
+    options_attr: str,
+    bound_args_arguments: dict,
+) -> None:
+    """Set server-side dry-run on ``request.<options_attr>`` when opted in.
+
+    When ``bound_args_arguments["dry_run"]`` is truthy, appends the ``"All"``
+    sentinel to the ``dryRun`` list on the nested k8s.io ``CreateOptions`` /
+    ``UpdateOptions`` / ``DeleteOptions`` submessage. Server does full
+    validation then rolls back — nothing persists.
+
+    ``options_attr`` is one of ``"create_options"``, ``"update_options"``,
+    ``"delete_options"``. The submessage exposes the field as ``dryRun``
+    (camelCase) at the Python attribute level — writing ``.dry_run`` raises
+    ``AttributeError``.
+    """
+    if not bound_args_arguments.get("dry_run", False):
+        return
+    options = getattr(request, options_attr)
+    options.dryRun.append("All")
+    _LOG.info("Dry-run enabled: %s.dryRun=%s", options_attr, list(options.dryRun))
 
 
 def snake_to_camel(name: str) -> str:
@@ -261,6 +340,26 @@ def _get_func_impl(crd_method_info: CrdMethodInfo, bound_args: Signature) -> Mes
     )
 
 
+def _collect_forward_dests(obj) -> set[str]:
+    """Every arg dest declared in ``additional_get_args``.
+
+    By convention, ``additional_get_args`` entries are filter flags — every
+    current OSS plugin uses it that way. The framework forwards all such
+    dests from `get` to `list`; a non-filter dest (if any plugin ever adds
+    one) would flow through harmlessly, since ``_list_func_impl`` only acts
+    on dests that also appear in ``filter_field_map``.
+    """
+    dests: set[str] = set()
+    additional_get_args = getattr(obj, "additional_get_args", None)
+    if isinstance(additional_get_args, list):
+        for arg_spec in additional_get_args:
+            if isinstance(arg_spec, dict):
+                dest = arg_spec.get("kwargs", {}).get("dest")
+                if dest:
+                    dests.add(dest)
+    return dests
+
+
 def get_func_impl(crd_method_info: CrdMethodInfo, bound_args: Signature) -> Message:
     """Default common CRD member method implementation for GET method.
 
@@ -288,16 +387,30 @@ def get_func_impl(crd_method_info: CrdMethodInfo, bound_args: Signature) -> Mess
 
     _LOG.debug("No name argument passed. List CRD in the namespace.")
     _self.generate_list(crd_method_info.channel)
+    # get→list fallthrough: forward filter dests so `--<attr> <val>` reaches
+    # list (see _collect_forward_dests for source union).
+    forward_dests = _collect_forward_dests(_self)
+    filter_kwargs = {
+        k: bound_args.arguments[k] for k in forward_dests if k in bound_args.arguments
+    }
     return _self.list(
         namespace="" if all_namespaces else namespace,
         limit=bound_args.arguments.get("limit", 100),
         all_namespaces=all_namespaces,
         output=output,
+        **filter_kwargs,
     )
 
 
-def prepare_column_info() -> list[dict]:
-    """Prepare column info for formatted printing of CRD items."""
+def prepare_column_info(extra: Sequence[dict] = ()) -> list[dict]:
+    """Prepare column info for formatted printing of CRD items.
+
+    ``extra`` is a per-CRD ``additional_columns`` list; each entry
+    ``{"column_name": str, "retrieve_func": Callable[[Message], str]}`` is
+    appended after the built-in columns. Each column's ``max_length`` is
+    seeded from ``len(column_name) + 1`` (the header string plus 1 for
+    trailing space) and grown per-row inside ``print_list_formatted``.
+    """
     res = [
         {
             "column_name": "NAMESPACE",
@@ -322,22 +435,31 @@ def prepare_column_info() -> list[dict]:
             "max_length": len("LAST_UPDATED_SPEC") + 1,
         },
     ]
+    for col in extra:
+        name = col["column_name"]
+        res.append(
+            {
+                "column_name": name,
+                "retrieve_func": col["retrieve_func"],
+                "max_length": len(name) + 1,
+            }
+        )
     _LOG.debug("Prepared column info: %r", res)
     return res
 
 
-def print_list_formatted(items: Sequence[Message]):
+def print_list_formatted(items: Sequence[Message], extra_columns: Sequence[dict] = ()):
     """Print list of CRD items in formatted way."""
     _LOG.info("Print list of CRD items: %r (length %d)", type(items), len(items))
 
     ansi_header = "\033[1;37;44m"  # bold + white + blue background
     ansi_reset = "\033[0m"
 
-    column_info = prepare_column_info()
+    column_info = prepare_column_info(extra_columns)
     for item in items:
         for col in column_info:
             col["max_length"] = max(
-                col["max_length"], len(col["retrieve_func"](item)) + 1
+                col["max_length"], len(str(col["retrieve_func"](item))) + 1
             )
 
     print(
@@ -350,17 +472,21 @@ def print_list_formatted(items: Sequence[Message]):
             " "
             + "".join(
                 [
-                    col["retrieve_func"](item).ljust(col["max_length"])
+                    str(col["retrieve_func"](item)).ljust(col["max_length"])
                     for col in column_info
                 ]
             )
         )
 
 
-def _render_list_items(items: Sequence[Message], output_format: str) -> None:
+def _render_list_items(
+    items: Sequence[Message],
+    output_format: str,
+    extra_columns: Sequence[dict] = (),
+) -> None:
     """Render list of CRD items in the requested output format.
 
-    Matches Go mactl `-o {table|yaml|json}` behavior.
+    ``extra_columns`` is table-only; yaml/json emit the raw proto fields.
     """
     if output_format == "yaml":
         docs = [MessageToDict(m, preserving_proto_field_name=True) for m in items]
@@ -369,7 +495,7 @@ def _render_list_items(items: Sequence[Message], output_format: str) -> None:
         docs = [MessageToDict(m, preserving_proto_field_name=True) for m in items]
         print(json.dumps({"items": docs}, indent=2))
     else:
-        print_list_formatted(items)
+        print_list_formatted(items, extra_columns=extra_columns)
 
 
 def _render_single_item(msg: Message, output_format: str) -> None:
@@ -386,10 +512,35 @@ def _render_single_item(msg: Message, output_format: str) -> None:
         print(msg)
 
 
+def _resolve_criteria(spec, bound_args: dict, arg_dest: str) -> list[Criterion]:
+    """Normalize any filter_field_map spec shape into a list of criteria.
+
+    - Callable spec: plugin returns its own criteria (0..N).
+    - String spec: one criterion, EQUAL operator, value from bound_args.
+    - Dict spec: one criterion with declared field + operator, value from bound_args.
+    Empty bound-args values (for string/dict specs) yield ``[]`` — no criterion.
+    """
+    if callable(spec):
+        return spec(bound_args)
+    value = bound_args.get(arg_dest)
+    if value in (None, "", (), []):
+        return []
+    if isinstance(spec, str):
+        return [{"field": spec, "value": value}]
+    return [
+        {
+            "field": spec["field"],
+            "value": value,
+            "operator": spec.get("operator", 1),
+        }
+    ]
+
+
 def _list_func_impl(crd_method_info: CrdMethodInfo, bound_args: Signature) -> Message:
     """Raw CRD LIST implementation - returns response without printing."""
     _LOG.info("Bound arguments: %r", bound_args.arguments)
 
+    _self: Optional[CRD] = bound_args.arguments.get("self")
     limit = bound_args.arguments.get("limit", 100)
     all_namespaces = bound_args.arguments.get("all_namespaces", False)
     namespace = (
@@ -412,6 +563,15 @@ def _list_func_impl(crd_method_info: CrdMethodInfo, bound_args: Signature) -> Me
 
     request_input = crd_method_info.input_class()
     ParseDict(request_dict, request_input)
+
+    filter_field_map = getattr(_self, "filter_field_map", {}) if _self else {}
+    for arg_dest, spec in filter_field_map.items():
+        for c in _resolve_criteria(spec, bound_args.arguments, arg_dest):
+            criterion = request_input.list_options_ext.operation.criterion.add()
+            criterion.field_name = c["field"]
+            criterion.operator = c.get("operator", 1)
+            criterion.match_value.Pack(StringValue(value=str(c["value"])))
+
     _LOG.info("ListRequest built: %r", request_input)
     call_res = crd_method_call(crd_method_info, request_input)
     _LOG.debug("Succeed to list CRDs: %r", type(call_res))
@@ -443,7 +603,11 @@ def list_func_impl(crd_method_info: CrdMethodInfo, bound_args: Signature) -> Mes
     # we assume the there is only one list field in the response message
     raw_elems = results[next(iter(results))]
 
-    _render_list_items(raw_elems.items, output)
+    _render_list_items(
+        raw_elems.items,
+        output,
+        extra_columns=getattr(_self, "additional_columns", ()),
+    )
 
     # Show warning if we got exactly the limit (there might be more)
     if len(raw_elems.items) == limit:
@@ -473,14 +637,50 @@ def delete_func_impl(crd_method_info: CrdMethodInfo, bound_args: Signature) -> M
 
 
 def apply_func_impl(crd_method_info: CrdMethodInfo, bound_args: Signature) -> Message:
-    """Default common CRD member method implementation for APPLY method."""
+    """Default common CRD member method implementation for APPLY method.
+
+    Consumes framework flags: `-r/--root` (path prepend + per-CRD Construct context)
+    and `-R/--recursive` (walk directory, filter by kind, apply each).
+    """
     run_pre_apply_checks(crd_method_info.crd_full_name)
     _LOG.info("Bound arguments: %r", bound_args.arguments)
     _self: CRD = bound_args.arguments["self"]
     _LOG.info("Start apply_func for %r", _self.full_name)
 
     _file = get_single_arg(bound_args.arguments, "file")
+    external_root = bound_args.arguments.get("external_root", "") or ""
+    recursive = bound_args.arguments.get("recursive", False)
 
+    _file = resolve_yaml_path(_file, external_root)
+
+    if recursive:
+        kind = snake_to_camel(_self.name)
+        apply_recursive(
+            _file,
+            kind,
+            lambda p: _apply_single(crd_method_info, _self, p, bound_args.arguments),
+        )
+        return None
+
+    return _apply_single(crd_method_info, _self, _file, bound_args.arguments)
+
+
+def _apply_single(
+    crd_method_info: CrdMethodInfo,
+    _self: "CRD",
+    _file: str,
+    bound_args_arguments: dict,
+) -> Message:
+    """Apply one already-resolved yaml file.
+
+    ``bound_args_arguments`` is the caller's ``bound_args.arguments`` dict
+    (from apply's Signature bind). Passed through unchanged so both create
+    and update paths hand the SAME dict to ``apply_dry_run_to_request`` —
+    future helper extensions that read additional keys stay consistent
+    across verbs.
+    """
+    dry_run = bound_args_arguments.get("dry_run", False)
+    external_root = bound_args_arguments.get("external_root", "") or ""
     _namespace, _name = get_crd_namespace_and_name_from_yaml(_file)
 
     message_instance = None
@@ -492,19 +692,58 @@ def apply_func_impl(crd_method_info: CrdMethodInfo, bound_args: Signature) -> Me
             raise
 
     if message_instance is None:
-        # Create new CRD
+        # Create new CRD — must forward dry_run explicitly. _self.create's
+        # bound_args does not inherit apply's dry_run otherwise (Signature.bind
+        # fills the default False).
         _LOG.info("Create a new CRD")
         _self.generate_create(crd_method_info.channel)
-        return _self.create(_file)
+        return _self.create(_file, dry_run=dry_run, external_root=external_root)
 
     # Update existing CRD
     _LOG.info("Retrieved message instance: %r", message_instance)
     request_input = _self.read_yaml_and_update_crd_request(
         crd_method_info.input_class, _file, message_instance
     )
+    apply_dry_run_to_request(request_input, "update_options", bound_args_arguments)
     call_res = crd_method_call(crd_method_info, request_input)
     print(call_res)
     return call_res
+
+
+def apply_recursive(
+    directory: str, kind: str, per_file_fn: Callable[[str], None]
+) -> None:
+    """Sorted walk + kind-filter + continue-on-error aggregate.
+
+    Calls ``per_file_fn`` with each matched yaml path. Exceptions from
+    ``per_file_fn`` are captured; all matched files are processed even when
+    some fail; a ``RuntimeError`` is raised at the end if any failed.
+
+    Reusable by per-plugin apply overrides that need the same recursive UX
+    with their own per-file logic (e.g. a plugin's custom Construct hook).
+    """
+    failed: list[Path] = []
+    total = 0
+    for path in walk_crd_yamls(directory, kind):
+        total += 1
+        print(f"Applying {path}...")
+        buf = StringIO()
+        try:
+            with redirect_stdout(buf):
+                per_file_fn(str(path))
+        except Exception as e:
+            failed.append(path)
+            # On failure, dump the captured per-file output so the user has
+            # debug context. On success it stays suppressed to keep recursive
+            # output readable.
+            print(buf.getvalue(), end="")
+            print(f"Error: {e}")
+    if failed:
+        raise RuntimeError(
+            f"apply failed on {len(failed)} of {total} files: "
+            + ", ".join(str(p) for p in failed)
+        )
+    print(f"Successfully applied all {total} files in the directory")
 
 
 def create_func_impl(crd_method_info: CrdMethodInfo, bound_args: Signature) -> Message:
@@ -514,6 +753,8 @@ def create_func_impl(crd_method_info: CrdMethodInfo, bound_args: Signature) -> M
     _LOG.info("Start create_func for %r", _self.full_name)
 
     _file = get_single_arg(bound_args.arguments, "file")
+    external_root = bound_args.arguments.get("external_root", "") or ""
+    _file = resolve_yaml_path(_file, external_root)
 
     request_input = read_yaml_to_crd_request(
         crd_method_info.input_class,
@@ -521,6 +762,7 @@ def create_func_impl(crd_method_info: CrdMethodInfo, bound_args: Signature) -> M
         _file,
         _self.func_crd_metadata_converter,
     )
+    apply_dry_run_to_request(request_input, "create_options", bound_args.arguments)
     call_res = crd_method_call(crd_method_info, request_input)
     print(call_res)
     return call_res
@@ -535,6 +777,14 @@ class CRD:
         self.full_name = full_name
         self.func_crd_metadata_converter = convert_crd_metadata
         self.metadata = metadata
+        # Per-CRD extension registries. Subclasses opt in from their own
+        # __init__ after super().__init__(...). See CRD.configure_parser and
+        # _list_func_impl / list_func_impl for how each list is consumed.
+        self.additional_columns: list[dict] = []
+        self.additional_get_args: list[dict] = []
+        # Value: str = field name (default EQUAL); dict = {"field","operator"};
+        # callable = (bound_args) -> list of criteria.
+        self.filter_field_map: dict[str, str | dict | FilterCallable] = {}
         self.func_signature: dict[str, dict] = {
             "apply": {
                 "help": "Apply an Entity (create or update)",
@@ -552,6 +802,60 @@ class CRD:
                             "help": (
                                 "Custom Resource YAML file"
                                 " (can be configured with --file)"
+                            ),
+                        },
+                    },
+                    {
+                        "func_signature": Parameter(
+                            "external_root",
+                            Parameter.POSITIONAL_OR_KEYWORD,
+                            default="",
+                        ),
+                        "args": ["-r", "--root"],
+                        "kwargs": {
+                            "dest": "external_root",
+                            "type": str,
+                            "default": "",
+                            "required": False,
+                            "help": (
+                                "External workspace root. Prepended to --file"
+                                " and passed to per-CRD construction hook."
+                            ),
+                        },
+                    },
+                    {
+                        "func_signature": Parameter(
+                            "recursive",
+                            Parameter.POSITIONAL_OR_KEYWORD,
+                            default=False,
+                        ),
+                        "args": ["-R", "--recursive"],
+                        "kwargs": {
+                            "dest": "recursive",
+                            "action": "store_true",
+                            "default": False,
+                            "help": (
+                                "When --file is a directory, apply each"
+                                " matching YAML in the directory."
+                            ),
+                        },
+                    },
+                    {
+                        "func_signature": Parameter(
+                            "dry_run",
+                            Parameter.POSITIONAL_OR_KEYWORD,
+                            default=False,
+                        ),
+                        "args": ["--dry-run"],
+                        "kwargs": {
+                            "dest": "dry_run",
+                            "action": "store_true",
+                            "default": False,
+                            "help": (
+                                "Send the request with server-side dry-run "
+                                "(k8s.io CreateOptions/UpdateOptions.dryRun="
+                                "['All']); server validates and rolls back "
+                                "without persisting."
                             ),
                         },
                     },
@@ -719,21 +1023,70 @@ class CRD:
         _LOG.debug(
             "Start to configure parser with args: %r", self.func_signature[action]
         )
-        for arg_def in self.func_signature[action]["args"]:
+        arg_defs = list(self.func_signature[action]["args"])
+        if action == "get":
+            arg_defs.extend(self._validated_additional_get_args())
+        for arg_def in arg_defs:
             args = arg_def.get("args", [])
             kwargs = arg_def.get("kwargs", {})
             parser.add_argument(*args, **kwargs)
 
+    def _validated_additional_get_args(self) -> list[dict]:
+        """Return additional_get_args after validating dest collisions.
+
+        Raises ValueError if any entry shadows a built-in `get` dest or if
+        `filter_field_map` references a dest not declared in
+        `additional_get_args`. Empty list when the CRD hasn't opted in.
+        """
+        if not self.additional_get_args and not self.filter_field_map:
+            return []
+        builtin_dests = {
+            self._arg_dest(arg) for arg in self.func_signature["get"]["args"]
+        }
+        extra_dests: set[str] = set()
+        for arg in self.additional_get_args:
+            dest = self._arg_dest(arg)
+            if dest in builtin_dests:
+                raise ValueError(
+                    f"additional_get_args dest {dest!r} collides with built-in "
+                    f"`get` argument on CRD {self.name!r}"
+                )
+            extra_dests.add(dest)
+        for dest, spec in self.filter_field_map.items():
+            # Callable specs use a synthetic key — no dest to cross-check.
+            if callable(spec):
+                continue
+            if dest not in extra_dests:
+                raise ValueError(
+                    f"filter_field_map references dest {dest!r} but no matching "
+                    f"entry in additional_get_args on CRD {self.name!r}"
+                )
+        return list(self.additional_get_args)
+
+    @staticmethod
+    def _arg_dest(arg_def: dict) -> str:
+        """Derive argparse dest for a func_signature args entry.
+
+        Prefers explicit `kwargs.dest`; else the longest `args` string (long
+        option), stripped of leading dashes with hyphens → underscores. Matches
+        argparse's own dest inference.
+        """
+        dest = arg_def.get("kwargs", {}).get("dest")
+        if dest:
+            return dest
+        args = arg_def.get("args", [""])
+        longest = max(args, key=len)
+        return longest.lstrip("-").replace("-", "_")
+
     def _read_signatures(self, method_name: str) -> Signature:
         """Read function signatures for method name."""
         _LOG.debug("Prepare func signature for `%r` function", method_name)
+        arg_defs = list(self.func_signature[method_name]["args"])
+        if method_name == "get":
+            arg_defs.extend(self.additional_get_args)
         res = Signature(
             [Parameter("self", Parameter.POSITIONAL_OR_KEYWORD)]
-            + [
-                arg["func_signature"]
-                for arg in self.func_signature[method_name]["args"]
-                if "func_signature" in arg
-            ]
+            + [arg["func_signature"] for arg in arg_defs if "func_signature" in arg]
         )
         _LOG.debug("Read func signature: %r", res)
         return res
@@ -854,8 +1207,21 @@ class CRD:
             *self._extract_method_info(channel, self.full_name, "Create"),
         )
         create_func_signature = Signature(
-            [Parameter("self", Parameter.POSITIONAL_OR_KEYWORD)]
-            + [Parameter(name, Parameter.POSITIONAL_OR_KEYWORD) for name in ["file"]]
+            [
+                Parameter("self", Parameter.POSITIONAL_OR_KEYWORD),
+                # `file` is the only positional. `dry_run` mirrors the apply
+                # func_signature so apply_func_impl.create(_, dry_run=...) call
+                # passes bind_signature on the create-when-missing path.
+                # `external_root` is the F046 -r/--root plumbing forwarded
+                # from apply_func_impl on the same create-when-missing path.
+                Parameter("file", Parameter.POSITIONAL_OR_KEYWORD),
+                Parameter("dry_run", Parameter.POSITIONAL_OR_KEYWORD, default=False),
+                Parameter(
+                    "external_root",
+                    Parameter.POSITIONAL_OR_KEYWORD,
+                    default="",
+                ),
+            ]
         )
 
         bound_func = partial(create_func_impl, method_info)
@@ -879,6 +1245,7 @@ class CRD:
         )
 
         self.configure_parser("list", parser)
+        forward_dests = _collect_forward_dests(self)
         list_func_signature = Signature(
             [
                 Parameter("self", Parameter.POSITIONAL_OR_KEYWORD),
@@ -890,6 +1257,12 @@ class CRD:
                     default=False,
                 ),
                 Parameter("output", Parameter.POSITIONAL_OR_KEYWORD, default="table"),
+            ]
+            + [
+                # Per-CRD filter dests, so `_self.list(**filter_kwargs)` (called
+                # from get→list fall-through) doesn't get rejected by bind.
+                Parameter(dest, Parameter.POSITIONAL_OR_KEYWORD, default=None)
+                for dest in sorted(forward_dests)
             ]
         )
 

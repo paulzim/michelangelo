@@ -2,7 +2,205 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## [Unreleased]
+
+
+### Bug Fixes
+
+
+- **docs:** Correct double-suffix branding in README and examples (#1596)
+
+
+- **ingester:** Soft-delete metadata-storage row on kubectl delete for non-opted-in kinds (#1585)
+
+
+- **ci:** Changelog.yml CR_PAT token + stop full-history CHANGELOG.md regeneration (#1599)
+
+
+- **ci:** Nightly.yml npm/helm jobs no longer hardcode stale base version 0.3.0 (#1617)
+
+
+- **storage/mysql:** Validate OrderBy.Field identifier before SQL interpolation (#1616)
+
+
+- **sandbox:** Pin Grafana image to 13.1.1 instead of :latest (CVE-2026-31789) (#1623)
+
+
+- **build:** Bump pinned Node.js 24.14.1 -> 24.18.0 (Wiz-reported CVEs) (#1621)
+
+
+- **uniflow:** Propagate namespace to Ray cluster spec (#1605)
+
+
+
+### CI/CD
+
+
+- **integration-test:** Trigger only from Nightly Build (#1613)
+
+
+
+### Documentation
+
+
+- Refresh governance files and issue templates (#1579)
+
+
+- Add missing libomp macOS prerequisite to getting-started guide (#1253)
+
+
+
+### Features
+
+
+- **trainer:** Add pluggable ExperimentStore for auto-resume (PR 4) (#1571)
+
+
+- **python:** Add server-side --dry-run to apply, create, pipeline run, pipelinerun kill (#1591)
+
+
+- **python:** Additional_columns + filter_field_map hooks on CRD (#1588)
+
+
+- **python:** Framework -r/--root and -R/--recursive on apply+create (#1590)
+
+
+- **python:** --owner and --type filters + OWNER/TYPE columns on pipeline get (#1618)
+
+
+- **python:** --actor and --revision filters + REVISION/USER/ENVIRONMENT/STATE columns on pipeline_run get (#1619)
+
+
+- **python:** Retry + round_robin service_config on mactl gRPC channels (#1615)
+
+
+- **python:** --pipeline/--model/--deployment/--owner filters + 3 columns on revision get (#1620)
+
+
+- **core:** Expose mutationName in success operations resolver context (#1646)
+
+
+- **core:** Set mutationKey on useStudioMutation for MutationCache integration (#1647)
+
+
+
+### Miscellaneous
+
+
+- Update hero subtitle to "Now open source." (#1606)
+
+
+- Merge back release/v0.6 to main (#1597)
+
+
+- Bind k3d port-publishes to loopback instead of 0.0.0.0 (#1592)
+
+
+- Fix site title, meta description, and favicon for search results (#1624)
+
+
+- Bump version to 0.7.0-rc.1 (#1657)
+
+
+## [0.6.0] - 2026-07-27
+
+
+### Bug Fixes
+
+
+- **helm:** Allow x-user-email header in envoy CORS preflight (#1552)
+
+
+- **helm:** Envoy checksum annotation + missing x-user-name CORS header (#1558)
+
+
+- **release:** Exclude RC/nightly tags from changelog diff boundary, commit CHANGELOG.md via PR (#1561)
+
+
+- **docs:** Wrap Spark DataFrame in DatasetVariable in branching example (#1566)
+
+
+- **rayjob:** Right-size submitter pod instead of cloning the head (#1562)
+
+
+- **ci:** Changelog.yml CR_PAT token + stop full-history CHANGELOG.md regeneration (cherry-pick #1599) (#1602)
+
+
+
+### Documentation
+
+
+- Add v0.5.0 changelog entry (#1569)
+
+
+- Standardize branding to "Michelangelo AI" in READMEs and PyPI (#1577)
+
+
+- Standardize branding to "Michelangelo AI" across all docs (#1575)
+
+
+- Update CHANGELOG.md for v0.6.0-rc.1 (#1600)
+
+
+
+### Features
+
+
+- **native_transform:** Add pyarrow conversion helpers (PR A) (#1543)
+
+
+- **sandbox:** Support --set on ma sandbox create (#1554)
+
+
+- **native_transform:** Add IDHashTokenizer torch layer (PR A2) (#1548)
+
+
+- Add MetadataStoragePrimaryKey annotation for k8s migration (#1332)
+
+
+- **python:** Expose clean_reason and clean_details on GitInfo (F037) (#1572)
+
+
+- **native_transform:** Add foundation transform layers (PR B1) (#1570)
+
+
+
+### Miscellaneous
+
+
+- Quote templated image/secret-name values in core Deployment charts (#1544)
+
+
+- Add examples gallery page with all 9 working examples (#1469)
+
+
+- **core:** Upgrade baseui 15→18, move to peerDependencies (#1522)
+
+
+- Merge back release/v0.5 to main (#1547)
+
+
+- Remove stray test artifact python/create-project.json (#1476)
+
+
+- Ma cli: add -o, -A, and default DESC sort to <crd> get (#1576)
+
+
+- **release:** Prepare v0.6.0
+
+
+- Bump version to 0.6.0-rc.1 (#1595)
+
+
+- Release 0.6.0 (#1607)
+
+
+
+### Refactoring
+
+
+- **core:** Split public API from primitives entrypoint (#1526)
+
 
 ## [0.5.0] - 2026-07-20
 
@@ -117,9 +315,6 @@ All notable changes to this project will be documented in this file.
 - Print help panel on 'ma' / 'ma -h' with prog='ma' (#1530)
 
 
-
-
-
 ## [0.4.0] - 2026-07-10
 
 
@@ -162,7 +357,6 @@ All notable changes to this project will be documented in this file.
 - **sandbox:** Add missing minio-credentials secret and kuberay images (#1474)
 
 
-
 ### CI/CD
 
 
@@ -187,12 +381,10 @@ All notable changes to this project will be documented in this file.
 - Notify Slack on scheduled/release workflow failures (#1438)
 
 
-
 ### Documentation
 
 
 - Address sandbox setup feedback — timing, sync, missing prereqs, troubleshooting (#1247)
-
 
 
 ### Features
@@ -226,7 +418,6 @@ All notable changes to this project will be documented in this file.
 
 
 - **revision:** Add pluggable Revision controller (#1314)
-
 
 
 ### Miscellaneous
@@ -283,7 +474,6 @@ All notable changes to this project will be documented in this file.
 - Add a route successOperation that skips the toast (#1485)
 
 
-
 ### Refactoring
 
 
@@ -291,4 +481,3 @@ All notable changes to this project will be documented in this file.
 
 
 - **ui:** Centralize mutation middleware in the mutation hook (#1482)
-

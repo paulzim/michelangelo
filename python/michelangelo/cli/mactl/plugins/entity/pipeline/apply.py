@@ -8,6 +8,7 @@ from grpc import RpcError, StatusCode
 from michelangelo.cli.mactl.crd import (
     CRD,
     CrdMethodInfo,
+    apply_dry_run_to_request,
     crd_method_call,
     get_crd_namespace_and_name_from_yaml,
     read_yaml_to_crd_request,
@@ -22,10 +23,13 @@ def pipeline_apply_func_impl(
 ) -> Message:
     """Pipeline apply implementation.
 
-    update_method_info is passed by generate_apply via the standard partial mechanism.
+    TODO: this plugin monkey-patches ``apply_func_impl``, so framework
+    ``-r/--root`` + ``-R/--recursive`` wiring is bypassed for the pipeline CRD.
+    Other CRDs are covered. Follow-up PR to plumb ``external_root`` here if needed.
     """
     _self: CRD = bound_args.arguments["self"]
     _file = bound_args.arguments["file"]
+    _dry_run = bound_args.arguments.get("dry_run", False)
 
     _namespace, _name = get_crd_namespace_and_name_from_yaml(_file)
 
@@ -38,9 +42,11 @@ def pipeline_apply_func_impl(
             raise
 
     if message_instance is None:
+        # Forward dry_run explicitly — _self.create's bound_args does not
+        # inherit apply's dry_run otherwise.
         _LOG.info("Create a new pipeline")
         _self.generate_create(update_method_info.channel)
-        return _self.create(_file)
+        return _self.create(_file, dry_run=_dry_run)
 
     _LOG.info("Updating existing pipeline: %r", message_instance)
     request_input = read_yaml_to_crd_request(
@@ -52,6 +58,7 @@ def pipeline_apply_func_impl(
     existing = getattr(message_instance, _self.name)
     inner = getattr(request_input, _self.name)
     inner.metadata.resourceVersion = existing.metadata.resourceVersion
+    apply_dry_run_to_request(request_input, "update_options", bound_args.arguments)
     call_res = crd_method_call(update_method_info, request_input)
     print(call_res)
     return call_res

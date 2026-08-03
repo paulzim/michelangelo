@@ -2,8 +2,12 @@
 
 from datetime import datetime, timezone
 from inspect import Parameter, Signature
+from pathlib import Path
+from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import MagicMock, Mock, patch
+
+from grpc import RpcError, StatusCode
 
 from michelangelo.cli.mactl.crd import (
     CRD,
@@ -18,6 +22,9 @@ from michelangelo.cli.mactl.crd import (
     inject_func_signature,
     list_func_impl,
     prepare_column_info,
+    print_list_formatted,
+    resolve_yaml_path,
+    walk_crd_yamls,
 )
 
 
@@ -159,6 +166,7 @@ class ListFuncImplTest(TestCase):
 
         mock_crd = Mock()
         mock_crd._list.return_value = mock_response
+        mock_crd.additional_columns = ()
 
         list_func_impl(
             crd_method_info,
@@ -200,6 +208,7 @@ class ListFuncImplTest(TestCase):
 
         mock_crd = Mock()
         mock_crd._list.return_value = mock_response
+        mock_crd.additional_columns = ()
 
         list_func_impl(
             crd_method_info,
@@ -368,7 +377,7 @@ class RenderHelpersTest(TestCase):
         items = [self._mock_item("ns", "a")]
         _render_list_items(items, "table")
 
-        mock_print.assert_called_once_with(items)
+        mock_print.assert_called_once_with(items, extra_columns=())
 
     @patch("michelangelo.cli.mactl.crd.MessageToJson")
     def test_render_single_item_json(self, mock_to_json):
@@ -840,6 +849,504 @@ class CreateFuncImplTest(TestCase):
         )
         mock_call.assert_called_once_with(crd_method_info, mock_request)
 
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.apply_dry_run_to_request")
+    @patch("michelangelo.cli.mactl.crd.read_yaml_to_crd_request")
+    def test_create_func_impl_forwards_dry_run(
+        self, mock_read_yaml: MagicMock, mock_dry_run: MagicMock, _
+    ):
+        """create_func_impl invokes the dry-run helper with create_options."""
+        crd_method_info = CrdMethodInfo(
+            channel=Mock(),
+            crd_full_name="test.Service",
+            method_name="Create",
+            input_class=Mock,
+            output_class=Mock,
+        )
+        mock_crd = Mock()
+        mock_crd.full_name = "test.Service"
+        mock_crd.name = "test"
+        mock_request = Mock()
+        mock_read_yaml.return_value = mock_request
+
+        create_func_impl(
+            crd_method_info,
+            Mock(arguments={"self": mock_crd, "file": "f.yaml", "dry_run": True}),
+        )
+
+        mock_dry_run.assert_called_once_with(
+            mock_request,
+            "create_options",
+            {"self": mock_crd, "file": "f.yaml", "dry_run": True},
+        )
+
+
+class ApplyDryRunToRequestTest(TestCase):
+    """apply_dry_run_to_request helper wiring."""
+
+    def _fake_request(self, options_attr):
+        opts = SimpleNamespace(dryRun=[])
+        return SimpleNamespace(**{options_attr: opts})
+
+    def test_dry_run_true_appends_all_to_create_options(self):
+        """dry_run=True writes 'All' to create_options.dryRun."""
+        from michelangelo.cli.mactl.crd import apply_dry_run_to_request
+
+        req = self._fake_request("create_options")
+        apply_dry_run_to_request(req, "create_options", {"dry_run": True})
+        self.assertEqual(list(req.create_options.dryRun), ["All"])
+
+    def test_dry_run_true_appends_all_to_update_options(self):
+        """Same helper works for update_options."""
+        from michelangelo.cli.mactl.crd import apply_dry_run_to_request
+
+        req = self._fake_request("update_options")
+        apply_dry_run_to_request(req, "update_options", {"dry_run": True})
+        self.assertEqual(list(req.update_options.dryRun), ["All"])
+
+    def test_dry_run_false_leaves_options_untouched(self):
+        """dry_run=False adds nothing (default behavior)."""
+        from michelangelo.cli.mactl.crd import apply_dry_run_to_request
+
+        req = self._fake_request("create_options")
+        apply_dry_run_to_request(req, "create_options", {"dry_run": False})
+        self.assertEqual(list(req.create_options.dryRun), [])
+
+    def test_dry_run_missing_leaves_options_untouched(self):
+        """No dry_run key in bound_args → no-op."""
+        from michelangelo.cli.mactl.crd import apply_dry_run_to_request
+
+        req = self._fake_request("update_options")
+        apply_dry_run_to_request(req, "update_options", {})
+        self.assertEqual(list(req.update_options.dryRun), [])
+
+    def test_dry_run_wire_roundtrip_with_real_proto(self):
+        """Serialize→deserialize proves 'dryRun' hits the wire on real proto.
+
+        Guards silent no-ops: writing to `.dry_run` (snake_case) auto-creates
+        a phantom attribute on the real proto because k8s.io apimachinery uses
+        camelCase attribute names — the append would succeed but nothing
+        would reach the wire.
+        """
+        from google.protobuf.json_format import MessageToDict
+
+        from michelangelo.cli.mactl.crd import apply_dry_run_to_request
+        from michelangelo.gen.k8s.io.apimachinery.pkg.apis.meta.v1 import (
+            generated_pb2,
+        )
+
+        req_wrapper = SimpleNamespace(update_options=generated_pb2.UpdateOptions())
+        apply_dry_run_to_request(req_wrapper, "update_options", {"dry_run": True})
+
+        wire = req_wrapper.update_options.SerializeToString()
+        parsed = generated_pb2.UpdateOptions.FromString(wire)
+        self.assertEqual(
+            MessageToDict(parsed, preserving_proto_field_name=False).get("dryRun"),
+            ["All"],
+        )
+
+
+class ApplyFuncImplDryRunTest(TestCase):
+    """apply_func_impl dry-run wiring (F025)."""
+
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.apply_dry_run_to_request")
+    @patch("michelangelo.cli.mactl.crd.get_crd_namespace_and_name_from_yaml")
+    def test_update_path_calls_helper_with_update_options(
+        self, mock_get_ns, mock_dry_run, _
+    ):
+        """Update path (existing CRD) routes dry_run through update_options."""
+        crd_method_info = CrdMethodInfo(
+            channel=Mock(),
+            crd_full_name="test.Service",
+            method_name="Apply",
+            input_class=Mock,
+            output_class=Mock,
+        )
+        mock_crd = Mock()
+        mock_crd.full_name = "test.Service"
+        mock_crd._get.return_value = Mock()  # existing
+        mock_request = Mock()
+        mock_crd.read_yaml_and_update_crd_request.return_value = mock_request
+        mock_get_ns.return_value = ("ns", "name")
+
+        args = {"self": mock_crd, "file": "f.yaml", "dry_run": True}
+        apply_func_impl(crd_method_info, Mock(arguments=args))
+
+        mock_dry_run.assert_called_once_with(mock_request, "update_options", args)
+
+    @patch("michelangelo.cli.mactl.crd.get_crd_namespace_and_name_from_yaml")
+    def test_create_when_missing_forwards_dry_run_to_self_create(self, mock_get_ns):
+        """SF-8 guard: apply→create path passes dry_run through to _self.create.
+
+        Without this, `_self.create(file)` would default dry_run to False and
+        silently drop the user's --dry-run intent on the create-when-missing
+        path.
+        """
+        crd_method_info = CrdMethodInfo(
+            channel=Mock(),
+            crd_full_name="test.Service",
+            method_name="Apply",
+            input_class=Mock,
+            output_class=Mock,
+        )
+        mock_crd = Mock()
+        mock_crd.full_name = "test.Service"
+        mock_crd._get.side_effect = NotFoundRpcError()
+        mock_get_ns.return_value = ("ns", "name")
+
+        apply_func_impl(
+            crd_method_info,
+            Mock(arguments={"self": mock_crd, "file": "f.yaml", "dry_run": True}),
+        )
+
+        mock_crd.create.assert_called_once_with(
+            "f.yaml", dry_run=True, external_root=""
+        )
+
+
+class GenerateCreateSignatureTest(TestCase):
+    """generate_create must produce a signature that accepts `dry_run`.
+
+    Regression: without dry_run in create_func_signature, apply_func_impl's
+    `_self.create(_file, dry_run=_dry_run)` call raises
+    `TypeError: got an unexpected keyword argument 'dry_run'` at bind time.
+    The pre-existing ApplyFuncImplDryRunTest missed this because it mocked
+    `_self.create` (Mock auto-accepts any kwargs).
+    """
+
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.apply_dry_run_to_request")
+    @patch("michelangelo.cli.mactl.crd.ParseDict")
+    @patch("michelangelo.cli.mactl.crd.get_crd_namespace_and_name_from_yaml")
+    @patch("michelangelo.cli.mactl.crd.read_yaml_to_crd_request")
+    @patch.object(CRD, "_extract_method_info")
+    def test_crd_create_call_accepts_dry_run_kwarg(
+        self,
+        mock_extract,
+        mock_read,
+        mock_get_ns,
+        _parse,
+        mock_apply_dry,
+        mock_call,
+    ):
+        """`crd.create(file, dry_run=True)` must not TypeError at bind."""
+        mock_extract.return_value = ("CreateTestCrd", Mock, Mock)
+        mock_get_ns.return_value = ("ns", "name")
+        mock_read.return_value = Mock()
+        mock_call.return_value = Mock()
+
+        crd = CRD(name="test_crd", full_name="test.service.TestCrd", metadata=[])
+        crd.generate_create(Mock())
+        # Real bound-method call — goes through bind_signature. Would TypeError
+        # if create_func_signature didn't include the dry_run parameter.
+        crd.create("f.yaml", dry_run=True)
+
+        # dry_run reached the helper via bound_args.arguments
+        args = mock_apply_dry.call_args[0][2]
+        self.assertTrue(args["dry_run"])
+
+
+class NotFoundRpcError(RpcError):
+    """Test fixture: RpcError with NOT_FOUND status code."""
+
+    def code(self):  # noqa: D102
+        return StatusCode.NOT_FOUND
+
+    def details(self):  # noqa: D102
+        return "not found"
+
+
+class ApplyRootRecursiveTest(TestCase):
+    """``-r/--root`` and ``-R/--recursive`` framework wiring on apply."""
+
+    def _mk_info(self):
+        return CrdMethodInfo(
+            channel=Mock(),
+            crd_full_name="test.Service",
+            method_name="Apply",
+            input_class=Mock,
+            output_class=Mock,
+        )
+
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.get_crd_namespace_and_name_from_yaml")
+    def test_external_root_prepends_before_yaml_read(self, mock_get_ns: MagicMock, _):
+        """external_root is prepended to file before the yaml is read."""
+        mock_crd = Mock()
+        mock_crd.full_name = "test.Service"
+        mock_crd._get.return_value = Mock()
+        mock_crd.read_yaml_and_update_crd_request.return_value = Mock()
+        mock_get_ns.return_value = ("ns", "name")
+
+        apply_func_impl(
+            self._mk_info(),
+            Mock(
+                arguments={
+                    "self": mock_crd,
+                    "file": "sub/x.yaml",
+                    "external_root": "/root",
+                }
+            ),
+        )
+
+        called_path = mock_get_ns.call_args.args[0]
+        self.assertEqual(called_path, "/root/sub/x.yaml")
+
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.get_crd_namespace_and_name_from_yaml")
+    def test_recursive_walks_dir_sorted_and_applies_each(
+        self, mock_get_ns: MagicMock, mock_call: MagicMock
+    ):
+        """Recursive walks matching yamls sorted; one apply per file."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            for n in ["c.yaml", "a.yaml", "b.yaml"]:
+                (tmp / n).write_text(f"kind: Test\nmetadata:\n  name: {n}\n")
+
+            mock_crd = Mock()
+            mock_crd.name = "test"
+            mock_crd.full_name = "test.Service"
+            mock_crd._get.return_value = Mock()
+            mock_crd.read_yaml_and_update_crd_request.return_value = Mock()
+            mock_get_ns.side_effect = [("ns", "a"), ("ns", "b"), ("ns", "c")]
+
+            with patch("builtins.print") as mock_print:
+                apply_func_impl(
+                    self._mk_info(),
+                    Mock(
+                        arguments={
+                            "self": mock_crd,
+                            "file": str(tmp),
+                            "recursive": True,
+                        }
+                    ),
+                )
+
+            called_paths = [c.args[0] for c in mock_get_ns.call_args_list]
+            self.assertEqual(
+                [Path(p).name for p in called_paths], ["a.yaml", "b.yaml", "c.yaml"]
+            )
+            printed = [c.args[0] for c in mock_print.call_args_list]
+            self.assertIn("Successfully applied all 3 files in the directory", printed)
+
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.get_crd_namespace_and_name_from_yaml")
+    def test_recursive_continue_on_error_raises_aggregate(
+        self, mock_get_ns: MagicMock, _
+    ):
+        """One file failing does NOT abort the walk; aggregate error raised at end."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            for n in ["a.yaml", "b.yaml", "c.yaml"]:
+                (tmp / n).write_text(f"kind: Test\nmetadata:\n  name: {n}\n")
+
+            mock_crd = Mock()
+            mock_crd.name = "test"
+            mock_crd.full_name = "test.Service"
+            mock_crd._get.return_value = Mock()
+            mock_crd.read_yaml_and_update_crd_request.return_value = Mock()
+            mock_get_ns.side_effect = [
+                ("ns", "a"),
+                RuntimeError("bad b"),
+                ("ns", "c"),
+            ]
+
+            with self.assertRaisesRegex(
+                RuntimeError, r"apply failed on 1 of 3 files: .*b\.yaml"
+            ):
+                apply_func_impl(
+                    self._mk_info(),
+                    Mock(
+                        arguments={
+                            "self": mock_crd,
+                            "file": str(tmp),
+                            "recursive": True,
+                        }
+                    ),
+                )
+
+            # All three files were processed despite the middle one failing.
+            self.assertEqual(mock_get_ns.call_count, 3)
+
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.get_crd_namespace_and_name_from_yaml")
+    def test_create_when_missing_forwards_external_root(
+        self, mock_get_ns: MagicMock, _
+    ):
+        """Apply-create path forwards external_root to _self.create (SF-8)."""
+        mock_crd = Mock()
+        mock_crd.full_name = "test.Service"
+        mock_crd._get.side_effect = RpcError()
+        mock_crd._get.side_effect.code = lambda: StatusCode.NOT_FOUND
+        mock_get_ns.return_value = ("ns", "name")
+
+        apply_func_impl(
+            self._mk_info(),
+            Mock(
+                arguments={
+                    "self": mock_crd,
+                    "file": "x.yaml",
+                    "external_root": "/root",
+                }
+            ),
+        )
+
+        mock_crd.create.assert_called_once_with(
+            "/root/x.yaml", dry_run=False, external_root="/root"
+        )
+
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.read_yaml_to_crd_request")
+    def test_create_func_impl_resolves_external_root(self, mock_read_yaml, _):
+        """create_func_impl prepends external_root to the yaml path."""
+        mock_crd = Mock()
+        mock_crd.name = "test"
+        mock_crd.func_crd_metadata_converter = Mock()
+
+        create_func_impl(
+            CrdMethodInfo(
+                channel=Mock(),
+                crd_full_name="test.Service",
+                method_name="Create",
+                input_class=Mock,
+                output_class=Mock,
+            ),
+            Mock(
+                arguments={
+                    "self": mock_crd,
+                    "file": "x.yaml",
+                    "external_root": "/root",
+                }
+            ),
+        )
+
+        mock_read_yaml.assert_called_once()
+        called_path = mock_read_yaml.call_args.args[2]
+        self.assertEqual(called_path, "/root/x.yaml")
+
+
+class ResolveYamlPathTest(TestCase):
+    """Tests for ``resolve_yaml_path``."""
+
+    def test_no_root_returns_file_unchanged(self):
+        """Empty root leaves the file argument alone."""
+        self.assertEqual(resolve_yaml_path("pipeline.yaml", ""), "pipeline.yaml")
+
+    def test_root_prepended(self):
+        """Root is prepended when set."""
+        self.assertEqual(resolve_yaml_path("sub/x.yaml", "/root"), "/root/sub/x.yaml")
+
+    def test_trailing_slash_on_root_normalized(self):
+        """Trailing slash on root does not duplicate the separator."""
+        self.assertEqual(resolve_yaml_path("x.yaml", "/root/"), "/root/x.yaml")
+
+    def test_leading_slash_on_file_stripped(self):
+        """Leading slash on file does not confuse the join."""
+        self.assertEqual(resolve_yaml_path("/x.yaml", "/root"), "/root/x.yaml")
+
+    def test_idempotent_double_call(self):
+        """Calling resolve twice with the same root is a no-op (no double-prepend)."""
+        once = resolve_yaml_path("sub/y.yaml", "/root")
+        twice = resolve_yaml_path(once, "/root")
+        self.assertEqual(once, "/root/sub/y.yaml")
+        self.assertEqual(twice, once)
+
+    def test_absolute_file_already_under_root_unchanged(self):
+        """An absolute file already under root is returned unchanged."""
+        self.assertEqual(
+            resolve_yaml_path("/root/foo/y.yaml", "/root"), "/root/foo/y.yaml"
+        )
+
+
+class WalkCrdYamlsTest(TestCase):
+    """Tests for ``walk_crd_yamls``."""
+
+    def _write(self, dir: Path, name: str, kind: str) -> Path:
+        p = dir / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(f"kind: {kind}\nmetadata:\n  name: {p.stem}\n")
+        return p
+
+    def test_sorted_lexical_order(self):
+        """Walker yields matching yamls in lexical order (stable across runs)."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            for n in ["c.yaml", "b.yaml", "a.yaml"]:
+                self._write(tmp, n, "Pipeline")
+            got = [p.name for p in walk_crd_yamls(str(tmp), "Pipeline")]
+            self.assertEqual(got, ["a.yaml", "b.yaml", "c.yaml"])
+
+    def test_kind_filter_skips_mismatched(self):
+        """Yamls whose top-level ``kind:`` does not match are skipped."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            self._write(tmp, "p.yaml", "Pipeline")
+            self._write(tmp, "j.yaml", "Project")
+            got = [p.name for p in walk_crd_yamls(str(tmp), "Pipeline")]
+            self.assertEqual(got, ["p.yaml"])
+
+    def test_non_yaml_skipped(self):
+        """Files without a .yaml extension are skipped even if content matches."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            self._write(tmp, "p.yaml", "Pipeline")
+            (tmp / "notes.txt").write_text("kind: Pipeline\n")
+            got = [p.name for p in walk_crd_yamls(str(tmp), "Pipeline")]
+            self.assertEqual(got, ["p.yaml"])
+
+    def test_recursive_descent(self):
+        """Walker descends into subdirectories."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            self._write(tmp, "sub/deep/p.yaml", "Pipeline")
+            self._write(tmp, "top.yaml", "Pipeline")
+            got = [p.name for p in walk_crd_yamls(str(tmp), "Pipeline")]
+            self.assertEqual(set(got), {"top.yaml", "p.yaml"})
+
+    def test_symlink_cycle_not_followed(self):
+        """Symlink loops do not cause infinite descent."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            self._write(tmp, "p.yaml", "Pipeline")
+            (tmp / "loop").symlink_to(tmp)
+            got = [p.name for p in walk_crd_yamls(str(tmp), "Pipeline")]
+            self.assertEqual(got, ["p.yaml"])
+
+    def test_missing_directory_raises(self):
+        """A missing directory raises FileNotFoundError with the path."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = str(Path(tmp) / "nope")
+            with self.assertRaisesRegex(FileNotFoundError, "nope"):
+                list(walk_crd_yamls(missing, "Pipeline"))
+
+    def test_unparseable_yaml_skipped(self):
+        """Unparseable yaml is skipped, valid ones are still returned."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            (tmp / "bad.yaml").write_text("kind: :bad: yaml:\n  ][")
+            self._write(tmp, "good.yaml", "Pipeline")
+            got = [p.name for p in walk_crd_yamls(str(tmp), "Pipeline")]
+            self.assertEqual(got, ["good.yaml"])
+
 
 class BindSignatureTest(TestCase):
     """Test cases for bind_signature decorator."""
@@ -1042,3 +1549,566 @@ class GenerateListTest(TestCase):
         self.assertEqual(result, mock_response)
         request_dict = mock_parse_dict.call_args[0][0]
         self.assertEqual(request_dict["namespace"], "test-ns")
+
+
+class _FakeAny:
+    """Records the Pack() call for filter-criterion assertion."""
+
+    def __init__(self):
+        self.packed = None
+
+    def Pack(self, msg):  # noqa: N802 — mirrors proto Any.Pack
+        self.packed = msg
+
+
+class _RecordingCriterionList(list):
+    """Mimics repeated proto field: `add()` returns a fresh criterion object."""
+
+    def add(self):
+        c = SimpleNamespace(field_name="", operator=0, match_value=_FakeAny())
+        self.append(c)
+        return c
+
+
+def _recording_input_class():
+    """Build an input_class whose instance records criterion additions.
+
+    Bypasses proto so tests don't require the michelangelo.api IDL at import
+    time.
+    """
+
+    def _factory():
+        return SimpleNamespace(
+            list_options_ext=SimpleNamespace(
+                operation=SimpleNamespace(criterion=_RecordingCriterionList())
+            )
+        )
+
+    return _factory
+
+
+class AdditionalColumnsHookTest(TestCase):
+    """CRD.additional_columns extension surface."""
+
+    def test_prepare_column_info_appends_extra_columns(self):
+        """Extra columns append after built-ins with header-length max_length."""
+        extra = [{"column_name": "STATE", "retrieve_func": lambda i: "RUNNING"}]
+
+        result = prepare_column_info(extra=extra)
+
+        self.assertEqual(len(result), 4)
+        self.assertEqual(result[-1]["column_name"], "STATE")
+        self.assertEqual(result[-1]["max_length"], len("STATE") + 1)
+
+    def test_prepare_column_info_no_extra_matches_baseline(self):
+        """Default call (no extras) preserves the 3-column baseline."""
+        self.assertEqual(len(prepare_column_info()), 3)
+
+    def test_print_list_formatted_coerces_non_str(self):
+        """retrieve_func returning non-str renders without AttributeError.
+
+        A probe returning int would crash ``.ljust()`` — framework must
+        str()-coerce.
+        """
+        item = Mock()
+        item.metadata.namespace = "ns"
+        item.metadata.name = "n"
+        item.metadata.labels = {}
+        extra = [{"column_name": "COUNT", "retrieve_func": lambda i: 42}]
+
+        with patch("builtins.print") as mock_print:
+            print_list_formatted([item], extra_columns=extra)
+
+        # Body row (second print call) contains "42" from the int column.
+        body_call = mock_print.call_args_list[1]
+        self.assertIn("42", body_call.args[0])
+
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.ParseDict")
+    @patch.object(CRD, "_extract_method_info")
+    def test_list_func_impl_passes_additional_columns(
+        self, mock_extract_method_info, mock_parse_dict, mock_call
+    ):
+        """`list_func_impl` threads `_self.additional_columns` into render."""
+        mock_extract_method_info.return_value = ("ListTestCrd", Mock, Mock)
+        crd = CRD(name="test_crd", full_name="test.service.TestCrd", metadata=[])
+        crd.additional_columns = [
+            {"column_name": "OWNER", "retrieve_func": lambda i: "alice"}
+        ]
+        crd.generate_list(Mock())
+
+        mock_response = Mock()
+        mock_response.ListFields.return_value = [
+            (Mock(name="test_list"), Mock(items=[]))
+        ]
+        mock_call.return_value = mock_response
+
+        with patch("michelangelo.cli.mactl.crd._render_list_items") as mock_render:
+            list_func_impl(
+                CrdMethodInfo(
+                    channel=Mock(),
+                    crd_full_name="test.service.TestCrd",
+                    method_name="List",
+                    input_class=Mock,
+                    output_class=Mock,
+                ),
+                Mock(arguments={"self": crd, "namespace": "ns", "limit": 100}),
+            )
+
+        _, kwargs = mock_render.call_args
+        self.assertEqual(kwargs["extra_columns"], crd.additional_columns)
+
+
+class FilterFieldMapHookTest(TestCase):
+    """CRD.filter_field_map extension surface."""
+
+    def _method_info(self):
+        return CrdMethodInfo(
+            channel=Mock(),
+            crd_full_name="test.service.TestCrd",
+            method_name="List",
+            input_class=_recording_input_class(),
+            output_class=Mock,
+        )
+
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.ParseDict")
+    def test_filter_arg_present_appends_criterion(self, mock_parse_dict, mock_call):
+        """Non-empty filter value maps to a Criterion via Any(StringValue)."""
+        crd = SimpleNamespace(
+            additional_columns=[],
+            filter_field_map={"pipeline_name": "spec.pipeline_name"},
+        )
+        captured = {}
+
+        def _capture(_info, req):
+            captured["req"] = req
+            return Mock(ListFields=Mock(return_value=[]))
+
+        mock_call.side_effect = _capture
+
+        _list_func_impl(
+            self._method_info(),
+            Mock(
+                arguments={
+                    "self": crd,
+                    "namespace": "ns",
+                    "limit": 100,
+                    "pipeline_name": "trainer-v2",
+                }
+            ),
+        )
+
+        criteria = captured["req"].list_options_ext.operation.criterion
+        self.assertEqual(len(criteria), 1)
+        self.assertEqual(criteria[0].field_name, "spec.pipeline_name")
+        self.assertEqual(criteria[0].operator, 1)  # CRITERION_OPERATOR_EQUAL
+        self.assertEqual(criteria[0].match_value.packed.value, "trainer-v2")
+
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.ParseDict")
+    def test_filter_arg_empty_skips_criterion(self, mock_parse_dict, mock_call):
+        """Omitted / empty-string filter adds no criterion."""
+        crd = SimpleNamespace(
+            additional_columns=[],
+            filter_field_map={"pipeline_name": "spec.pipeline_name"},
+        )
+        captured = {}
+        mock_call.side_effect = lambda _i, req: (
+            captured.setdefault("req", req) or Mock(ListFields=Mock(return_value=[]))
+        )
+
+        _list_func_impl(
+            self._method_info(),
+            Mock(
+                arguments={
+                    "self": crd,
+                    "namespace": "ns",
+                    "limit": 100,
+                    "pipeline_name": "",
+                }
+            ),
+        )
+
+        self.assertEqual(len(captured["req"].list_options_ext.operation.criterion), 0)
+
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.ParseDict")
+    def test_no_filter_map_matches_baseline(self, mock_parse_dict, mock_call):
+        """CRDs that don't opt in emit zero criteria."""
+        crd = SimpleNamespace(additional_columns=[], filter_field_map={})
+        captured = {}
+        mock_call.side_effect = lambda _i, req: (
+            captured.setdefault("req", req) or Mock(ListFields=Mock(return_value=[]))
+        )
+
+        _list_func_impl(
+            self._method_info(),
+            Mock(arguments={"self": crd, "namespace": "ns", "limit": 100}),
+        )
+
+        self.assertEqual(len(captured["req"].list_options_ext.operation.criterion), 0)
+
+
+class ValidatedAdditionalGetArgsTest(TestCase):
+    """CRD._validated_additional_get_args guards plugin load-time errors."""
+
+    def _crd(self):
+        return CRD(name="test_crd", full_name="test.service.TestCrd", metadata=[])
+
+    def test_no_opt_in_returns_empty(self):
+        """CRD that doesn't opt in short-circuits to empty list."""
+        self.assertEqual(self._crd()._validated_additional_get_args(), [])
+
+    def test_dest_collision_with_builtin_raises(self):
+        """Dest shadowing a built-in `get` arg raises at parser wiring."""
+        crd = self._crd()
+        crd.additional_get_args = [
+            {
+                "func_signature": Parameter(
+                    "namespace", Parameter.POSITIONAL_OR_KEYWORD
+                ),
+                "args": ["--namespace"],
+                "kwargs": {"dest": "namespace", "type": str},
+            }
+        ]
+        with self.assertRaisesRegex(ValueError, "collides with built-in"):
+            crd._validated_additional_get_args()
+
+    def test_filter_map_unknown_dest_raises(self):
+        """filter_field_map dest with no matching arg entry raises."""
+        crd = self._crd()
+        crd.additional_get_args = [
+            {
+                "func_signature": Parameter("foo", Parameter.POSITIONAL_OR_KEYWORD),
+                "args": ["--foo"],
+                "kwargs": {"dest": "foo", "type": str},
+            }
+        ]
+        crd.filter_field_map = {"unknown_dest": "spec.foo"}
+        with self.assertRaisesRegex(ValueError, "unknown_dest"):
+            crd._validated_additional_get_args()
+
+    def test_valid_extras_pass_through(self):
+        """Well-formed extras validate and return the same list."""
+        crd = self._crd()
+        crd.additional_get_args = [
+            {
+                "func_signature": Parameter("foo", Parameter.POSITIONAL_OR_KEYWORD),
+                "args": ["--foo"],
+                "kwargs": {"dest": "foo", "type": str},
+            }
+        ]
+        crd.filter_field_map = {"foo": "spec.foo"}
+        self.assertEqual(crd._validated_additional_get_args(), crd.additional_get_args)
+
+
+class ReadSignaturesHookTest(TestCase):
+    """CRD._read_signatures folds additional_get_args into `get` signature."""
+
+    def test_get_signature_includes_additional_get_args(self):
+        """`_read_signatures("get")` adds extra params after built-ins."""
+        crd = CRD(name="test_crd", full_name="test.service.TestCrd", metadata=[])
+        crd.additional_get_args = [
+            {
+                "func_signature": Parameter(
+                    "pipeline_name",
+                    Parameter.POSITIONAL_OR_KEYWORD,
+                    default="",
+                ),
+                "args": ["--pipeline-name"],
+                "kwargs": {"dest": "pipeline_name", "type": str, "default": ""},
+            }
+        ]
+        sig = crd._read_signatures("get")
+        self.assertIn("pipeline_name", sig.parameters)
+
+    def test_non_get_signature_ignores_additional_get_args(self):
+        """`_read_signatures("apply")` does not fold in get-only extras."""
+        crd = CRD(name="test_crd", full_name="test.service.TestCrd", metadata=[])
+        crd.additional_get_args = [
+            {
+                "func_signature": Parameter(
+                    "pipeline_name",
+                    Parameter.POSITIONAL_OR_KEYWORD,
+                    default="",
+                ),
+                "args": ["--pipeline-name"],
+                "kwargs": {"dest": "pipeline_name", "type": str, "default": ""},
+            }
+        ]
+        sig = crd._read_signatures("apply")
+        self.assertNotIn("pipeline_name", sig.parameters)
+
+
+def _arg_spec(dest: str) -> dict:
+    """Minimal additional_get_args entry for `dest` — matches real-plugin shape."""
+    return {
+        "func_signature": Parameter(dest, Parameter.POSITIONAL_OR_KEYWORD),
+        "args": [f"--{dest.replace('_', '-')}"],
+        "kwargs": {"dest": dest, "type": str},
+    }
+
+
+class FilterEndToEndTest(TestCase):
+    """End-to-end: filter flows through generate_list → bind → _list_func_impl.
+
+    Regression against a class of bug where the impl-level logic works but
+    the wiring rejects the filter kwarg at bind_signature time. Direct
+    ``_list_func_impl(bound_args)`` tests hide this by hand-building
+    bound_args; this test goes through ``crd.list(...)`` bound-method call.
+    """
+
+    @patch.object(CRD, "_extract_method_info")
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.ParseDict")
+    def test_crd_list_call_accepts_filter_kwarg(self, _parse, mock_call, mock_extract):
+        """`crd.list(pipeline_name="x")` must not TypeError at bind."""
+        mock_extract.return_value = ("ListTestCrd", _recording_input_class(), Mock)
+        crd = CRD(name="test_crd", full_name="test.service.TestCrd", metadata=[])
+        crd.additional_get_args = [_arg_spec("pipeline_name")]
+        crd.filter_field_map = {"pipeline_name": "spec.pipeline_name"}
+        crd.additional_columns = ()
+
+        captured = {}
+
+        def _capture(_info, req):
+            captured["req"] = req
+            field_desc = Mock()
+            field_desc.name = "test_list"
+            return Mock(ListFields=Mock(return_value=[(field_desc, Mock(items=[]))]))
+
+        mock_call.side_effect = _capture
+
+        crd.generate_list(Mock())
+        # Real bound-method call — goes through bind_signature. Would TypeError
+        # if list_func_signature didn't include the filter dest.
+        crd.list(namespace="ns", pipeline_name="trainer-v2")
+
+        criteria = captured["req"].list_options_ext.operation.criterion
+        self.assertEqual(len(criteria), 1)
+        self.assertEqual(criteria[0].field_name, "spec.pipeline_name")
+
+    @patch.object(CRD, "_extract_method_info")
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.ParseDict")
+    def test_get_fallthrough_forwards_filter_to_list(
+        self, _parse, mock_call, mock_extract
+    ):
+        """`<crd> get -n <ns> --<attr> <val>` (no name) falls through to list.
+
+        The forwarded filter reaches ``_list_func_impl`` and becomes a criterion.
+        """
+        mock_extract.return_value = ("Op", _recording_input_class(), Mock)
+        crd = CRD(name="test_crd", full_name="test.service.TestCrd", metadata=[])
+        crd.additional_get_args = [_arg_spec("pipeline_name")]
+        crd.filter_field_map = {"pipeline_name": "spec.pipeline_name"}
+        crd.additional_columns = ()
+
+        captured = {}
+
+        def _capture(_info, req):
+            captured["req"] = req
+            field_desc = Mock()
+            field_desc.name = "test_list"
+            return Mock(ListFields=Mock(return_value=[(field_desc, Mock(items=[]))]))
+
+        mock_call.side_effect = _capture
+
+        info = CrdMethodInfo(
+            channel=Mock(),
+            crd_full_name="test.service.TestCrd",
+            method_name="Get",
+            input_class=_recording_input_class(),
+            output_class=Mock,
+        )
+        get_func_impl(
+            info,
+            Mock(
+                arguments={
+                    "self": crd,
+                    "namespace": "ns",
+                    "name": "",
+                    "name_flag": "",
+                    "all_namespaces": False,
+                    "output": "table",
+                    "limit": 100,
+                    "pipeline_name": "trainer-v2",
+                }
+            ),
+        )
+
+        criteria = captured["req"].list_options_ext.operation.criterion
+        self.assertEqual(len(criteria), 1)
+        self.assertEqual(criteria[0].field_name, "spec.pipeline_name")
+
+
+class FilterFieldMapDictSchemaTest(TestCase):
+    """filter_field_map value can be a dict for per-field operator override.
+
+    Backward compatibility: string values still default to CRITERION_OPERATOR_EQUAL.
+    New: dict values ``{"field": str, "operator": int}`` carry an explicit
+    operator (e.g. CRITERION_OPERATOR_LIKE = 9 for partial-match filters).
+    """
+
+    @patch.object(CRD, "_extract_method_info")
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.ParseDict")
+    def test_dict_form_carries_custom_operator(self, _parse, mock_call, mock_extract):
+        """Dict spec uses its declared operator (LIKE = 9), not the EQUAL default."""
+        mock_extract.return_value = ("Op", _recording_input_class(), Mock)
+        crd = CRD(name="test_crd", full_name="test.service.TestCrd", metadata=[])
+        crd.additional_get_args = [_arg_spec("revision")]
+        crd.filter_field_map = {
+            "revision": {"field": "spec.revision.name", "operator": 9},
+        }
+        crd.additional_columns = ()
+
+        captured = {}
+
+        def _capture(_info, req):
+            captured["req"] = req
+            field_desc = Mock()
+            field_desc.name = "test_list"
+            return Mock(ListFields=Mock(return_value=[(field_desc, Mock(items=[]))]))
+
+        mock_call.side_effect = _capture
+
+        crd.generate_list(Mock())
+        crd.list(namespace="ns", revision="abc")
+
+        criteria = captured["req"].list_options_ext.operation.criterion
+        self.assertEqual(len(criteria), 1)
+        self.assertEqual(criteria[0].field_name, "spec.revision.name")
+        self.assertEqual(criteria[0].operator, 9)
+
+    @patch.object(CRD, "_extract_method_info")
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.ParseDict")
+    def test_string_form_still_defaults_to_equal(self, _parse, mock_call, mock_extract):
+        """String spec continues to work — defaults operator to EQUAL = 1."""
+        mock_extract.return_value = ("Op", _recording_input_class(), Mock)
+        crd = CRD(name="test_crd", full_name="test.service.TestCrd", metadata=[])
+        crd.additional_get_args = [_arg_spec("pipeline_name")]
+        crd.filter_field_map = {"pipeline_name": "spec.pipeline_name"}
+        crd.additional_columns = ()
+
+        captured = {}
+
+        def _capture(_info, req):
+            captured["req"] = req
+            field_desc = Mock()
+            field_desc.name = "test_list"
+            return Mock(ListFields=Mock(return_value=[(field_desc, Mock(items=[]))]))
+
+        mock_call.side_effect = _capture
+
+        crd.generate_list(Mock())
+        crd.list(namespace="ns", pipeline_name="trainer-v2")
+
+        criteria = captured["req"].list_options_ext.operation.criterion
+        self.assertEqual(len(criteria), 1)
+        self.assertEqual(criteria[0].field_name, "spec.pipeline_name")
+        self.assertEqual(criteria[0].operator, 1)
+
+
+class FilterFieldMapCallableSchemaTest(TestCase):
+    """filter_field_map value can be a callable emitting a list of criteria.
+
+    Used when one flag maps to multiple criteria, or when several flags
+    coordinate (e.g. a mutually-exclusive group). The callable receives
+    ``bound_args.arguments`` and returns a list of ``{field, operator, value}``
+    dicts; the framework appends each one to the request.
+    """
+
+    @patch.object(CRD, "_extract_method_info")
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.ParseDict")
+    def test_callable_emits_multiple_criteria(self, _parse, mock_call, mock_extract):
+        """Callable returning 2 criteria appends both to the request."""
+        mock_extract.return_value = ("Op", _recording_input_class(), Mock)
+        crd = CRD(name="test_crd", full_name="test.service.TestCrd", metadata=[])
+
+        def builder(_args):
+            return [
+                {"field": "a.b", "operator": 1, "value": "x"},
+                {"field": "a.c", "operator": 9, "value": "y"},
+            ]
+
+        crd.filter_field_map = {"_group": builder}
+        crd.additional_columns = ()
+
+        captured = {}
+
+        def _capture(_info, req):
+            captured["req"] = req
+            field_desc = Mock()
+            field_desc.name = "test_list"
+            return Mock(ListFields=Mock(return_value=[(field_desc, Mock(items=[]))]))
+
+        mock_call.side_effect = _capture
+
+        crd.generate_list(Mock())
+        crd.list(namespace="ns")
+
+        criteria = captured["req"].list_options_ext.operation.criterion
+        self.assertEqual(len(criteria), 2)
+        self.assertEqual(criteria[0].field_name, "a.b")
+        self.assertEqual(criteria[0].operator, 1)
+        self.assertEqual(criteria[1].field_name, "a.c")
+        self.assertEqual(criteria[1].operator, 9)
+
+    @patch.object(CRD, "_extract_method_info")
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.ParseDict")
+    def test_callable_returning_empty_list_adds_no_criteria(
+        self, _parse, mock_call, mock_extract
+    ):
+        """Callable that returns [] cleanly skips adding criteria."""
+        mock_extract.return_value = ("Op", _recording_input_class(), Mock)
+        crd = CRD(name="test_crd", full_name="test.service.TestCrd", metadata=[])
+        crd.filter_field_map = {"_group": lambda _args: []}
+        crd.additional_columns = ()
+
+        captured = {}
+
+        def _capture(_info, req):
+            captured["req"] = req
+            field_desc = Mock()
+            field_desc.name = "test_list"
+            return Mock(ListFields=Mock(return_value=[(field_desc, Mock(items=[]))]))
+
+        mock_call.side_effect = _capture
+
+        crd.generate_list(Mock())
+        crd.list(namespace="ns")
+
+        self.assertEqual(len(captured["req"].list_options_ext.operation.criterion), 0)
+
+    @patch.object(CRD, "_extract_method_info")
+    @patch("michelangelo.cli.mactl.crd.crd_method_call")
+    @patch("michelangelo.cli.mactl.crd.ParseDict")
+    def test_callable_operator_defaults_to_equal(self, _parse, mock_call, mock_extract):
+        """Callable dict without explicit operator gets CRITERION_OPERATOR_EQUAL."""
+        mock_extract.return_value = ("Op", _recording_input_class(), Mock)
+        crd = CRD(name="test_crd", full_name="test.service.TestCrd", metadata=[])
+        crd.filter_field_map = {
+            "_group": lambda _args: [{"field": "a.b", "value": "x"}]
+        }
+        crd.additional_columns = ()
+
+        captured = {}
+
+        def _capture(_info, req):
+            captured["req"] = req
+            field_desc = Mock()
+            field_desc.name = "test_list"
+            return Mock(ListFields=Mock(return_value=[(field_desc, Mock(items=[]))]))
+
+        mock_call.side_effect = _capture
+
+        crd.generate_list(Mock())
+        crd.list(namespace="ns")
+
+        criteria = captured["req"].list_options_ext.operation.criterion
+        self.assertEqual(criteria[0].operator, 1)

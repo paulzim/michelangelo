@@ -1,5 +1,6 @@
 """Configuration management for mactl."""
 
+import json
 import sys
 from copy import deepcopy
 from logging import getLogger
@@ -35,6 +36,20 @@ DEFAULT_CONFIG = {
         "packages": [],
         "modules": {},
     },
+    # Import path for the generated ``pipeline_run_pb2`` module the pipeline_run
+    # plugin consults for the STATE enum name. Downstream distributions with
+    # a different generator layout can point this at their own module without
+    # patching the plugin source.
+    "pipeline_run_state_pb2_module": "michelangelo.gen.api.v2.pipeline_run_pb2",
+    # Label key the pipeline_run plugin reads for the ENVIRONMENT column.
+    # OSS apiserver writes ``pipelinerun.michelangelo/environment``; downstream
+    # distributions may use a different key.
+    "pipeline_run_environment_label": "pipelinerun.michelangelo/environment",
+    # Import path for the generated ``pipeline_pb2`` module the pipeline plugin
+    # consults for PipelineType enum names + values. Downstream distributions
+    # that extend the enum can point this at their own module without patching
+    # the pipeline plugin source.
+    "pipeline_type_pb2_module": "michelangelo.gen.api.v2.pipeline_pb2",
 }
 
 
@@ -141,3 +156,43 @@ def setup_minio_env() -> None:
     environ["AWS_ACCESS_KEY_ID"] = minio_config.get("access_key_id", "")
     environ["AWS_SECRET_ACCESS_KEY"] = minio_config.get("secret_access_key", "")
     environ["AWS_ENDPOINT_URL"] = minio_config.get("endpoint_url", "")
+
+
+# Retry transient UNAVAILABLE (only status gRPC marks safe to replay: server
+# didn't ack) and prefer round_robin so a multi-endpoint resolver rebalances
+# per-request; behaves like pick_first when the resolver returns one endpoint.
+DEFAULT_CHANNEL_OPTIONS: list[tuple[str, object]] = [
+    ("grpc.enable_retries", 1),
+    (
+        "grpc.service_config",
+        json.dumps(
+            {
+                "loadBalancingConfig": [{"round_robin": {}}],
+                "methodConfig": [
+                    {
+                        "name": [{}],
+                        "retryPolicy": {
+                            "maxAttempts": 4,
+                            "initialBackoff": "0.5s",
+                            "maxBackoff": "5s",
+                            "backoffMultiplier": 2,
+                            "retryableStatusCodes": ["UNAVAILABLE"],
+                        },
+                    }
+                ],
+            }
+        ),
+    ),
+]
+
+
+def get_channel_options() -> list[tuple[str, object]]:
+    """Return gRPC channel options applied by mactl's run() to every channel.
+
+    Extension point: downstream consumers (e.g. an internal wrapper
+    that needs a different retry budget, TLS knobs, or LB policy) can
+    override this function or reassign DEFAULT_CHANNEL_OPTIONS. mactl
+    calls this via the config module at channel-construction time, so
+    a runtime replacement takes effect on the next run().
+    """
+    return list(DEFAULT_CHANNEL_OPTIONS)

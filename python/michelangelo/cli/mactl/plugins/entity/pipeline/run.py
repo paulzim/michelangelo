@@ -15,6 +15,7 @@ from grpc import Channel
 import michelangelo.cli.mactl.crd as _crd_module
 from michelangelo.cli.mactl.crd import (
     CRD,
+    apply_dry_run_to_request,
     bind_signature,
     get_single_arg,
     inject_func_signature,
@@ -136,6 +137,25 @@ def add_function_signature(crd: CRD) -> None:
                         ),
                     },
                 },
+                {
+                    "func_signature": Parameter(
+                        "dry_run",
+                        Parameter.POSITIONAL_OR_KEYWORD,
+                        default=False,
+                    ),
+                    "args": ["--dry-run"],
+                    "kwargs": {
+                        "dest": "dry_run",
+                        "action": "store_true",
+                        "default": False,
+                        "help": (
+                            "Send the request with server-side dry-run "
+                            "(k8s.io CreateOptions.dryRun=['All']); server "
+                            "validates the pipeline + params bind then rolls "
+                            "back without launching a run."
+                        ),
+                    },
+                },
             ],
         },
     )
@@ -202,6 +222,7 @@ def generate_run(crd: CRD, channel: Channel, parser: Optional[ArgumentParser] = 
 
         request_input = input_class()
         ParseDict(pipeline_run_dict, request_input)
+        apply_dry_run_to_request(request_input, "create_options", bound_args.arguments)
 
         # Use auto-detected service name
         method_fullname = f"/{pipeline_run_service}/{method_name}"
