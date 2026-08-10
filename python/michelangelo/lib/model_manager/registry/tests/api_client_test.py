@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import grpc
 
 from michelangelo.gen.api.v2 import model_pb2
+from michelangelo.lib.model_manager.constants import ModelKind
 from michelangelo.lib.model_manager.registry.api_client import (
     _YARPC_METADATA,
     METADATA_ANNOTATION_KEY,
@@ -33,6 +34,7 @@ def _model(
     revision_id: int = 1,
     artifact_uri: str = "s3://bucket/raw/model.ubj",
     deployable_uri: str | None = None,
+    kind: model_pb2.ModelKind | None = None,
 ) -> model_pb2.Model:
     """Build a minimal Model proto that mimics a service response."""
     m = model_pb2.Model()
@@ -42,6 +44,8 @@ def _model(
     m.spec.model_artifact_uri.append(artifact_uri)
     if deployable_uri:
         m.spec.deployable_artifact_uri.append(deployable_uri)
+    if kind is not None:
+        m.spec.kind = kind
     return m
 
 
@@ -141,7 +145,7 @@ class TestAPIRegistryClientRegisterModel(TestCase):
         """
         svc = _mock_svc()
         long_value = (
-            "examples.pipelines.california_housing_lightning.model.TorchRegressionModel"
+            "com.example.models.california_housing.lightning.TorchRegressionModel"
         )
         self.assertGreater(len(long_value), 63)
         _client(svc).register_model(
@@ -209,6 +213,48 @@ class TestAPIRegistryClientRegisterModel(TestCase):
         _client(svc).register_model("m", "s3://b/raw")
         created_model = svc.create_model.call_args[0][0]
         self.assertEqual(len(created_model.spec.deployable_artifact_uri), 0)
+
+    def test_kind_set_on_model_proto(self):
+        """A recognized kind is mapped to its ModelKind proto enum value."""
+        svc = _mock_svc()
+        _client(svc).register_model("m", "s3://b/raw", kind=ModelKind.REGRESSION)
+        created_model = svc.create_model.call_args[0][0]
+        self.assertEqual(created_model.spec.kind, model_pb2.MODEL_KIND_REGRESSION)
+
+    def test_kind_none_defaults_to_custom(self):
+        """Omitting kind stores MODEL_KIND_CUSTOM, not MODEL_KIND_INVALID."""
+        svc = _mock_svc()
+        _client(svc).register_model("m", "s3://b/raw")
+        created_model = svc.create_model.call_args[0][0]
+        self.assertEqual(created_model.spec.kind, model_pb2.MODEL_KIND_CUSTOM)
+
+    def test_unrecognized_kind_defaults_to_custom(self):
+        """An unrecognized kind string also falls back to MODEL_KIND_CUSTOM."""
+        svc = _mock_svc()
+        _client(svc).register_model("m", "s3://b/raw", kind="not-a-real-kind")
+        created_model = svc.create_model.call_args[0][0]
+        self.assertEqual(created_model.spec.kind, model_pb2.MODEL_KIND_CUSTOM)
+
+    def test_kind_round_trips_onto_registered_model(self):
+        """The kind stored on the response proto is mapped back onto RegisteredModel."""
+        svc = _mock_svc(
+            create_return=_model("m", kind=model_pb2.MODEL_KIND_BINARY_CLASSIFICATION)
+        )
+        reg = _client(svc).register_model(
+            "m", "s3://b/raw", kind=ModelKind.BINARY_CLASSIFICATION
+        )
+        self.assertEqual(reg.kind, ModelKind.BINARY_CLASSIFICATION)
+
+    def test_llm_kind_set_on_model_proto(self):
+        """LLM-specific kinds map to their own proto enum values."""
+        svc = _mock_svc()
+        _client(svc).register_model(
+            "m", "s3://b/raw", kind=ModelKind.LLM_CHAT_COMPLETION
+        )
+        created_model = svc.create_model.call_args[0][0]
+        self.assertEqual(
+            created_model.spec.kind, model_pb2.MODEL_KIND_LLM_CHAT_COMPLETION
+        )
 
 
 # ---------------------------------------------------------------------------

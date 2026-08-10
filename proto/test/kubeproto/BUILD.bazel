@@ -1,6 +1,6 @@
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@rules_proto//proto:defs.bzl", "proto_library")
 
 # gazelle:go_proto_compilers //bazel/rules/proto:go_kubeproto,//bazel/rules/proto:go_validation,//bazel/rules/proto:go_kubeproto_unittest
 
@@ -12,6 +12,10 @@ proto_library(
         "groupversion_info_ut.proto",
         "indexing.proto",
         "project_ut.proto",
+        "test_base.proto",
+        "test_draft.proto",
+        "test_msg3.proto",
+        "test_wrapper.proto",
         "testobject.proto",
         "validation_ut.proto",
     ],

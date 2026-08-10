@@ -183,6 +183,21 @@ func (this *TestObjectSpec) Validate(prefix string) error {
 				return err
 			}
 		}
+		const (
+			durationMaxNanos   = 999999999
+			durationMinNanos   = -999999999
+			durationMaxSeconds = 315576000000
+			durationMinSeconds = -315576000000
+		)
+		if v.GetSeconds() < durationMinSeconds || v.GetSeconds() > durationMaxSeconds {
+			return status.Error(codes.InvalidArgument, prefix+n+" "+"seconds out of range")
+		}
+		if v.GetNanos() < durationMinNanos || v.GetNanos() > durationMaxNanos {
+			return status.Error(codes.InvalidArgument, prefix+n+" "+"nanos out of range")
+		}
+		if (v.GetSeconds() < 0 && v.GetNanos() > 0) || (v.GetSeconds() > 0 && v.GetNanos() < 0) {
+			return status.Error(codes.InvalidArgument, prefix+n+" "+"seconds and nanos must have the same sign")
+		}
 	}
 	{
 		v := this.GetMsg()
@@ -351,177 +366,6 @@ func (this *TestMsg2) Validate(prefix string) error {
 // RegisterTestMsg2ValidateExt registers an extension validation function
 func RegisterTestMsg2ValidateExt(f func(*TestMsg2, string) error) {
 	testMsg2ValidateExt = f
-}
-
-// testMsg3ValidateExt is an extension hook for additional validation logic
-var testMsg3ValidateExt func(*TestMsg3, string) error
-
-func (this *TestMsg3) Validate(prefix string) error {
-
-	{
-		v := this.GetTypeMeta()
-		n := `type_meta`
-		var i interface{}
-		if reflect.ValueOf(v).Kind() == reflect.Ptr {
-			i = reflect.ValueOf(v).Interface()
-			if reflect.ValueOf(v).IsNil() {
-				i = nil
-			}
-		} else {
-			i = reflect.ValueOf(&v).Interface()
-		}
-		validate, hasValidate := i.(interface{ Validate(string) error })
-		if hasValidate {
-			if err := validate.Validate(prefix + n + "."); err != nil {
-				return err
-			}
-		}
-	}
-	{
-		v := this.GetMetadata()
-		n := `metadata`
-		var i interface{}
-		if reflect.ValueOf(v).Kind() == reflect.Ptr {
-			i = reflect.ValueOf(v).Interface()
-			if reflect.ValueOf(v).IsNil() {
-				i = nil
-			}
-		} else {
-			i = reflect.ValueOf(&v).Interface()
-		}
-		validate, hasValidate := i.(interface{ Validate(string) error })
-		if hasValidate {
-			if err := validate.Validate(prefix + n + "."); err != nil {
-				return err
-			}
-		}
-	}
-	{
-		v := this.GetSpec()
-		n := `spec`
-		var i interface{}
-		if reflect.ValueOf(v).Kind() == reflect.Ptr {
-			i = reflect.ValueOf(v).Interface()
-			if reflect.ValueOf(v).IsNil() {
-				i = nil
-			}
-		} else {
-			i = reflect.ValueOf(&v).Interface()
-		}
-		validate, hasValidate := i.(interface{ Validate(string) error })
-		if hasValidate {
-			if err := validate.Validate(prefix + n + "."); err != nil {
-				return err
-			}
-		}
-	}
-	{
-		v := this.GetStatus()
-		n := `status`
-		var i interface{}
-		if reflect.ValueOf(v).Kind() == reflect.Ptr {
-			i = reflect.ValueOf(v).Interface()
-			if reflect.ValueOf(v).IsNil() {
-				i = nil
-			}
-		} else {
-			i = reflect.ValueOf(&v).Interface()
-		}
-		validate, hasValidate := i.(interface{ Validate(string) error })
-		if hasValidate {
-			if err := validate.Validate(prefix + n + "."); err != nil {
-				return err
-			}
-		}
-	}
-	// Call extension validation if registered
-	if testMsg3ValidateExt != nil {
-		if err := testMsg3ValidateExt(this, prefix); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// RegisterTestMsg3ValidateExt registers an extension validation function
-func RegisterTestMsg3ValidateExt(f func(*TestMsg3, string) error) {
-	testMsg3ValidateExt = f
-}
-
-// testMsg3SpecValidateExt is an extension hook for additional validation logic
-var testMsg3SpecValidateExt func(*TestMsg3Spec, string) error
-
-func (this *TestMsg3Spec) Validate(prefix string) error {
-
-	{
-		v := this.GetAny()
-		n := `any`
-		var i interface{}
-		if reflect.ValueOf(v).Kind() == reflect.Ptr {
-			i = reflect.ValueOf(v).Interface()
-			if reflect.ValueOf(v).IsNil() {
-				i = nil
-			}
-		} else {
-			i = reflect.ValueOf(&v).Interface()
-		}
-		validate, hasValidate := i.(interface{ Validate(string) error })
-		if hasValidate {
-			if err := validate.Validate(prefix + n + "."); err != nil {
-				return err
-			}
-		}
-	}
-	// Call extension validation if registered
-	if testMsg3SpecValidateExt != nil {
-		if err := testMsg3SpecValidateExt(this, prefix); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// RegisterTestMsg3SpecValidateExt registers an extension validation function
-func RegisterTestMsg3SpecValidateExt(f func(*TestMsg3Spec, string) error) {
-	testMsg3SpecValidateExt = f
-}
-
-// testMsg3StatusValidateExt is an extension hook for additional validation logic
-var testMsg3StatusValidateExt func(*TestMsg3Status, string) error
-
-func (this *TestMsg3Status) Validate(prefix string) error {
-
-	{
-		v := this.GetAny()
-		n := `any`
-		var i interface{}
-		if reflect.ValueOf(v).Kind() == reflect.Ptr {
-			i = reflect.ValueOf(v).Interface()
-			if reflect.ValueOf(v).IsNil() {
-				i = nil
-			}
-		} else {
-			i = reflect.ValueOf(&v).Interface()
-		}
-		validate, hasValidate := i.(interface{ Validate(string) error })
-		if hasValidate {
-			if err := validate.Validate(prefix + n + "."); err != nil {
-				return err
-			}
-		}
-	}
-	// Call extension validation if registered
-	if testMsg3StatusValidateExt != nil {
-		if err := testMsg3StatusValidateExt(this, prefix); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// RegisterTestMsg3StatusValidateExt registers an extension validation function
-func RegisterTestMsg3StatusValidateExt(f func(*TestMsg3Status, string) error) {
-	testMsg3StatusValidateExt = f
 }
 
 // paramsValidateExt is an extension hook for additional validation logic

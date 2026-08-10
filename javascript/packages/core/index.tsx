@@ -142,7 +142,7 @@ export { Form } from '#core/components/form/form';
 export { useForm } from '#core/components/form/hooks/use-form';
 export { useFormState } from '#core/components/form/hooks/use-form-state';
 export { useField } from '#core/components/form/hooks/use-field';
-export type { FormState } from '#core/components/form/types';
+export type { FormState } from '#core/components/form/types/form-types';
 export { FormControl } from '#core/components/form/components/form-control';
 export { FormErrorBanner } from '#core/components/form/components/form-error-banner/form-error-banner';
 export { FormDialog } from '#core/components/form/components/form-dialog/form-dialog';
@@ -172,6 +172,7 @@ export { ArrayFormRow } from '#core/components/form/layout/array-form-row/array-
 export { ArrayFormGroup } from '#core/components/form/layout/array-form-group/array-form-group';
 
 // Actions
+export { useSuccessOperations } from '#core/components/actions/use-success-operations';
 export * from '#core/components/actions/types';
 
 // Detail View

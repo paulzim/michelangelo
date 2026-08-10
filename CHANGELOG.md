@@ -2,7 +2,130 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.8.0] - 2026-08-10
+
+### ⚠ Breaking Changes
+
+- **python:** Add kind to ModelPusherPlugin (#1687) — add kind to ModelPusherPlugin (#1687)
+
+
+### Bug Fixes
+
+
+- **website:** Update footer copyright to "Michelangelo AI" (#1664)
+
+
+- **pusher:** Use the shared api.v2 name generator for auto-generated model names (#1633)
+
+
+- **ui:** Tighten spacing and fix stuck focus state on multi-string field (#1681)
+
+
+- **go:** Sync TriggerRun inputs to Temporal schedules (#1663)
+
+
+- **ci:** Widen Cadence worker-connect wait window to 5 min (#1686)
+
+
+- **docs:** Update stale routing source links in integrate-custom-backend (#1625)
+
+
+- **ui:** Stop ArrayFormGroup spacing from depending on parent layout (#1682)
+
+
+- **ci:** Fix Go and Python lint and test checks for fork PRs (#1609)
+
+
+- Cherry-pick #1762 (restore ColumnConfig.shape default) + bump to 0.8.0-rc.2 (#1763)
+
+
+### CI/CD
+
+
+- **python:** Run michelangelo-examples CLI e2e tests in integration-test workflow (#1665)
+
+
+### Documentation
+
+
+- Add MLOps glossary page (#1628)
+
+
+- Sync CHANGELOG.md [0.7.0] section to main (#1677)
+
+
+- **security:** Update supported versions for 0.7.x (#1680)
+
+
+- Add API service stubs for 10 undocumented proto services (#1587)
+
+
+- **serving:** Add DeleteXxxCollection to serving API table footnote (#1689)
+
+
+- Add Docs badge to README badge row (#1696)
+
+
+- Add Ask DeepWiki badge to README (#1630)
+
+
+- **pipelines:** Clarify architectural difference between remote-run and dev-run (#1697)
+
+
+- Update CHANGELOG.md for v0.8.0-rc.1 (#1719)
+
+
+- Update CHANGELOG.md for v0.8.0-rc.2 (#1764)
+
+
+### Features
+
+
+- **pipelinerun:** Add status reconstruction from workflow engine (#1297)
+
+
+- Add design-interview skill for structured UX design (#1676)
+
+
+- **native_transform:** Add structural/shape layers (PR B2) (#1603)
+
+
+- **trainer:** Re-introduce profiler subsystem (PR 5) (#1614)
+
+
+- **python:** Add kind to ModelPusherPlugin (#1687) [**BREAKING**]
+
+
+- **python:** Migrate tabular_assembler to OSS (#1430)
+
+
+- **trainer:** Pluggable MLflow profiler sink (#1702)
+
+
+### Miscellaneous
+
+
+- Merge back release/v0.7 to main (#1660)
+
+
+- Add content index annotation (#1501)
+
+
+- Add google.protobuf.Duration support to protoc-gen-validation (#1694)
+
+
+- Add LinksBox and MessageContainer components (#1701)
+
+
+- Remove dead internal tracker links from code comments (#1712)
+
+
+- Bump version to 0.8.0-rc.1 (#1717)
+
+
+- Promote v0.8.0 (version strip from 0.8.0-rc.2) (#1769)
+
+## [0.7.0] - 2026-08-03
 
 
 ### Bug Fixes
@@ -32,12 +155,10 @@ All notable changes to this project will be documented in this file.
 - **uniflow:** Propagate namespace to Ray cluster spec (#1605)
 
 
-
 ### CI/CD
 
 
 - **integration-test:** Trigger only from Nightly Build (#1613)
-
 
 
 ### Documentation
@@ -48,6 +169,8 @@ All notable changes to this project will be documented in this file.
 
 - Add missing libomp macOS prerequisite to getting-started guide (#1253)
 
+
+- Update CHANGELOG.md for v0.7.0-rc.1 (#1659)
 
 
 ### Features
@@ -83,7 +206,6 @@ All notable changes to this project will be documented in this file.
 - **core:** Set mutationKey on useStudioMutation for MutationCache integration (#1647)
 
 
-
 ### Miscellaneous
 
 
@@ -101,6 +223,8 @@ All notable changes to this project will be documented in this file.
 
 - Bump version to 0.7.0-rc.1 (#1657)
 
+
+- Release 0.7.0 (#1666)
 
 ## [0.6.0] - 2026-07-27
 
@@ -126,7 +250,6 @@ All notable changes to this project will be documented in this file.
 - **ci:** Changelog.yml CR_PAT token + stop full-history CHANGELOG.md regeneration (cherry-pick #1599) (#1602)
 
 
-
 ### Documentation
 
 
@@ -140,7 +263,6 @@ All notable changes to this project will be documented in this file.
 
 
 - Update CHANGELOG.md for v0.6.0-rc.1 (#1600)
-
 
 
 ### Features
@@ -162,7 +284,6 @@ All notable changes to this project will be documented in this file.
 
 
 - **native_transform:** Add foundation transform layers (PR B1) (#1570)
-
 
 
 ### Miscellaneous
@@ -193,7 +314,6 @@ All notable changes to this project will be documented in this file.
 
 
 - Release 0.6.0 (#1607)
-
 
 
 ### Refactoring

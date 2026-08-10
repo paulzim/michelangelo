@@ -16,6 +16,7 @@ Typical usage::
     registered = registry.register_model(
         name="my-classifier",
         artifact_uri="s3://bucket/models/my-classifier/abc123/raw/model.ubj",
+        kind=ModelKind.BINARY_CLASSIFICATION,
         labels={"framework": "xgboost"},
         metadata={"rmse": 0.87},
     )
@@ -47,6 +48,7 @@ from typing import TYPE_CHECKING, Any
 import grpc
 
 from michelangelo.gen.api.v2 import model_pb2
+from michelangelo.lib.model_manager.constants import ModelKind
 from michelangelo.lib.model_manager.registry.client import (
     ModelRegistryClient,
     RegisteredModel,
@@ -96,6 +98,28 @@ _MAX_REGISTER_RETRIES = 3
 
 _K8S_LABEL_VALUE_MAX_LENGTH = 63
 _K8S_LABEL_VALUE_RE = re.compile(r"^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$")
+
+_KIND_TO_PROTO = {
+    ModelKind.CUSTOM: model_pb2.MODEL_KIND_CUSTOM,
+    ModelKind.REGRESSION: model_pb2.MODEL_KIND_REGRESSION,
+    ModelKind.BINARY_CLASSIFICATION: model_pb2.MODEL_KIND_BINARY_CLASSIFICATION,
+    ModelKind.MULTICLASS_CLASSIFICATION: model_pb2.MODEL_KIND_MULTICLASS_CLASSIFICATION,
+    ModelKind.LLM_COMPLETION: model_pb2.MODEL_KIND_LLM_COMPLETION,
+    ModelKind.LLM_CHAT_COMPLETION: model_pb2.MODEL_KIND_LLM_CHAT_COMPLETION,
+    ModelKind.LLM_EMBEDDING: model_pb2.MODEL_KIND_LLM_EMBEDDING,
+}
+_PROTO_TO_KIND = {v: k for k, v in _KIND_TO_PROTO.items()}
+
+
+def _convert_model_kind(kind: str | None) -> model_pb2.ModelKind:
+    """Map a :class:`ModelKind` string to its proto enum value.
+
+    Unrecognized values (including ``None``) default to
+    ``MODEL_KIND_CUSTOM``, mirroring the internal SDK's ``convert_model_kind``.
+    """
+    if kind is None:
+        return model_pb2.MODEL_KIND_CUSTOM
+    return _KIND_TO_PROTO.get(kind, model_pb2.MODEL_KIND_CUSTOM)
 
 
 def _is_valid_k8s_label_value(value: str) -> bool:
@@ -152,12 +176,13 @@ class APIRegistryClient(ModelRegistryClient):
         client = APIClient(endpoint="apiserver:15566", caller="push-step")
         registry = APIRegistryClient(svc=client.ModelService, namespace="my-project")
         reg = registry.register_model(
-            name="california-housing-xgb",
-            artifact_uri="s3://bucket/models/california-housing-xgb/abc/raw/model.ubj",
-            labels={"framework": "xgboost"},
+            name="my-model",
+            artifact_uri="s3://bucket/models/my-model/abc/raw/model.pt",
+            kind=ModelKind.REGRESSION,
+            labels={"framework": "pytorch"},
             metadata={"validation-rmse": 0.876},
         )
-        print(reg.registry_uri)  # "models:/my-project/california-housing-xgb/1"
+        print(reg.registry_uri)  # "models:/my-project/my-model/1"
     """
 
     def __init__(
@@ -196,6 +221,7 @@ class APIRegistryClient(ModelRegistryClient):
         artifact_uri: str,
         deployable_artifact_uri: str | None = None,
         description: str | None = None,
+        kind: str | None = None,
         schema: dict[str, Any] | None = None,
         labels: Mapping[str, str] | None = None,
         metadata: Mapping[str, Any] | None = None,
@@ -207,6 +233,9 @@ class APIRegistryClient(ModelRegistryClient):
             artifact_uri: URI of the raw model artifact.
             deployable_artifact_uri: Optional URI of the serving-ready bundle.
             description: Optional human-readable description.
+            kind: One of the :class:`ModelKind` constants. Stored as
+                ``model.spec.kind``. Unrecognized values (including ``None``)
+                are stored as ``MODEL_KIND_CUSTOM``.
             schema: Ignored — ``ModelService`` has no dedicated schema field.
             labels: String key-value pairs stored in ``model.metadata.labels``.
             metadata: Arbitrary JSON-serializable key-value pairs stored under
@@ -226,6 +255,7 @@ class APIRegistryClient(ModelRegistryClient):
                 artifact_uri=artifact_uri,
                 deployable_artifact_uri=deployable_artifact_uri,
                 description=description,
+                kind=kind,
                 labels=labels,
                 metadata=metadata,
             )
@@ -299,6 +329,7 @@ class APIRegistryClient(ModelRegistryClient):
         artifact_uri: str,
         deployable_artifact_uri: str | None,
         description: str | None,
+        kind: str | None,
         labels: Mapping[str, str] | None,
         metadata: Mapping[str, Any] | None,
     ) -> model_pb2.Model:
@@ -311,6 +342,7 @@ class APIRegistryClient(ModelRegistryClient):
             model.spec.deployable_artifact_uri.append(deployable_artifact_uri)
         if description:
             model.spec.description = description
+        model.spec.kind = _convert_model_kind(kind)
 
         # Kubernetes label values are capped at 63 characters and restricted
         # to alphanumerics/dashes/underscores/dots. Callers built on top of
@@ -374,6 +406,7 @@ class APIRegistryClient(ModelRegistryClient):
             registry_uri=f"models:/{namespace}/{name}/{version}",
             artifact_uri=artifact_uri,
             deployable_artifact_uri=deployable_artifact_uri,
+            kind=_PROTO_TO_KIND.get(model.spec.kind),
             labels=labels,
             metadata=metadata,
         )
