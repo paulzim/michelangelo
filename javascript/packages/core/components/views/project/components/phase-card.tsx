@@ -5,6 +5,8 @@ import { Button, KIND, SHAPE, SIZE } from 'baseui/button';
 import { Box } from '#core/components/box/box';
 import { Icon } from '#core/components/icon/icon';
 import { Link } from '#core/components/link/link';
+import { TAG_COLOR, TAG_SIZE } from '#core/components/tag/constants';
+import { Tag } from '#core/components/tag/tag';
 import { capitalizeFirstLetter } from '#core/utils/string-utils';
 
 import type { PhaseConfig } from '#core/types/common/studio-types';
@@ -23,6 +25,11 @@ export function PhaseCard(props: PhaseConfig & { projectId: string }) {
         <div className={css({ display: 'flex', alignItems: 'center', gap: theme.sizing.scale400 })}>
           <Icon name={icon} size={theme.sizing.scale500} />
           {name}
+          {isComingSoon && (
+            <Tag color={TAG_COLOR.blue} size={TAG_SIZE.xSmall} closeable={false}>
+              Coming soon
+            </Tag>
+          )}
         </div>
       }
       description={
@@ -44,50 +51,36 @@ export function PhaseCard(props: PhaseConfig & { projectId: string }) {
         )
       }
     >
-      {isComingSoon ? (
-        <div
-          className={css({
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            flex: '1',
-            color: theme.colors.contentTertiary,
-          })}
-        >
-          Coming soon
-        </div>
-      ) : (
-        <div className={css({ display: 'flex', flexDirection: 'column' })}>
-          {entities.map((entity) => {
-            const isEntityDisabled = isPhaseDisabled || entity.state === 'disabled';
+      <div className={css({ display: 'flex', flexDirection: 'column' })}>
+        {entities.map((entity) => {
+          const isEntityDisabled = isPhaseDisabled || entity.state === 'disabled';
 
-            if (isEntityDisabled) {
-              return (
-                <span
-                  key={entity.id}
-                  className={css({
-                    ...theme.typography.ParagraphSmall,
-                    cursor: 'default',
-                    color: theme.colors.contentTertiary,
-                  })}
-                >
-                  {capitalizeFirstLetter(entity.name)}
-                </span>
-              );
-            }
-
+          if (isEntityDisabled) {
             return (
-              <Link
+              <span
                 key={entity.id}
-                href={`/${projectId}/${id}/${entity.id}`}
-                overrides={{ Link: { style: theme.typography.ParagraphSmall } }}
+                className={css({
+                  ...theme.typography.ParagraphSmall,
+                  cursor: 'default',
+                  color: theme.colors.contentTertiary,
+                })}
               >
                 {capitalizeFirstLetter(entity.name)}
-              </Link>
+              </span>
             );
-          })}
-        </div>
-      )}
+          }
+
+          return (
+            <Link
+              key={entity.id}
+              href={`/${projectId}/${id}/${entity.id}`}
+              overrides={{ Link: { style: theme.typography.ParagraphSmall } }}
+            >
+              {capitalizeFirstLetter(entity.name)}
+            </Link>
+          );
+        })}
+      </div>
 
       {entities.some((entity) => entity.state === 'active') && !isPhaseDisabled && (
         <Button

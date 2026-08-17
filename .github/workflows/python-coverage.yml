@@ -46,7 +46,7 @@ jobs:
           python-version: '3.9'
 
       - name: Install Poetry
-        uses: snok/install-poetry@v1
+        uses: snok/install-poetry@a783c322200f0519c7926aa6faa857c4e23e9263 # v1.4.2
         with:
           version: 1.8.0
           virtualenvs-create: true
@@ -79,6 +79,14 @@ jobs:
             --junitxml=junit.xml \
             -v
 
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: python/coverage.xml
+          flags: python
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
       # Generate coverage badge
       - name: Generate coverage badge
         run: |
@@ -89,7 +97,7 @@ jobs:
 
       # Comment on PR with detailed coverage report
       - name: Coverage comment
-        uses: py-cov-action/python-coverage-comment-action@v3
+        uses: py-cov-action/python-coverage-comment-action@50d15ff8768f6d897b04e5a0805bd1a98f7096c4 # v3
         with:
           GITHUB_TOKEN: ${{ github.token }}
           MINIMUM_GREEN: 90

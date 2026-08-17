@@ -83,7 +83,7 @@ func (handler *apiHandler) Create(ctx context.Context, obj ctrlRTClient.Object, 
 
 	objMeta, err := meta.Accessor(obj)
 	if err != nil {
-		return status.Errorf(codes.InvalidArgument, err.Error())
+		return status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	if metadataErr := handler.handleMetadataStorageForCreate(ctx, obj, objMeta); metadataErr != nil {
@@ -160,7 +160,7 @@ func (handler *apiHandler) Update(ctx context.Context, obj ctrlRTClient.Object, 
 
 	hasSpecChange, err := handler.hasSpecChange(ctx, obj)
 	if err != nil {
-		return status.Errorf(codes.InvalidArgument, err.Error())
+		return status.Error(codes.InvalidArgument, err.Error())
 	}
 	setUpdateTimestamp(obj, hasSpecChange)
 
@@ -185,6 +185,11 @@ func (handler *apiHandler) Update(ctx context.Context, obj ctrlRTClient.Object, 
 		if err != nil {
 			return surfaceGrpcError(err, "update", tmpObj.GetNamespace(), tmpObj.GetName())
 		}
+		// tmpObj is a deep copy, so the resource version metadata storage assigned lives
+		// only on the copy. Copy it onto the caller's object, which the generated service
+		// layer returns to the client as the response body.
+		obj.SetResourceVersion(tmpObj.GetResourceVersion())
+		return nil
 	}
 
 	return surfaceGrpcError(err, "update", tmpObj.GetNamespace(), tmpObj.GetName())
@@ -236,7 +241,7 @@ func (handler *apiHandler) Delete(ctx context.Context, obj ctrlRTClient.Object,
 
 	objMeta, err := meta.Accessor(obj)
 	if err != nil {
-		return status.Errorf(codes.InvalidArgument, err.Error())
+		return status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	dryRun, err := checkDryRun(opts.DryRun)
@@ -367,13 +372,13 @@ func (handler *apiHandler) DeleteCollection(
 	// List objects from metadata storage
 	gvk, err := ctrlRTApiutil.GVKForObject(objType, scheme.Scheme)
 	if err != nil {
-		return status.Errorf(codes.InvalidArgument, err.Error())
+		return status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	listGVK := gvk.GroupVersion().WithKind(gvk.Kind + "List")
 	newObj, err := scheme.Scheme.New(listGVK)
 	if err != nil {
-		return status.Errorf(codes.InvalidArgument, err.Error())
+		return status.Error(codes.InvalidArgument, err.Error())
 	}
 	listObj, ok := newObj.(ctrlRTClient.ObjectList)
 	if !ok {

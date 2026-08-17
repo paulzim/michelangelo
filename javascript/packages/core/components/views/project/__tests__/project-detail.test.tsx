@@ -45,6 +45,59 @@ describe('ProjectDetail', () => {
     expect(screen.getAllByText('fraud-detection')).not.toHaveLength(0);
   });
 
+  test('renders a source code link when gitRepo is set', async () => {
+    render(
+      <ProjectDetail phases={[]} />,
+      buildWrapper([
+        getBaseProviderWrapper(),
+        getErrorProviderWrapper(),
+        getIconProviderWrapper(),
+        getRouterWrapper({ location: '/fraud-detection' }),
+        getServiceProviderWrapper({
+          request: createQueryMockRouter({
+            GetProject: {
+              project: {
+                metadata: { name: 'fraud-detection' },
+                spec: {
+                  description: 'Detects fraudulent transactions',
+                  gitRepo: 'https://github.com/example-org/fraud-detection',
+                },
+              },
+            },
+          }),
+        }),
+      ])
+    );
+
+    const link = await screen.findByRole('link', { name: 'Link' });
+    expect(link).toHaveAttribute('href', 'https://github.com/example-org/fraud-detection');
+  });
+
+  test('omits the source code link when gitRepo is not set', async () => {
+    render(
+      <ProjectDetail phases={[]} />,
+      buildWrapper([
+        getBaseProviderWrapper(),
+        getErrorProviderWrapper(),
+        getIconProviderWrapper(),
+        getRouterWrapper({ location: '/fraud-detection' }),
+        getServiceProviderWrapper({
+          request: createQueryMockRouter({
+            GetProject: {
+              project: {
+                metadata: { name: 'fraud-detection' },
+                spec: { description: 'Detects fraudulent transactions' },
+              },
+            },
+          }),
+        }),
+      ])
+    );
+
+    await screen.findByText('Detects fraudulent transactions');
+    expect(screen.queryByText('Source Code')).not.toBeInTheDocument();
+  });
+
   test('renders all three phase cards with correct states', async () => {
     render(
       <ProjectDetail
@@ -139,7 +192,7 @@ describe('ProjectDetail', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
-  test('comingSoon phase shows message and suppresses entity list', async () => {
+  test('comingSoon phase shows a "Coming soon" badge and disables its entity list', async () => {
     render(
       <ProjectDetail
         phases={[
@@ -172,7 +225,8 @@ describe('ProjectDetail', () => {
     await screen.findByText('Deploy & Predict');
 
     expect(screen.getByText('Coming soon')).toBeInTheDocument();
-    expect(screen.queryByText('Endpoints')).not.toBeInTheDocument();
+    expect(screen.getByText('Endpoints')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Endpoints' })).not.toBeInTheDocument();
   });
 
   test('phase description and learn more button render when docUrl is set', async () => {

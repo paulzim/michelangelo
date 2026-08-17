@@ -13704,7 +13704,7 @@ test = ["big-O", "jaraco.functools", "jaraco.itertools", "jaraco.test", "more_it
 type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 
 [extras]
-dev = ["coverage", "docker", "jinja2", "numpy", "pandas", "polars", "pre-commit", "pyarrow", "pytest", "pytest-cov", "pytorch_lightning", "ray", "ray", "ruff", "torch", "transformers"]
+dev = ["coverage", "docker", "jinja2", "numpy", "pandas", "polars", "pre-commit", "pyarrow", "pytest", "pytest-cov", "pytorch_lightning", "ray", "ray", "ruff", "torch", "transformers", "xgboost"]
 example = ["accelerate", "boto3", "chronon-ai", "datasets", "einops", "kaggle", "minio", "mlflow", "numpy", "pandas", "peft", "pyarrow", "pyspark", "pytorch_lightning", "ray", "ray", "ray", "ray", "s3fs", "scikit-learn", "sqlglot", "thrift", "torch", "transformers", "xgboost", "xgboost_ray"]
 mactl = []
 minio = ["minio"]
@@ -13714,9 +13714,10 @@ trainer = ["numpy", "pytorch_lightning", "ray", "ray", "torch", "transformers"]
 trainer-comet = ["comet_ml"]
 trainer-deepspeed = ["deepspeed"]
 trainer-mlflow = ["mlflow"]
+trainer-xgboost = ["numpy", "pandas", "ray", "ray", "xgboost"]
 vllm = ["accelerate", "datasets", "einops", "numpy", "pandas", "pyarrow", "pytorch_lightning", "ray", "ray", "s3fs", "setuptools", "torch", "transformers", "vllm"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.0"
-content-hash = "c2ce18bb919f0d9d4a5ac617d49d3a6cd6d4ae9cb530a4dc8c86dd0b506c7e21"
+content-hash = "a07cd70bd3f413438ef9773dab9df67f176fadb71f3c61bca350bbacdcb7c578"

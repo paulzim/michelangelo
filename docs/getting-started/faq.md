@@ -115,7 +115,8 @@ A: Multiple approaches:
 A: Automatically:
 - Online inference autoscales based on request volume
 - Batch jobs use spot instances for cost savings
-- Ray clusters elastically scale workers based on workload
+
+Ray clusters run at a fixed worker count today. A cluster resource can declare a min/max range, but the in-tree autoscaler isn't enabled yet, so the cluster stays at its minimum size for the life of the job.
 
 **Q: What if my dataset doesn't fit in memory?**
 

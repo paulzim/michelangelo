@@ -65,6 +65,3 @@ annotations:
   artifacthub.io/maintainers: |
     - name: Michelangelo Maintainers
       email: maintainers@michelangelo-ai.org
-  artifacthub.io/signKey: |
-    fingerprint: 0000000000000000000000000000000000000000
-    url: https://github.com/michelangelo-ai/michelangelo/releases

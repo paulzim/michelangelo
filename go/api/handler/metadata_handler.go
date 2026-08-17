@@ -129,8 +129,9 @@ func handleDelete(ctx context.Context, log logr.Logger, typeMeta *metav1.TypeMet
 		if getErr == nil {
 			// Failed to delete in blob storage is not a critical failure, as orphan blobs can be deleted by garbage
 			// collector. So, do not return error.
-			err := handler.DeleteFromBlobStorage(ctx, object)
-			log.Error(err, "Failed to delete object in blob storage", "uid", object.GetUID())
+			if err := handler.DeleteFromBlobStorage(ctx, object); err != nil {
+				log.Error(err, "Failed to delete object in blob storage", "uid", object.GetUID())
+			}
 		}
 
 		return nil

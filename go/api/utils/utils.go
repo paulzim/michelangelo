@@ -21,7 +21,7 @@ import (
 func GetObjectTypeMetaFromList(list runtime.Object, scheme *runtime.Scheme) (*metav1.TypeMeta, error) {
 	listGVK, err := apiutil.GVKForObject(list, scheme)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	kindLen := len(listGVK.Kind)
@@ -43,7 +43,7 @@ func GetObjectTypeMetafromObject(obj runtime.Object, scheme *runtime.Scheme) (*m
 	gvk, err := apiutil.GVKForObject(obj, scheme)
 
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	typeMeta.SetGroupVersionKind(gvk)

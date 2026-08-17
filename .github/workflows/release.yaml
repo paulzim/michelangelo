@@ -64,9 +64,10 @@ jobs:
       #----------------------------------------------
       #  Upload the wheel file to the release
       #----------------------------------------------
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ github.ref_name }}
+          prerelease: ${{ contains(github.ref_name, '-rc') }}
           files: python/dist/*.whl
 
   build-go-binaries:
@@ -122,9 +123,10 @@ jobs:
           sha256sum ./* > checksums-sha256.txt
 
       - name: Attach binaries and checksums to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ github.ref_name }}
+          prerelease: ${{ contains(github.ref_name, '-rc') }}
           files: binaries/*
 
   helm-publish:
@@ -175,7 +177,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Notify Slack on failure
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@37ebaef184d7626c5f204ab8d3baff4262dd30f0 # v1.27.0
         with:
           channel-id: 'C0BER0RCQ8P'
           slack-message: |

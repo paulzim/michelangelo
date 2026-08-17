@@ -1,9 +1,11 @@
 import { ActionHierarchy } from '#core/components/actions/types';
+import { interpolate } from '#core/interpolation/interpolate';
 import { CreatePipelineRunForm } from './create-pipeline-run-form';
 import { PIPELINE_DETAIL_CONFIG } from './detail';
 import { PIPELINE_LIST_CONFIG } from './list';
 
 import type { PhaseEntityConfig } from '#core/types/common/studio-types';
+import type { Pipeline } from './types';
 
 export const PIPELINE_ENTITY_CONFIG: PhaseEntityConfig = {
   id: 'pipelines',
@@ -16,6 +18,32 @@ export const PIPELINE_ENTITY_CONFIG: PhaseEntityConfig = {
       display: { label: 'Run', icon: 'playerPlay' },
       hierarchy: ActionHierarchy.PRIMARY,
       modal: { type: 'custom', component: CreatePipelineRunForm },
+    },
+    {
+      display: { label: 'Delete', icon: 'trashCan' },
+      hierarchy: ActionHierarchy.TERTIARY,
+      operation: {
+        type: 'mutation',
+        mutation: {
+          mutationName: 'DeletePipeline',
+          successOperations: [
+            { type: 'invalidate', targets: ['ListPipeline'] },
+            { type: 'route', route: '/${studio.projectId}/${studio.phase}/pipelines' },
+          ],
+        },
+      },
+      modal: {
+        type: 'confirm',
+        header: { title: 'Delete Pipeline' },
+        body: interpolate(
+          ({ data }) =>
+            // cast: data is unknown from interpolation context; always Pipeline in this entity
+            // config; see #1425
+            `Delete pipeline **${(data as Pipeline).metadata.name}**? This action cannot be undone.`
+        ),
+        button: { label: 'Delete' },
+        destructive: true,
+      },
     },
   ],
 };

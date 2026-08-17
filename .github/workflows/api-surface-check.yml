@@ -20,7 +20,7 @@ jobs:
       helm: ${{ steps.filter.outputs.helm }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
         id: filter
         with:
           filters: |
@@ -62,7 +62,7 @@ jobs:
           cache-dependency-path: head/go/go.sum
 
       - name: Install go-apidiff
-        run: go install golang.org/x/exp/cmd/apidiff@latest
+        run: go install golang.org/x/exp/cmd/apidiff@v0.0.0-20260209203927-2842357ff358
 
       - name: Export base API
         working-directory: base/go
