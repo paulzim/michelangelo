@@ -473,6 +473,66 @@ controllermgr:
   resources: {}
 
 # -----------------------------------------------------------------------------
+# Optional monitoring resources. Everything here is CRD-gated: resources are
+# only rendered when the owning operator's CRDs are installed in the cluster,
+# so enabling the toggle on a cluster without the Prometheus Operator is a
+# safe no-op.
+# -----------------------------------------------------------------------------
+monitoring:
+  # Master toggle for chart-managed monitoring resources.
+  enabled: false
+
+  serviceMonitor:
+    # Scrape the controller manager's /metrics endpoint (port
+    # controllermgr.metricsPort). Requires the Prometheus Operator CRDs
+    # (monitoring.coreos.com/v1); skipped when they are absent.
+    enabled: true
+
+    # Scrape interval.
+    interval: 30s
+
+    # Extra labels for the ServiceMonitor, e.g. to match a Prometheus
+    # instance's serviceMonitorSelector.
+    additionalLabels: {}
+
+  prometheusRule:
+    # Create a PrometheusRule with starter alerts for pipeline-run failures,
+    # long-running pipeline runs, controller reconcile errors, and cascade
+    # delete drain timeouts. All default alerts fire on metrics the
+    # controller manager exposes out of the box. Requires the Prometheus
+    # Operator CRDs (monitoring.coreos.com/v1); skipped when they are absent.
+    enabled: true
+
+    # Extra labels for the PrometheusRule, e.g. to match a Prometheus
+    # instance's ruleSelector.
+    additionalLabels: {}
+
+    envoyAlerts:
+      # Add inference latency/error-rate alerts on Envoy upstream metrics.
+      # Off by default because the Envoy admin interface (which exposes
+      # those metrics) is not enabled by the chart — enable it and add a
+      # scrape job first, or these alerts can never fire. See
+      # docs/operator-guides/operations/monitoring.md.
+      enabled: false
+
+  grafanaDashboards:
+    # Create GrafanaDashboard CRs (control-plane and pipeline-run views)
+    # for the Grafana Operator (https://github.com/grafana/grafana-operator).
+    # Every panel queries metrics the controller manager exposes out of the
+    # box. Requires the Grafana Operator CRDs (grafana.integreatly.org/v1beta1);
+    # skipped when they are absent.
+    enabled: true
+
+    # How often the operator re-applies the dashboards to Grafana.
+    resyncPeriod: 10m
+
+    # Label selector matching the Grafana CR(s) the dashboards should be
+    # installed into. Must match labels you set on your Grafana instance.
+    instanceSelector:
+      matchLabels:
+        dashboards: grafana
+
+# -----------------------------------------------------------------------------
 # ServiceAccount used by every chart-managed Pod.
 # -----------------------------------------------------------------------------
 serviceAccount:
