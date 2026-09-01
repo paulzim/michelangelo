@@ -150,11 +150,18 @@ apiserver:
     qps: 300
     burst: 600
 
-  # Apiserver-specific config knobs. 
+  # Apiserver-specific config knobs.
   metadataStorage:
     enable: false
   crdSync:
     enableUpdate: true
+
+  # Default values applied when creating PipelineRun/Model objects that don't
+  # set them explicitly. Empty (the default) means the apiserver falls back to
+  # its own write-time sentinel ("unspecified") rather than a guessed real
+  # environment — see helm/michelangelo/README.md#values-reference.
+  pipelineRunDefaults:
+    environment: ""
 
   # Resource requests and limits. Override per-service if you need different
   # allocations than the global `resources` block below.
@@ -353,6 +360,24 @@ notification:
   senderEmail: ""
 
 # -----------------------------------------------------------------------------
+# inferenceServer — settings the InferenceServer controller needs to publish
+# and route traffic to inference servers.
+# -----------------------------------------------------------------------------
+inferenceServer:
+  gateway:
+    # name is the Gateway resource that HTTPRoutes attach to via parentRefs.
+    name: ma-gateway
+
+    # Istio's Gateway controller materializes a Service named '<gateway>-istio'
+    # for each Gateway resource. The endpoint provider reads this Service's
+    # NodePort and a node InternalIP to publish per-cluster EndpointSlices.
+    # Leaving serviceName empty makes endpoint publishing fail with
+    # "resource name may not be empty".
+    serviceName: ma-gateway-istio
+    serviceNamespace: default
+    portName: http
+
+# -----------------------------------------------------------------------------
 # controllermgr — Kubernetes controller manager for Michelangelo CRDs.
 # -----------------------------------------------------------------------------
 controllermgr:
@@ -444,21 +469,6 @@ controllermgr:
           # Empty string disables log_url emission.
           # Example (sandbox MinIO console): "http://localhost:9090/browser/{{.Bucket}}/{{.PathPrefix}}/{{.ClusterName}}_{{.RayLocalNamespace}}/"
           logURLFormat: ""
-
-  # Inference serving Gateway API details. The InferenceServer controller's
-  # EndpointPublish step reads the Istio-materialized Service for this Gateway
-  # (named '<gateway>-istio') to publish per-cluster EndpointSlices.
-  inferenceServer:
-    gateway:
-      # Name of the k8s Gateway resource that HTTPRoutes attach to via parentRefs.
-      name: ma-gateway
-
-      # Istio's Gateway controller materializes a Service named '<gateway>-istio'
-      # for each Gateway resource; the IS controller reads its NodePort + node
-      # InternalIP to publish per-cluster EndpointSlices in the control plane.
-      serviceName: ma-gateway-istio
-      serviceNamespace: default
-      portName: http
 
   resources: {}
 

@@ -2,6 +2,7 @@
 [![License](https://img.shields.io/github/license/michelangelo-ai/michelangelo)](http://www.apache.org/licenses/LICENSE-2.0)
 [![codecov](https://codecov.io/gh/michelangelo-ai/michelangelo/graph/badge.svg?token=HKJDT0I6CW)](https://codecov.io/gh/michelangelo-ai/michelangelo)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11481/badge)](https://www.bestpractices.dev/projects/11481)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/michelangelo-ai/michelangelo/badge)](https://scorecard.dev/viewer/?uri=github.com/michelangelo-ai/michelangelo)
 [![Docs](https://img.shields.io/badge/docs-michelangelo--ai.org-blue)](https://michelangelo-ai.org)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/michelangelo-ai/michelangelo)
 
@@ -47,6 +48,9 @@ cd michelangelo/python
 poetry install
 source .venv/bin/activate
 
+# Build the local-only images the sandbox needs
+cd .. && bash scripts/kuberay/build-kuberay-images.sh
+
 # Spin up a local sandbox cluster
 ma sandbox create
 
@@ -68,6 +72,8 @@ def train(learning_rate: float = 0.01) -> str:
 def my_pipeline(learning_rate: float = 0.01):
     model = train(learning_rate=learning_rate)
 ```
+
+See the [Sandbox Setup](https://michelangelo-ai.org/docs/getting-started/sandbox-setup/) guide for prerequisites (including `docker buildx`) and platform-specific notes before running the above.
 
 For a full walkthrough, see the [Getting Started with ML Pipelines](https://michelangelo-ai.org/docs/user-guides/getting-started/getting-started) guide.
 

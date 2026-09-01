@@ -91,7 +91,7 @@ data:
             {{- end }}
     {{- end }}
 
-    {{- $gateway := dig "inferenceServer" "gateway" dict .Values.controllermgr }}
+    {{- $gateway := dig "gateway" dict .Values.inferenceServer }}
     inferenceServer:
       gateway:
         name: {{ $gateway.name | default "ma-gateway" | quote }}

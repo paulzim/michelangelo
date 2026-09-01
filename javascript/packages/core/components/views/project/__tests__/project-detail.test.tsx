@@ -45,6 +45,68 @@ describe('ProjectDetail', () => {
     expect(screen.getAllByText('fraud-detection')).not.toHaveLength(0);
   });
 
+  test('resolves the Owner field to a linked display name via a registered team resolver', async () => {
+    const resolveTeams = vi.fn().mockResolvedValue({
+      'uuid-1': { id: 'uuid-1', displayName: 'Michelangelo', url: 'https://example.com/team' },
+    });
+
+    render(
+      <ProjectDetail phases={[]} />,
+      buildWrapper([
+        getBaseProviderWrapper(),
+        getErrorProviderWrapper(),
+        getIconProviderWrapper(),
+        getRouterWrapper({ location: '/fraud-detection' }),
+        getServiceProviderWrapper({
+          request: createQueryMockRouter({
+            GetProject: {
+              project: {
+                metadata: { name: 'fraud-detection' },
+                spec: {
+                  description: 'Detects fraudulent transactions',
+                  owner: { owningTeam: 'uuid-1' },
+                },
+              },
+            },
+          }),
+          resolvers: { team: resolveTeams },
+        }),
+      ])
+    );
+
+    const link = await screen.findByRole('link', { name: 'Michelangelo' });
+    expect(link).toHaveAttribute('href', 'https://example.com/team');
+    expect(resolveTeams).toHaveBeenCalledWith(['uuid-1']);
+  });
+
+  test('falls back to the raw owningTeam UUID as plain text when unenriched', async () => {
+    render(
+      <ProjectDetail phases={[]} />,
+      buildWrapper([
+        getBaseProviderWrapper(),
+        getErrorProviderWrapper(),
+        getIconProviderWrapper(),
+        getRouterWrapper({ location: '/fraud-detection' }),
+        getServiceProviderWrapper({
+          request: createQueryMockRouter({
+            GetProject: {
+              project: {
+                metadata: { name: 'fraud-detection' },
+                spec: {
+                  description: 'Detects fraudulent transactions',
+                  owner: { owningTeam: 'uuid-1' },
+                },
+              },
+            },
+          }),
+        }),
+      ])
+    );
+
+    expect(await screen.findByText('uuid-1')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'uuid-1' })).not.toBeInTheDocument();
+  });
+
   test('renders a source code link when gitRepo is set', async () => {
     render(
       <ProjectDetail phases={[]} />,
@@ -139,7 +201,7 @@ describe('ProjectDetail', () => {
     expect(screen.getByText('Train & Evaluate')).toBeInTheDocument();
     expect(screen.getByText('Deploy & Predict')).toBeInTheDocument();
 
-    expect(screen.getByRole('link', { name: 'Pipelines' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'pipelines' })).toHaveAttribute(
       'href',
       '/fraud-detection/train/pipelines'
     );
@@ -182,13 +244,13 @@ describe('ProjectDetail', () => {
 
     await screen.findByText('Prepare & Analyze Data');
 
-    expect(screen.getByText('Pipelines')).toBeInTheDocument();
-    expect(screen.getByText('Pipeline runs')).toBeInTheDocument();
-    expect(screen.getByText('Data sources')).toBeInTheDocument();
+    expect(screen.getByText('pipelines')).toBeInTheDocument();
+    expect(screen.getByText('pipeline runs')).toBeInTheDocument();
+    expect(screen.getByText('data sources')).toBeInTheDocument();
 
-    expect(screen.queryByRole('link', { name: 'Pipelines' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Pipeline runs' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Data sources' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'pipelines' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'pipeline runs' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'data sources' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
@@ -225,8 +287,8 @@ describe('ProjectDetail', () => {
     await screen.findByText('Deploy & Predict');
 
     expect(screen.getByText('Coming soon')).toBeInTheDocument();
-    expect(screen.getByText('Endpoints')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Endpoints' })).not.toBeInTheDocument();
+    expect(screen.getByText('endpoints')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'endpoints' })).not.toBeInTheDocument();
   });
 
   test('phase description and learn more button render when docUrl is set', async () => {
@@ -302,10 +364,10 @@ describe('ProjectDetail', () => {
       );
 
       const links: [string, string][] = [
-        ['Pipelines', '/fraud-detection/train/pipelines'],
-        ['Pipeline runs', '/fraud-detection/train/runs'],
-        ['Triggers', '/fraud-detection/train/triggers'],
-        ['Trained models', '/fraud-detection/train/models'],
+        ['pipelines', '/fraud-detection/train/pipelines'],
+        ['pipeline runs', '/fraud-detection/train/runs'],
+        ['triggers', '/fraud-detection/train/triggers'],
+        ['trained models', '/fraud-detection/train/models'],
       ];
 
       for (const [name, href] of links) {
@@ -313,10 +375,10 @@ describe('ProjectDetail', () => {
         expect(link).toHaveAttribute('href', href);
       }
 
-      expect(screen.getByText('Evaluations')).toBeInTheDocument();
-      expect(screen.getByText('Notebooks')).toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: 'Evaluations' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: 'Notebooks' })).not.toBeInTheDocument();
+      expect(screen.getByText('evaluations')).toBeInTheDocument();
+      expect(screen.getByText('notebooks')).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'evaluations' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'notebooks' })).not.toBeInTheDocument();
     });
 
     test('navigate button goes to first active entity', async () => {

@@ -1,4 +1,4 @@
-import type { ActionConfigSchema } from '#core/components/actions/types';
+import type { ActionConfigSchema, CreateActionConfig } from '#core/components/actions/types';
 import type { ViewConfig } from '#core/components/views/types';
 import type { QueryConfig } from '#core/types/query-types';
 
@@ -108,6 +108,11 @@ export interface PhaseEntityConfig<T extends object = object> {
    * Rendered in table rows for list views.
    */
   actions?: ActionConfigSchema<T>[];
+  /**
+   * Optional page-level action to create a new record for this entity.
+   * Rendered as a button in the phase header when this entity's tab is active.
+   */
+  createAction?: CreateActionConfig;
 }
 
 /**
@@ -134,6 +139,12 @@ export interface PhaseConfig {
   state: PhaseState;
   /** List of entities (like pipelines, models) that belong to this phase */
   entities: PhaseEntityConfig[];
+  /**
+   * Restricts this phase's pipeline-derived entities (pipelines, runs, triggers) to
+   * these pipeline type values (e.g. `['PIPELINE_TYPE_TRAIN', 'PIPELINE_TYPE_EVAL']`).
+   * Omit to show all pipeline types.
+   */
+  pipelineTypes?: string[];
 }
 
 /**

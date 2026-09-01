@@ -74,8 +74,8 @@ rules:
     resources: ["httproutes"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
-  # InferenceServer controller's EndpointPublish step manages EndpointSlices
-  # directly for serving traffic
+  # EndpointSlices — the InferenceServer endpoint publisher materializes one
+  # selector-less Service plus a per-cluster EndpointSlice for cross-cluster discovery
   - apiGroups: ["discovery.k8s.io"]
     resources: ["endpointslices"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
