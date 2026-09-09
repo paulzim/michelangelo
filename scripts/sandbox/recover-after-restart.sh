@@ -222,7 +222,10 @@ done
 # entirely: pull by exact platform digest via the Mac's host Docker daemon
 # (gotcha #26), tag back to the original ref, and `k3d image import` it.
 log "Step 5/10: checking for ghcr.io images stuck in ImagePullBackOff/ErrImagePull"
-mapfile -t bad_pods < <(kubectl get pods --all-namespaces --no-headers 2>/dev/null \
+bad_pods=()
+while IFS= read -r line; do
+  [ -n "$line" ] && bad_pods+=("$line")
+done < <(kubectl get pods --all-namespaces --no-headers 2>/dev/null \
   | awk '$4 ~ /ImagePullBackOff|ErrImagePull/ {print $1"/"$2}')
 if [ "${#bad_pods[@]}" -eq 0 ]; then
   log "  none found — skipping."
@@ -241,7 +244,11 @@ else
       2>/dev/null)
   done
   if [ "${#images_to_fix[@]}" -gt 0 ]; then
-    mapfile -t images_to_fix < <(printf '%s\n' "${images_to_fix[@]}" | sort -u)
+    sorted_images=()
+    while IFS= read -r line; do
+      [ -n "$line" ] && sorted_images+=("$line")
+    done < <(printf '%s\n' "${images_to_fix[@]}" | sort -u)
+    images_to_fix=("${sorted_images[@]}")
   fi
   if [ "${#images_to_fix[@]}" -eq 0 ]; then
     log "  stuck pods found but none reference ghcr.io — not an auto-fixable case here, leaving as-is."
@@ -338,7 +345,10 @@ kubectl delete pod -n "$NAMESPACE" --field-selector=status.phase=Failed --ignore
 log "Step 10/10: re-importing local images matching '*${LOCAL_IMAGE_PATTERN}*' into k3d"
 local_images="$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -- "$LOCAL_IMAGE_PATTERN" || true)"
 if [ -n "$local_images" ]; then
-  mapfile -t local_images_arr <<< "$local_images"
+  local_images_arr=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && local_images_arr+=("$line")
+  done <<< "$local_images"
   k3d image import "${local_images_arr[@]}" -c "$CLUSTER_NAME"
   printf '%s\n' "${local_images_arr[@]}" | sed 's/^/[recover]   imported: /'
 else
