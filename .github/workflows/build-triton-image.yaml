@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -46,11 +46,11 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=23.04-py3-torch
+            type=raw,value=25.01-py3-torch
             type=sha,prefix=sha-
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/triton-serving.Dockerfile

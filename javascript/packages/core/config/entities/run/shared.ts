@@ -1,4 +1,5 @@
 import { CellType } from '#core/components/cell/constants';
+import { interpolate } from '#core/interpolation/interpolate';
 
 import type { Cell } from '#core/components/cell/types';
 import type { TagColor } from '#core/components/tag/types';
@@ -55,37 +56,86 @@ export const RUN_STATE_COLOR_MAP: Record<number, TagColor> = {
   6: 'gray',
 };
 
+/** Created-date cell, shared between the run list and detail pages. */
+export const RUN_CREATED_COLUMN: Cell = {
+  id: 'metadata.creationTimestamp.seconds',
+  label: 'Created',
+  type: CellType.DATE,
+};
+
+/** Pipeline (and revision) cell, shared between the run list and detail pages. */
+export const RUN_PIPELINE_COLUMN: Cell = {
+  id: 'spec.pipeline.name',
+  label: 'Pipeline',
+  items: [
+    {
+      id: 'spec.pipeline.name',
+      type: CellType.TEXT,
+    },
+    {
+      id: 'spec.revision.name',
+      type: CellType.DESCRIPTION,
+    },
+  ],
+};
+
+/** Run actor cell, shared between the run list and detail pages. */
+export const RUN_STARTED_BY_COLUMN: Cell = {
+  id: 'spec.actor.name',
+  label: 'Started by',
+  type: CellType.TEXT,
+};
+
+/** Run state cell, shared between the run list and detail pages. */
+export const RUN_STATE_COLUMN: Cell = {
+  id: 'status.state',
+  label: 'State',
+  type: CellType.STATE,
+  stateTextMap: RUN_STATE_TEXT_MAP,
+  stateColorMap: RUN_STATE_COLOR_MAP,
+};
+
+/**
+ * Label stamped on every pipeline run spawned by a trigger, holding the name of the
+ * originating TriggerRun. Written by the trigger workflow — keep in sync with
+ * `TriggerredByLabel` in go/worker/workflows/trigger/cron_trigger_workflows.go.
+ *
+ * Doubles as the filter key for listing the runs a trigger produced, via
+ * `listOptions.labelSelector`.
+ */
+export const TRIGGERED_BY_LABEL = 'pipelinerun.michelangelo/triggered-by';
+
+/**
+ * Links a pipeline run back to the trigger that spawned it.
+ *
+ * Manually started runs carry no trigger label, so the value renders empty and the URL
+ * resolves to '' — which {@link LinkCell} renders as plain text rather than a dead link.
+ * That case is the majority, so it is handled explicitly here instead of relying on a
+ * failed string interpolation.
+ */
+export const RUN_TRIGGERED_BY_COLUMN: Cell = {
+  id: `metadata.labels['${TRIGGERED_BY_LABEL}']`,
+  label: 'Triggered by',
+  type: CellType.LINK,
+  url: interpolate<string>(({ studio, data }) => {
+    // cast: data is `any` from the interpolation context — row in list views, page in
+    // detail views; always a PipelineRun for these cells. See #1425
+    const triggerName = (data as { metadata?: { labels?: Record<string, string> } })?.metadata
+      ?.labels?.[TRIGGERED_BY_LABEL];
+
+    return triggerName ? `/${studio.projectId}/${studio.phase}/triggers/${triggerName}` : '';
+  }),
+};
+
 /**
  * Cell configurations rendered for Pipeline Runs:
  *  - Columns for list view
  *  - Header metadata for detail view
  */
 export const SHARED_RUN_CELL_CONFIG: Cell[] = [
-  { id: 'metadata.creationTimestamp.seconds', label: 'Created', type: CellType.DATE },
-  {
-    id: 'spec.pipeline.name',
-    label: 'Pipeline',
-    items: [
-      {
-        id: 'spec.pipeline.name',
-        type: CellType.TEXT,
-      },
-      {
-        id: 'spec.revision.name',
-        type: CellType.DESCRIPTION,
-      },
-    ],
-  },
-  {
-    id: 'spec.actor.name',
-    label: 'Started by',
-    type: CellType.TEXT,
-  },
-  {
-    id: 'status.state',
-    label: 'State',
-    type: CellType.STATE,
-    stateTextMap: RUN_STATE_TEXT_MAP,
-    stateColorMap: RUN_STATE_COLOR_MAP,
-  },
+  RUN_CREATED_COLUMN,
+  RUN_PIPELINE_COLUMN,
+  RUN_STARTED_BY_COLUMN,
+  RUN_TRIGGERED_BY_COLUMN,
+  RUN_STATE_COLUMN,
 ];

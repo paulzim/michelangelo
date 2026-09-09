@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -89,14 +90,26 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		r.reconcileRayJobWithCluster(ctx, logger, &rayJob, &res)
 	}
 
-	if !reflect.DeepEqual(originalRayJob, rayJob) {
+	if !reflect.DeepEqual(originalRayJob.Status, rayJob.Status) {
 		// update the resource in ETCD
-		if isTerminalRayJobState(rayJob.Status.State) {
-			utils.MarkImmutable(&rayJob)
-		}
 		err := r.Status().Update(ctx, &rayJob)
 		if err != nil {
 			logger.Error(err, "failed to update status")
+			res.RequeueAfter = requeueAfter
+			return res, err
+		}
+	}
+
+	// Mark terminal jobs immutable so the ingester can move them to metadata
+	// storage and delete the CR. Kept outside the status dirty-check above and
+	// attempted on every reconcile while terminal-but-mutable: a terminal job's
+	// status stops changing, so a marker nested in that check would fire at most
+	// once, and a single dropped write would strand the job forever.
+	if isTerminalRayJobState(rayJob.Status.State) && !utils.IsImmutable(&rayJob) {
+		if err := r.markImmutableIfTerminal(ctx, &rayJob); err != nil {
+			// The status write above already committed; requeue to retry the
+			// annotation rather than dropping it best-effort.
+			logger.Error(err, "failed to persist immutable annotation")
 			res.RequeueAfter = requeueAfter
 			return res, err
 		}
@@ -261,6 +274,32 @@ func (r *Reconciler) applyRayJobStatus(
 	if !isTerminalRayJobState(jobStatus.Ray.State) {
 		res.RequeueAfter = requeueAfter
 	}
+}
+
+// markImmutableIfTerminal persists the michelangelo/Immutable annotation on a
+// terminal RayJob so the ingester can move it to metadata storage and delete the
+// CR; afterwards Get returns NotFound and reconciliation stops. It is a no-op if
+// the job is already immutable or is no longer terminal.
+//
+// The marker is an annotation (metadata), which Status().Update cannot persist,
+// so this uses a plain Update. It re-fetches the object first -- the caller just
+// wrote the status subresource -- and retries on conflict, keeping the
+// resourceVersion current against that write and any concurrent writer.
+func (r *Reconciler) markImmutableIfTerminal(ctx context.Context, rayJob *v2pb.RayJob) error {
+	if err := retry.OnError(retry.DefaultRetry, jobsutils.IsRetriableError, func() error {
+		latest := &v2pb.RayJob{}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: rayJob.Namespace, Name: rayJob.Name}, latest); err != nil {
+			return err
+		}
+		if utils.IsImmutable(latest) || !isTerminalRayJobState(latest.Status.State) {
+			return nil
+		}
+		utils.MarkImmutable(latest)
+		return r.Update(ctx, latest)
+	}); err != nil {
+		return fmt.Errorf("failed to mark ray job immutable: %w", err)
+	}
+	return nil
 }
 
 func isTerminalRayJobState(state v2pb.RayJobState) bool {
