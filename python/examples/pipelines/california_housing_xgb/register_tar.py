@@ -73,8 +73,8 @@ logging.info("Port-forward ready on localhost:%d", LOCAL_PORT)
 
 # ── 3. Upload via s3fs ────────────────────────────────────────────────────────
 MINIO_ENDPOINT = f"http://127.0.0.1:{LOCAL_PORT}"
-os.environ["AWS_ACCESS_KEY_ID"] = "minioadmin"
-os.environ["AWS_SECRET_ACCESS_KEY"] = "minioadmin"
+os.environ["AWS_ACCESS_KEY_ID"] = "michelangeloadmin"
+os.environ["AWS_SECRET_ACCESS_KEY"] = "michelangeloadmin"
 os.environ["AWS_ENDPOINT_URL"] = MINIO_ENDPOINT
 os.environ["FSSPEC_S3_ENDPOINT_URL"] = MINIO_ENDPOINT
 os.environ["AWS_DEFAULT_REGION"] = "us-east-1"

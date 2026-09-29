@@ -13,8 +13,8 @@ import sys
 sys.path.insert(0, ".")
 
 os.environ.setdefault("AWS_ENDPOINT_URL", "http://localhost:9091")
-os.environ.setdefault("AWS_ACCESS_KEY_ID", "minioadmin")
-os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "minioadmin")
+os.environ.setdefault("AWS_ACCESS_KEY_ID", "michelangeloadmin")
+os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "michelangeloadmin")
 
 from examples.hello_world.hello_world import hello_world_workflow
 from michelangelo.uniflow.core.build import build

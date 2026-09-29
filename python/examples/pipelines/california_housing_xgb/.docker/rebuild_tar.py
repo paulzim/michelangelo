@@ -13,8 +13,8 @@ import sys
 sys.path.insert(0, ".")
 
 os.environ.setdefault("AWS_ENDPOINT_URL", "http://localhost:9091")
-os.environ.setdefault("AWS_ACCESS_KEY_ID", "minioadmin")
-os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "minioadmin")
+os.environ.setdefault("AWS_ACCESS_KEY_ID", "michelangeloadmin")
+os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "michelangeloadmin")
 
 from examples.pipelines.california_housing_xgb.california_housing_xgb import (
     train_workflow,

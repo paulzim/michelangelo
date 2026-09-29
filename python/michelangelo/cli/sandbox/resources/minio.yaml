@@ -12,6 +12,11 @@ spec:
       # availability -- see https://github.com/michelangelo-ai/michelangelo/pkgs/container/minio
       image: ghcr.io/michelangelo-ai/minio:RELEASE.2025-05-24T17-08-30Z
       imagePullPolicy: IfNotPresent
+      env:
+        - name: MINIO_ROOT_USER
+          value: michelangeloadmin
+        - name: MINIO_ROOT_PASSWORD
+          value: michelangeloadmin
       command:
         - /bin/bash
         - -c
