@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 
@@ -105,7 +105,8 @@ describe('EntityDetailRoute', () => {
     );
 
     expect(screen.getByRole('button', { name: /go back/i })).toBeInTheDocument();
-    expect(screen.getByText('Pipeline Runs')).toBeInTheDocument(); // subtitle from entity config
+    // Subtitle is the entity config's name ("Pipeline Runs"), singularized and capitalized.
+    expect(screen.getByText('Pipeline Run')).toBeInTheDocument();
     expect(screen.getByText('run-123')).toBeInTheDocument(); // title from URL entityId
 
     // Wait for and verify metadata is rendered
@@ -116,6 +117,392 @@ describe('EntityDetailRoute', () => {
     expect(screen.getByText('Execution')).toBeInTheDocument();
     await screen.findAllByText('Data Preparation');
     await screen.findAllByText('Model Training');
+  });
+
+  test('singularizes and capitalizes the entity name for the header subtitle', async () => {
+    const testPhases = {
+      train: buildPhase({
+        id: 'train',
+        entities: [
+          buildEntityConfigFactory({ id: 'triggers', name: 'triggers', service: 'triggerRun' })({
+            views: [
+              {
+                type: 'detail',
+                metadata: [],
+                pages: [
+                  {
+                    id: 'overview',
+                    label: 'Overview',
+                    type: 'custom',
+                    component: () => <div>Overview</div>,
+                  } as CustomDetailPageConfig,
+                ],
+              },
+            ],
+          }),
+        ],
+      }),
+    };
+
+    const mockRequest = vi.fn().mockResolvedValue({
+      triggerRun: {
+        metadata: { creationTimestamp: { seconds: 1640995200 } },
+        status: { state: 'SUCCESS' },
+      },
+    });
+
+    render(
+      <EntityDetailRoute phases={testPhases} />,
+      buildWrapper([
+        getErrorProviderWrapper(),
+        getRouterWrapper({ location: '/myproject/train/triggers/trigger-123' }),
+        getServiceProviderWrapper({ request: mockRequest }),
+      ])
+    );
+
+    // "triggers" (the plural, registered entity name) renders as singular "Trigger".
+    expect(await screen.findByText('Trigger')).toBeInTheDocument();
+    expect(screen.queryByText('triggers')).not.toBeInTheDocument();
+  });
+
+  describe('revision view', () => {
+    const revisionedEntity = buildEntity({
+      id: 'pipelines',
+      name: 'pipelines',
+      service: 'pipeline',
+      revisioned: true,
+      actions: [
+        {
+          display: { label: 'Delete' },
+          hierarchy: ActionHierarchy.PRIMARY,
+          operation: { type: 'mutation', mutation: { mutationName: 'DeletePipeline' } },
+        },
+      ],
+      views: [
+        {
+          type: 'detail',
+          metadata: [
+            { id: 'spec.content.spec.owner.name', label: 'Owner', type: CellType.TEXT },
+            { id: 'spec.content.spec.commit.branch', label: 'Branch', type: CellType.TEXT },
+          ],
+          pages: [
+            {
+              id: 'overview',
+              label: 'Overview',
+              type: 'custom',
+              component: ({
+                data,
+              }: {
+                data: { spec?: { content?: { metadata?: { name?: string } } } } | undefined;
+              }) => <div>Page for {data?.spec?.content?.metadata?.name}</div>,
+            } as CustomDetailPageConfig,
+          ],
+        },
+      ],
+    });
+
+    const livePipeline = {
+      pipeline: {
+        metadata: { name: 'My-Pipeline' },
+        spec: { owner: { name: 'live-owner' }, commit: { branch: 'main' } },
+      },
+    };
+    const revision = {
+      revision: {
+        metadata: { name: 'pipeline-my-pipeline-3f2a1b9c0d4e' },
+        spec: {
+          revisionId: '3f2a1b9c0d4e5f6a7b8c',
+          content: {
+            metadata: { name: 'My-Pipeline' },
+            spec: { owner: { name: 'snapshot-owner' }, commit: { branch: 'feature/x' } },
+          },
+        },
+      },
+    };
+    const revisionList = {
+      revisionList: {
+        items: [
+          {
+            metadata: {
+              name: 'pipeline-my-pipeline-aaaaaaaaaaaa',
+              creationTimestamp: { seconds: '1700000000' },
+            },
+            spec: { revisionId: 'aaaaaaaaaaaa0000', gitCommit: { branch: 'main' } },
+          },
+          {
+            metadata: {
+              name: 'pipeline-my-pipeline-3f2a1b9c0d4e',
+              creationTimestamp: { seconds: '1600000000' },
+            },
+            spec: { revisionId: '3f2a1b9c0d4e5f6a7b8c', gitCommit: { branch: 'topic/y' } },
+          },
+        ],
+      },
+    };
+
+    test('loads the revision snapshot when revisionId is in the query string', async () => {
+      const testPhases = {
+        train: buildPhase({ id: 'train', entities: [revisionedEntity] }),
+      };
+      const mockRequest = createQueryMockRouter({
+        GetPipeline: livePipeline,
+        GetRevision: revision,
+        ListRevision: revisionList,
+      });
+
+      render(
+        <EntityDetailRoute phases={testPhases} />,
+        buildWrapper([
+          getErrorProviderWrapper(),
+          getRouterWrapper({
+            location: '/myproject/train/pipelines/My-Pipeline?revisionId=3f2a1b9c0d4e5f6a7b8c',
+          }),
+          getServiceProviderWrapper({ request: mockRequest }),
+        ])
+      );
+
+      // Metadata and pages read from the revision's spec.content, not the live pipeline.
+      expect(await screen.findByText('snapshot-owner')).toBeInTheDocument();
+      expect(screen.getByText('feature/x')).toBeInTheDocument();
+      expect(screen.getByText('Page for My-Pipeline')).toBeInTheDocument();
+      expect(screen.queryByText('live-owner')).not.toBeInTheDocument();
+
+      // Header keeps the pipeline title and labels the revision.
+      expect(screen.getByText('My-Pipeline')).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: /Select revision/ })).toHaveTextContent(
+        'Revision 3f2a1b9c0d4e'
+      );
+
+      expect(screen.getByRole('button', { name: 'Delete' })).toBeEnabled();
+
+      // The Revision CR is fetched by its controller-derived name. The live pipeline is
+      // fetched so the page knows which Revision is the latest.
+      expect(mockRequest.getCall('GetRevision')?.args).toEqual({
+        namespace: 'myproject',
+        name: 'pipeline-my-pipeline-3f2a1b9c0d4e',
+      });
+      expect(mockRequest.getCall('GetPipeline')?.args).toEqual({
+        namespace: 'myproject',
+        name: 'My-Pipeline',
+      });
+    });
+
+    test('badges the latest revision in the dropdown and on the trigger', async () => {
+      const user = userEvent.setup();
+      const testPhases = {
+        train: buildPhase({ id: 'train', entities: [revisionedEntity] }),
+      };
+      const mockRequest = createQueryMockRouter({
+        GetPipeline: {
+          pipeline: {
+            ...livePipeline.pipeline,
+            status: { latestRevision: { name: 'pipeline-my-pipeline-aaaaaaaaaaaa' } },
+          },
+        },
+        GetRevision: revision,
+        ListRevision: revisionList,
+      });
+
+      render(
+        <EntityDetailRoute phases={testPhases} />,
+        buildWrapper([
+          getErrorProviderWrapper(),
+          getRouterWrapper({ location: '/myproject/train/pipelines/My-Pipeline/overview' }),
+          getServiceProviderWrapper({ request: mockRequest }),
+        ])
+      );
+
+      // A bare URL shows the latest Revision, so the trigger carries the badge.
+      const trigger = await screen.findByRole('button', { name: /Select revision/ });
+      expect(trigger).toHaveTextContent('Revision aaaaaaaaaaaa');
+      expect(within(trigger).getByText('Latest')).toBeInTheDocument();
+
+      await user.click(trigger);
+      const latestOption = await screen.findByRole('option', { name: /Revision aaaaaaaaaaaa/ });
+      const olderOption = screen.getByRole('option', { name: /Revision 3f2a1b9c0d4e/ });
+      expect(within(latestOption).getByText('Latest')).toBeInTheDocument();
+      expect(within(olderOption).queryByText('Latest')).not.toBeInTheDocument();
+
+      // Switching to an older Revision drops the badge from the trigger.
+      await user.click(olderOption);
+      expect(await screen.findByText('snapshot-owner')).toBeInTheDocument();
+      expect(
+        within(screen.getByRole('button', { name: /Select revision/ })).queryByText('Latest')
+      ).not.toBeInTheDocument();
+    });
+
+    test('renders the latest revision for a bare entity URL', async () => {
+      const testPhases = {
+        train: buildPhase({ id: 'train', entities: [revisionedEntity] }),
+      };
+      const mockRequest = createQueryMockRouter({
+        GetPipeline: {
+          pipeline: {
+            ...livePipeline.pipeline,
+            status: { latestRevision: { name: 'pipeline-my-pipeline-3f2a1b9c0d4e' } },
+          },
+        },
+        GetRevision: revision,
+      });
+
+      render(
+        <EntityDetailRoute phases={testPhases} />,
+        buildWrapper([
+          getErrorProviderWrapper(),
+          getRouterWrapper({ location: '/myproject/train/pipelines/My-Pipeline/overview' }),
+          getServiceProviderWrapper({ request: mockRequest }),
+        ])
+      );
+
+      // The latest Revision is resolved by the name status.latestRevision points at and rendered
+      // in place.
+      expect(await screen.findByText('snapshot-owner')).toBeInTheDocument();
+      expect(screen.queryByText('live-owner')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+      expect(mockRequest.getCall('GetRevision')?.args).toEqual({
+        namespace: 'myproject',
+        name: 'pipeline-my-pipeline-3f2a1b9c0d4e',
+      });
+      expect(screen.queryByText(/revisionId=/)).not.toBeInTheDocument();
+    });
+
+    test('shows not found when a revisioned entity has no revision', async () => {
+      const testPhases = {
+        train: buildPhase({ id: 'train', entities: [revisionedEntity] }),
+      };
+      const mockRequest = createQueryMockRouter({
+        GetPipeline: livePipeline,
+        GetRevision: revision,
+        ListRevision: revisionList,
+      });
+
+      render(
+        <EntityDetailRoute phases={testPhases} />,
+        buildWrapper([
+          getErrorProviderWrapper(),
+          getRouterWrapper({ location: '/myproject/train/pipelines/My-Pipeline' }),
+          getServiceProviderWrapper({ request: mockRequest }),
+        ])
+      );
+
+      expect(await screen.findByText('Entity not found')).toBeInTheDocument();
+      expect(screen.getByText(/No revision found\./)).toBeInTheDocument();
+      expect(screen.queryByText('live-owner')).not.toBeInTheDocument();
+      expect(mockRequest).not.toHaveBeenCalledWith(
+        'GetRevision',
+        expect.anything(),
+        expect.anything()
+      );
+    });
+
+    test('picking a revision from the header dropdown navigates to ?revisionId', async () => {
+      const user = userEvent.setup();
+      const testPhases = {
+        train: buildPhase({ id: 'train', entities: [revisionedEntity] }),
+      };
+      const mockRequest = createQueryMockRouter({
+        // status.latestRevision must be set here — unlike the "no revision" test below,
+        // this one exercises the dropdown against an entity that already has a revision.
+        GetPipeline: {
+          pipeline: {
+            ...livePipeline.pipeline,
+            status: { latestRevision: { name: 'pipeline-my-pipeline-aaaaaaaaaaaa' } },
+          },
+        },
+        GetRevision: revision,
+        ListRevision: revisionList,
+      });
+
+      render(
+        <EntityDetailRoute phases={testPhases} />,
+        buildWrapper([
+          getErrorProviderWrapper(),
+          getRouterWrapper({ location: '/myproject/train/pipelines/My-Pipeline/overview' }),
+          getServiceProviderWrapper({ request: mockRequest }),
+        ])
+      );
+
+      await user.click(await screen.findByRole('button', { name: /Select revision/ }));
+      const listbox = await screen.findByRole('listbox', { name: 'Revisions' });
+      expect(listbox).toHaveTextContent('Revision aaaaaaaaaaaa');
+      expect(listbox).toHaveTextContent('topic/y');
+
+      await user.click(screen.getByRole('option', { name: /Revision 3f2a1b9c0d4e/ }));
+
+      // The snapshot replaces the live record and the selection sticks to the trigger.
+      expect(await screen.findByText('snapshot-owner')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Select revision/ })).toHaveTextContent(
+        'Revision 3f2a1b9c0d4e'
+      );
+      // getCall returns the first match; the mount also fires a GetRevision for
+      // status.latestRevision, so the picked revision's call is the last one instead.
+      const getRevisionCalls = vi
+        .mocked(mockRequest)
+        .mock.calls.filter(([name]) => name === 'GetRevision');
+      expect(getRevisionCalls.at(-1)?.[1]).toEqual({
+        namespace: 'myproject',
+        name: 'pipeline-my-pipeline-3f2a1b9c0d4e',
+      });
+      expect(mockRequest.getCall('ListRevision')?.args).toMatchObject({
+        namespace: 'myproject',
+        listOptionsExt: {
+          operation: {
+            criterion: [
+              { fieldName: 'revision.base_type', operator: 1, matchValue: 'Pipeline' },
+              { fieldName: 'revision.base_resource_name', operator: 1, matchValue: 'My-Pipeline' },
+            ],
+          },
+        },
+      });
+    });
+
+    test('ignores revisionId for an entity that is not revisioned', async () => {
+      // A non-revisioned entity's record is the live entity itself, with no `spec.content`
+      // wrapper — so its config (unlike `revisionedEntity`'s) reads fields unprefixed.
+      const nonRevisionedEntity = buildEntity({
+        id: 'pipelines',
+        name: 'pipelines',
+        service: 'pipeline',
+        revisioned: false,
+        views: [
+          {
+            type: 'detail',
+            metadata: [{ id: 'spec.owner.name', label: 'Owner', type: CellType.TEXT }],
+            pages: [],
+          },
+        ],
+      });
+      const testPhases = {
+        train: buildPhase({
+          id: 'train',
+          entities: [nonRevisionedEntity],
+        }),
+      };
+      const mockRequest = createQueryMockRouter({
+        GetPipeline: livePipeline,
+        GetRevision: revision,
+        ListRevision: revisionList,
+      });
+
+      render(
+        <EntityDetailRoute phases={testPhases} />,
+        buildWrapper([
+          getErrorProviderWrapper(),
+          getRouterWrapper({
+            location: '/myproject/train/pipelines/My-Pipeline?revisionId=3f2a1b9c0d4e5f6a7b8c',
+          }),
+          getServiceProviderWrapper({ request: mockRequest }),
+        ])
+      );
+
+      expect(await screen.findByText('live-owner')).toBeInTheDocument();
+      expect(screen.queryByText(/^Revision /)).not.toBeInTheDocument();
+      expect(mockRequest).not.toHaveBeenCalledWith(
+        'GetRevision',
+        expect.anything(),
+        expect.anything()
+      );
+    });
   });
 
   test('renders custom detail pages and navigates between them', async () => {
@@ -278,7 +665,7 @@ describe('EntityDetailRoute', () => {
     );
 
     // Should still render header and metadata
-    expect(screen.getByText('Pipeline Runs')).toBeInTheDocument();
+    expect(screen.getByText('Pipeline Run')).toBeInTheDocument();
     await screen.findByText('Success');
 
     expect(screen.getByText('No tabs available')).toBeInTheDocument();

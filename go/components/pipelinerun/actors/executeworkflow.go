@@ -1,11 +1,9 @@
 package actors
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"text/template"
 	"time"
 
 	"github.com/gogo/protobuf/jsonpb"
@@ -238,20 +236,11 @@ func (a *ExecuteWorkflowActor) Retrieve(ctx context.Context, resource *v2.Pipeli
 // Returns a formatted URL string for the workflow monitoring interface, or an
 // empty string if the workflow client configuration cannot be retrieved.
 func (a *ExecuteWorkflowActor) GetWorkflowUrl(name string, runID string) string {
-	workflowConfig, getWorkflowClientConfigErr := config.GetWorkflowClientConfig(a.configProvider)
-	if getWorkflowClientConfigErr != nil {
+	workflowConfig, err := config.GetWorkflowClientConfig(a.configProvider)
+	if err != nil {
 		return ""
 	}
-
-	// Check if the required configuration fields are present
-	if workflowConfig.ExecutionUrlFormat == "" || workflowConfig.Domain == "" {
-		return ""
-	}
-
-	tmpl, _ := template.New("url").Parse(workflowConfig.ExecutionUrlFormat)
-	var buf bytes.Buffer
-	tmpl.Execute(&buf, map[string]string{"Domain": workflowConfig.Domain, "ExecutionID": name, "RunID": runID})
-	return buf.String()
+	return workflowConfig.BuildWorkflowUrl(name, runID)
 }
 
 // Run executes and monitors the workflow for a pipeline run.
@@ -413,18 +402,28 @@ func (a *ExecuteWorkflowActor) Run(ctx context.Context, pipelineRun *v2.Pipeline
 		executeWorkflowStep.EndTime = pbtypes.TimestampNow()
 		newCondition.Status = apipb.CONDITION_STATUS_TRUE
 	case clientInterfaces.WorkflowExecutionStatusFailed, clientInterfaces.WorkflowExecutionStatusTimedOut:
+		failureMessage := workflowExecution.FailureMessage
+		if failureMessage == "" {
+			failureMessage = "Failed due to workflow failure"
+		}
 		executeWorkflowStep.State = v2.PIPELINE_RUN_STEP_STATE_FAILED
 		executeWorkflowStep.EndTime = pbtypes.TimestampNow()
+		executeWorkflowStep.Message = failureMessage
 		newCondition.Status = apipb.CONDITION_STATUS_FALSE
 		// Propagate failed state to substeps to ensure no substeps remain in running state
-		a.propagateTerminalStateToSubsteps(executeWorkflowStep, v2.PIPELINE_RUN_STEP_STATE_FAILED, "Failed due to workflow failure")
+		a.propagateTerminalStateToSubsteps(executeWorkflowStep, v2.PIPELINE_RUN_STEP_STATE_FAILED, failureMessage)
 	case clientInterfaces.WorkflowExecutionStatusCanceled, clientInterfaces.WorkflowExecutionStatusTerminated:
+		killMessage := workflowExecution.FailureMessage
+		if killMessage == "" {
+			killMessage = defaultengine.KillReason
+		}
 		executeWorkflowStep.State = v2.PIPELINE_RUN_STEP_STATE_KILLED
 		executeWorkflowStep.EndTime = pbtypes.TimestampNow()
+		executeWorkflowStep.Message = killMessage
 		newCondition.Status = apipb.CONDITION_STATUS_FALSE
 		newCondition.Reason = defaultengine.KillReason
 		// Propagate appropriate states to substeps based on their current state
-		a.propagateTerminalStateToSubsteps(executeWorkflowStep, v2.PIPELINE_RUN_STEP_STATE_KILLED, defaultengine.KillReason)
+		a.propagateTerminalStateToSubsteps(executeWorkflowStep, v2.PIPELINE_RUN_STEP_STATE_KILLED, killMessage)
 	}
 	return newCondition, nil
 }
@@ -1166,6 +1165,9 @@ func (a *ExecuteWorkflowActor) processManualRetrySpec(ctx context.Context, pipel
 	// Update pipeline run status
 	pipelineRun.Status.State = v2.PIPELINE_RUN_STATE_RUNNING
 	pipelineRun.Status.WorkflowRunId = newWorkflowRun.RunID
+	// Clear the stale error from the previous failed/killed attempt so it doesn't
+	// linger on the object through the retry and into a later SUCCEEDED state.
+	pipelineRun.Status.ErrorMessage = ""
 
 	// Preserve retry history before mutating step state, so the snapshot
 	// captures the terminal state (FAILED/KILLED) the user wants to inspect.

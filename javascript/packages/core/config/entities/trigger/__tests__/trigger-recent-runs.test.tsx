@@ -11,11 +11,17 @@ import {
   getServiceProviderWrapper,
 } from '#core/test/wrappers/get-service-provider-wrapper';
 
-describe('Trigger detail "Recent Runs"', () => {
+describe('Trigger detail "Triggered Runs"', () => {
   const SELECTOR = `${TRIGGERED_BY_LABEL}=nightly-trigger`;
 
-  function buildMockRequest() {
-    return createQueryMockRouter({
+  /**
+   * The runs this trigger produced are found only through the label selector. The
+   * storage layer drops `listOptions.labelSelector` outright if a caller ever also
+   * sets `listOptionsExt.operation` (go/storage/mysql/mysql.go), which would silently
+   * turn this tab into a list of every run in the namespace. Pin the exact request.
+   */
+  it('lists runs filtered by the triggered-by label for this trigger', async () => {
+    const request = createQueryMockRouter({
       GetTriggerRun: {
         triggerRun: {
           metadata: { name: 'nightly-trigger', namespace: 'myproject' },
@@ -34,22 +40,12 @@ describe('Trigger detail "Recent Runs"', () => {
         },
       },
     });
-  }
-
-  /**
-   * The runs this trigger produced are found only through the label selector. The
-   * storage layer drops `listOptions.labelSelector` outright if a caller ever also
-   * sets `listOptionsExt.operation` (go/storage/mysql/mysql.go), which would silently
-   * turn this tab into a list of every run in the namespace. Pin the exact request.
-   */
-  it('lists runs filtered by the triggered-by label for this trigger', async () => {
-    const request = buildMockRequest();
 
     render(
       <EntityDetailRoute phases={{ retrain: RETRAIN_PHASE }} />,
       buildWrapper([
         getErrorProviderWrapper(),
-        getRouterWrapper({ location: '/myproject/retrain/triggers/nightly-trigger' }),
+        getRouterWrapper({ location: '/myproject/retrain/triggers/nightly-trigger/runs' }),
         getServiceProviderWrapper({ request }),
       ])
     );
@@ -70,8 +66,32 @@ describe('Trigger detail "Recent Runs"', () => {
       <EntityDetailRoute phases={{ retrain: RETRAIN_PHASE }} />,
       buildWrapper([
         getErrorProviderWrapper(),
-        getRouterWrapper({ location: '/myproject/retrain/triggers/nightly-trigger' }),
-        getServiceProviderWrapper({ request: buildMockRequest() }),
+        getRouterWrapper({ location: '/myproject/retrain/triggers/nightly-trigger/runs' }),
+        getServiceProviderWrapper({
+          request: createQueryMockRouter({
+            GetTriggerRun: {
+              triggerRun: {
+                metadata: { name: 'nightly-trigger', namespace: 'myproject' },
+                spec: { pipeline: { name: 'my-pipeline', namespace: 'myproject' } },
+                status: { state: 1 },
+              },
+            },
+            [`ListPipelineRun:{"listOptions":{"labelSelector":"${SELECTOR}"},"namespace":"myproject"}`]:
+              {
+                pipelineRunList: {
+                  items: [
+                    {
+                      metadata: {
+                        name: 'run-1',
+                        labels: { [TRIGGERED_BY_LABEL]: 'nightly-trigger' },
+                      },
+                      status: { state: 3 },
+                    },
+                  ],
+                },
+              },
+          }),
+        }),
       ])
     );
 

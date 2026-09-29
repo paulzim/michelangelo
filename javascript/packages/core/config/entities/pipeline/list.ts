@@ -1,5 +1,6 @@
 import { CellType } from '#core/components/cell/constants';
-import { PIPELINE_STATE_CELL, PIPELINE_TYPE_CELL } from './shared';
+import { PIPELINE_REVISION_TABLE_CONFIG } from './revision-list';
+import { PIPELINE_LAST_UPDATED_CELL, PIPELINE_STATE_CELL, PIPELINE_TYPE_CELL } from './shared';
 
 import type { ColumnConfig } from '#core/components/table/types/column-types';
 import type { ListViewConfig } from '#core/components/views/types';
@@ -14,13 +15,10 @@ export const PIPELINE_CELL_CONFIG: ColumnConfig<object>[] = [
       action: 'filter',
     },
   },
-  { id: 'metadata.creationTimestamp.seconds', label: 'Created', type: CellType.DATE },
+  PIPELINE_LAST_UPDATED_CELL,
   PIPELINE_TYPE_CELL,
-  {
-    id: 'spec.commit.branch',
-    label: 'Branch',
-    type: CellType.TEXT,
-  },
+  { id: 'spec.owner.name', label: 'Owner', type: CellType.TEXT },
+  { id: 'spec.commit.branch', label: 'Branch', type: CellType.TEXT },
   PIPELINE_STATE_CELL,
 ];
 
@@ -29,4 +27,13 @@ export const PIPELINE_LIST_CONFIG: ListViewConfig<object> = {
   tableConfig: {
     columns: PIPELINE_CELL_CONFIG,
   },
+  variants: [
+    { id: 'pipelines', label: 'Pipelines' },
+    {
+      id: 'revisions',
+      label: 'Revisions',
+      service: 'revision',
+      tableConfig: PIPELINE_REVISION_TABLE_CONFIG,
+    },
+  ],
 };

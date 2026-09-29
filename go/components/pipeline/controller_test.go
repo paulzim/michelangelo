@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/michelangelo-ai/michelangelo/go/api"
 	apiHandler "github.com/michelangelo-ai/michelangelo/go/api/handler"
 	"github.com/michelangelo-ai/michelangelo/go/base/env"
 	"github.com/michelangelo-ai/michelangelo/go/base/revision"
@@ -109,6 +110,7 @@ func TestReconcile_RevisioningEnabled(t *testing.T) {
 			Namespace: "test-namespace",
 		},
 		Spec: v2pb.PipelineSpec{
+			Type: v2pb.PIPELINE_TYPE_DATA_PREP,
 			Commit: &v2pb.CommitInfo{
 				GitRef: "abc123456789",
 				Branch: "main",
@@ -133,6 +135,38 @@ func TestReconcile_RevisioningEnabled(t *testing.T) {
 	require.NoError(t, reconciler.Get(context.Background(), "test-namespace", "pipeline-test-pipeline-abc123456789", &metav1.GetOptions{}, rev))
 	assert.Equal(t, "abc123456789", rev.Spec.RevisionId)
 	assert.Equal(t, "Pipeline", rev.Spec.BaseType.Kind)
+	assert.Equal(t, "PIPELINE_TYPE_DATA_PREP", rev.Labels[api.PipelineTypeLabelName])
+}
+
+// Deleting a Pipeline must cascade to its Revisions, which relies on every
+// snapshotted Revision carrying a controller ownerReference to the Pipeline.
+func TestReconcile_RevisionOwnedByPipeline(t *testing.T) {
+	pipeline := &v2pb.Pipeline{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pipeline",
+			Namespace: "test-namespace",
+			UID:       types.UID("pipeline-uid"),
+		},
+		Spec: v2pb.PipelineSpec{
+			Commit: &v2pb.CommitInfo{
+				GitRef: "abc123456789",
+				Branch: "main",
+			},
+		},
+	}
+
+	reconciler := setUpReconciler(t, []client.Object{pipeline}, env.Context{}, Config{RevisioningEnabled: true})
+	_, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-pipeline", Namespace: "test-namespace"}})
+	require.NoError(t, err)
+
+	rev := &v2pb.Revision{}
+	require.NoError(t, reconciler.Get(context.Background(), "test-namespace", "pipeline-test-pipeline-abc123456789", &metav1.GetOptions{}, rev))
+
+	owner := metav1.GetControllerOf(rev)
+	require.NotNil(t, owner, "revision must be controller-owned by its pipeline")
+	assert.Equal(t, "Pipeline", owner.Kind)
+	assert.Equal(t, "test-pipeline", owner.Name)
+	assert.Equal(t, types.UID("pipeline-uid"), owner.UID)
 }
 
 func TestReconcile_RevisioningEnabled_NoCommit(t *testing.T) {
@@ -317,5 +351,6 @@ func setUpReconciler(t *testing.T, initialObjects []client.Object, env env.Conte
 		logger:          zaptest.NewLogger(t),
 		revisionManager: revision.NewManager(handler, zaptest.NewLogger(t)),
 		config:          cfg,
+		scheme:          scheme,
 	}
 }

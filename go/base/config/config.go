@@ -1,7 +1,9 @@
 package config
 
 import (
+	"bytes"
 	"flag"
+	"text/template"
 
 	"github.com/michelangelo-ai/michelangelo/go/base/env"
 	"go.uber.org/config"
@@ -24,6 +26,7 @@ const (
 	_mysqlConfigKey           = "mysql"
 	_ingesterConfigKey        = "ingester"
 	_inferenceServerConfigKey = "inferenceServer"
+	_schedulerConfigKey       = "jobs.scheduler"
 )
 
 // K8sConfig is the configuration for k8s REST client.
@@ -43,6 +46,62 @@ type WorkflowClientConfig struct {
 	ExecutionUrlFormat string `yaml:"executionUrlFormat"`
 }
 
+// BuildWorkflowUrl constructs a monitoring URL for a workflow execution from
+// this config's ExecutionUrlFormat template.
+//
+// executionID identifies the workflow (e.g. a pipeline run's name, or
+// TriggerRun's generated "<namespace>.<name>" workflow ID), and runID is the
+// specific execution's run ID. Cadence/Temporal Web route a workflow's
+// detail/summary page by (workflow ID, run ID) together, not by workflow ID
+// alone, so a format string that only references {{.ExecutionID}} resolves
+// to a listing rather than a specific execution. Pass "" for runID only if
+// it isn't known yet -- callers should defer calling this until it is,
+// rather than publish a URL that won't resolve to the intended execution.
+//
+// Returns "" if ExecutionUrlFormat or Domain is unset.
+func (c WorkflowClientConfig) BuildWorkflowUrl(executionID string, runID string) string {
+	if c.ExecutionUrlFormat == "" || c.Domain == "" {
+		return ""
+	}
+	tmpl, err := template.New("url").Parse(c.ExecutionUrlFormat)
+	if err != nil {
+		return ""
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, map[string]string{
+		"Domain":      c.Domain,
+		"ExecutionID": executionID,
+		"RunID":       runID,
+	}); err != nil {
+		return ""
+	}
+	return buf.String()
+}
+
+// KueueConfig configures the Kueue scheduler backend.
+type KueueConfig struct {
+	// LocalQueueTemplate resolves a project's LocalQueue name on the
+	// target cluster; "{project}" is substituted with the project name.
+	LocalQueueTemplate string `yaml:"localQueueTemplate"`
+	// LocalQueueOverrides maps a project name to an explicit LocalQueue
+	// name, winning over LocalQueueTemplate.
+	LocalQueueOverrides map[string]string `yaml:"localQueueOverrides"`
+	// APIVersion is the kueue.x-k8s.io API version used when talking to
+	// Kueue on compute clusters. Defaults to "v1beta2" (Kueue v0.15+); set
+	// "v1beta1" for older Kueue installations.
+	APIVersion string `yaml:"apiVersion"`
+}
+
+// SchedulerConfig selects and configures the job scheduler backend.
+type SchedulerConfig struct {
+	// Backend is the scheduler backend: "default" (or empty) for the
+	// built-in immediate-admission queue, "kueue" for Kueue-managed
+	// admission.
+	Backend string `yaml:"backend"`
+	// Kueue holds Kueue backend settings; ignored unless Backend is "kueue".
+	Kueue KueueConfig `yaml:"kueue"`
+}
+
 // Params defines the dependencies of the config fx module.
 type Params struct {
 	fx.In
@@ -60,6 +119,9 @@ type Result struct {
 // Module load config.Provider based on the environment context.
 var Module = fx.Module("config",
 	fx.Provide(New),
+	// SchedulerConfig is consumed by both the k8s engine mapper and the
+	// scheduler module, so it is provided once here.
+	fx.Provide(GetSchedulerConfig),
 )
 
 // New exports functionality similar to Module, but allows the caller to wrap
@@ -118,6 +180,13 @@ func GetWorkflowClientConfig(provider config.Provider) (WorkflowClientConfig, er
 	return workflowClientConfig, err
 }
 
+// GetSchedulerConfig parses the configuration file and returns the job scheduler configuration
+func GetSchedulerConfig(provider config.Provider) (SchedulerConfig, error) {
+	schedulerConfig := SchedulerConfig{}
+	err := provider.Get(_schedulerConfigKey).Populate(&schedulerConfig)
+	return schedulerConfig, err
+}
+
 // GetMySQLConfig parses the configuration file and returns the MySQL configuration.
 func GetMySQLConfig(provider config.Provider) (MySQLConfig, error) {
 	mysqlConfig := MySQLConfig{}
@@ -136,6 +205,14 @@ func GetIngesterConfig(provider config.Provider) (IngesterConfig, error) {
 // server controller.
 type InferenceServerConfig struct {
 	Gateway GatewayConfig `yaml:"gateway"`
+	Triton  TritonConfig  `yaml:"triton"`
+}
+
+// TritonConfig holds operator-level defaults for the Triton backend. DefaultImage
+// is the container image for InferenceServers that do not set
+// spec.initSpec.servingSpec.image. Empty means the backend's built-in image.
+type TritonConfig struct {
+	DefaultImage string `yaml:"defaultImage"`
 }
 
 // GatewayConfig describes the k8s Gateway resource and its Istio-generated

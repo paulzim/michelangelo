@@ -6,6 +6,7 @@ import { timestampToString } from '#core/utils/time-utils';
 import { CreateDeploymentForm } from './create-deployment-form';
 import { DEPLOYMENT_DETAIL_CONFIG } from './detail';
 import { DEPLOYMENT_LIST_CONFIG } from './list';
+import { UpdateDeploymentForm } from './update-deployment-form';
 
 import type { PhaseEntityConfig } from '#core/types/common/studio-types';
 import type { DeploymentRecord } from './types';
@@ -32,6 +33,11 @@ export const DEPLOYMENT_ENTITY_CONFIG: PhaseEntityConfig = {
   state: 'active',
   views: [DEPLOYMENT_LIST_CONFIG, DEPLOYMENT_DETAIL_CONFIG],
   actions: [
+    {
+      display: { label: 'Update deployment', icon: 'pencil' },
+      hierarchy: ActionHierarchy.PRIMARY,
+      modal: { type: 'custom', component: UpdateDeploymentForm },
+    },
     {
       display: { label: 'Retire', icon: 'circleX' },
       hierarchy: ActionHierarchy.TERTIARY,
@@ -75,6 +81,44 @@ export const DEPLOYMENT_ENTITY_CONFIG: PhaseEntityConfig = {
         },
         body: interpolate(({ data }) => retireModalBody(data)),
         button: { label: 'Yes, retire', icon: 'check' },
+      },
+    },
+    {
+      display: { label: 'Delete', icon: 'trashCan' },
+      hierarchy: ActionHierarchy.TERTIARY,
+      operation: {
+        type: 'mutation',
+        mutation: {
+          mutationName: 'DeleteDeployment',
+          successOperations: [
+            { type: 'invalidate', targets: ['ListDeployment'], delayMs: 2000 },
+            {
+              type: 'toast',
+              message: 'Deployment has been deleted. This process may take a few seconds.',
+            },
+            { type: 'route', route: '/${studio.projectId}/${studio.phase}/deployments' },
+          ],
+        },
+      },
+      modal: {
+        type: 'confirm',
+        header: {
+          title: interpolate(
+            ({ data }) =>
+              // cast: data is unknown from interpolation context; always a Deployment in this
+              // entity config; see #1425
+              `Are you sure you want to delete “${(data as DeploymentRecord).metadata?.name}” ?`
+          ),
+        },
+        body: 'We will perform retirement process first and then the deployment will be deleted. This process will take few minutes to complete.',
+        banner: {
+          content:
+            'If there are any online existing prediction requests or offline pipeline runs in this deployment this call will fail.',
+          kind: 'negative',
+          icon: 'circleExclamation',
+        },
+        button: { label: 'Yes, delete', icon: 'trashCan' },
+        destructive: true,
       },
     },
   ],

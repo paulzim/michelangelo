@@ -23,6 +23,12 @@ export const DEPLOYMENT_STAGE = {
   CLEAN_UP_FAILED: 11,
 } as const;
 
+/** Stages in which a FALSE condition marks a real failure rather than "not reached yet". */
+export const FAILED_ROLLOUT_STAGES: number[] = [
+  DEPLOYMENT_STAGE.ROLLOUT_FAILED,
+  DEPLOYMENT_STAGE.ROLLBACK_FAILED,
+];
+
 export const DEPLOYMENT_STATE = {
   INVALID: 0,
   INITIALIZING: 1,
@@ -83,5 +89,34 @@ export const DEPLOYMENT_STATE_CELL: Cell = {
     [DEPLOYMENT_STATE.HEALTHY]: 'green',
     [DEPLOYMENT_STATE.UNHEALTHY]: 'red',
     [DEPLOYMENT_STATE.EMPTY]: 'gray',
+  },
+};
+
+export const DEPLOYMENT_TYPE_CELL: Cell = {
+  id: 'spec.definition.type',
+  label: 'Type',
+  type: CellType.TAG,
+  accessor: (data: unknown) => {
+    // cast: accessor receives unknown data; narrowing to expected proto shape for property
+    // access; see #1425
+    const type = (data as { spec?: { definition?: { type?: string } } })?.spec?.definition?.type;
+    if (!type) return null;
+    if (type === 'TARGET_TYPE_OFFLINE') return 'Offline';
+    if (type === 'TARGET_TYPE_MOBILE') return 'Mobile';
+    return 'Online';
+  },
+};
+
+export const DEPLOYMENT_TARGET_CELL: Cell = {
+  id: 'spec.inferenceServer.name',
+  label: 'Target',
+  type: CellType.TEXT,
+  accessor: (data: unknown) => {
+    // cast: accessor receives unknown data; narrowing to expected proto shape for property
+    // access; see #1425
+    const target = (data as { spec?: { target?: { case?: string; value?: { name?: string } } } })
+      ?.spec?.target;
+    if (target?.case === 'inferenceServer') return target.value?.name ?? null;
+    return null;
   },
 };

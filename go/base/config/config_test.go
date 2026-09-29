@@ -184,3 +184,89 @@ workflowClient:
 	assert.Equal(t, "grpc", conf.Transport)
 	assert.Equal(t, "cadence-frontend", conf.Service)
 }
+
+func TestWorkflowClientConfig_BuildWorkflowUrl(t *testing.T) {
+	tests := []struct {
+		name        string
+		cfg         WorkflowClientConfig
+		executionID string
+		runID       string
+		expectedUrl string
+	}{
+		{
+			name: "template with {{.RunID}}",
+			cfg: WorkflowClientConfig{
+				Domain:             "michelangelo",
+				ExecutionUrlFormat: "http://cadence-web:8080/domain/{{.Domain}}/workflows/{{.ExecutionID}}/{{.RunID}}",
+			},
+			executionID: "test-pipeline-run",
+			runID:       "run-abc-123",
+			expectedUrl: "http://cadence-web:8080/domain/michelangelo/workflows/test-pipeline-run/run-abc-123",
+		},
+		{
+			// Regression test: an operator's pre-existing executionUrlFormat
+			// that never references {{.RunID}} at all must keep resolving
+			// exactly as before -- text/template silently ignores unused map
+			// entries, so passing a non-empty runID here must not change the
+			// output. This protects both pipeline_run's and trigger_run's
+			// shared use of this method.
+			name: "template without {{.RunID}} is unaffected by a non-empty runID argument",
+			cfg: WorkflowClientConfig{
+				Domain:             "default",
+				ExecutionUrlFormat: "https://temporal-example.com/namespaces/{{.Domain}}/workflows/{{.ExecutionID}}",
+			},
+			executionID: "existing-pipeline-run",
+			runID:       "run-should-be-ignored-789",
+			expectedUrl: "https://temporal-example.com/namespaces/default/workflows/existing-pipeline-run",
+		},
+		{
+			name:        "missing ExecutionUrlFormat returns empty string",
+			cfg:         WorkflowClientConfig{Domain: "default"},
+			executionID: "test-pipeline",
+			runID:       "run-ghi-789",
+			expectedUrl: "",
+		},
+		{
+			name:        "missing Domain returns empty string",
+			cfg:         WorkflowClientConfig{ExecutionUrlFormat: "http://cadence-web:8080/workflows/{{.ExecutionID}}"},
+			executionID: "test-pipeline",
+			runID:       "run-ghi-789",
+			expectedUrl: "",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := test.cfg.BuildWorkflowUrl(test.executionID, test.runID)
+			assert.Equal(t, test.expectedUrl, result)
+		})
+	}
+}
+
+func TestGetSchedulerConfig(t *testing.T) {
+	yamlStr := `
+jobs:
+  scheduler:
+    backend: kueue
+    kueue:
+      localQueueTemplate: "ma-{project}"
+      localQueueOverrides:
+        some-project: custom-queue
+      apiVersion: v1beta1
+`
+	provider, err := config.NewYAML(config.Source(strings.NewReader(yamlStr)))
+	assert.NoError(t, err)
+	conf, err := GetSchedulerConfig(provider)
+	assert.NoError(t, err)
+	assert.Equal(t, "kueue", conf.Backend)
+	assert.Equal(t, "ma-{project}", conf.Kueue.LocalQueueTemplate)
+	assert.Equal(t, map[string]string{"some-project": "custom-queue"}, conf.Kueue.LocalQueueOverrides)
+	assert.Equal(t, "v1beta1", conf.Kueue.APIVersion)
+
+	// Absent key: zero-value config selects the default backend.
+	providerEmpty, err := config.NewYAML(config.Source(strings.NewReader("foo: bar")))
+	assert.NoError(t, err)
+	conf, err = GetSchedulerConfig(providerEmpty)
+	assert.NoError(t, err)
+	assert.Equal(t, "", conf.Backend)
+}

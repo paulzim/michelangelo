@@ -40,6 +40,7 @@ const (
 const (
 	EnqueuedCondition  = constants.EnqueuedCondition
 	ScheduledCondition = constants.ScheduledCondition
+	QueuedCondition    = constants.QueuedCondition
 	LaunchedCondition  = constants.LaunchedCondition
 	KillingCondition   = constants.KillingCondition
 	KilledCondition    = constants.KilledCondition
@@ -101,6 +102,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// Requeue for errors other than not found
 		logger.Error(err, "failed to get ray cluster")
 		return ctrl.Result{RequeueAfter: requeueAfter}, err
+	}
+
+	// An immutable RayCluster has reached a terminal state and is being moved to metadata
+	// storage by the ingester (which will delete it from ETCD). Skip reconciliation so we
+	// neither waste queue capacity nor re-trigger ourselves by rewriting a terminal object.
+	if utils.IsImmutable(&rayCluster) {
+		logger.Info("RayCluster is immutable, skipping reconciliation")
+		return ctrl.Result{}, nil
 	}
 
 	// Create a copy of the original RayCluster for comparison
@@ -723,6 +732,18 @@ func (r *Reconciler) applyRayClusterStatus(
 			Generation: rayCluster.Generation,
 			Reason:     "ClusterReady",
 		})
+		// A cluster that was waiting for admission is admitted now. Only flip
+		// an existing Queued condition: clusters that were never suspended
+		// should not grow one.
+		for _, cond := range rayCluster.Status.StatusConditions {
+			if cond.GetType() == QueuedCondition && cond.GetStatus() == apipb.CONDITION_STATUS_TRUE {
+				jobsutils.UpdateCondition(cond, jobsutils.ConditionUpdateParams{
+					Status:     apipb.CONDITION_STATUS_FALSE,
+					Generation: rayCluster.Generation,
+					Reason:     "ClusterAdmitted",
+				})
+			}
+		}
 		res.RequeueAfter = time.Duration(0)
 
 	case v2pb.RAY_CLUSTER_STATE_FAILED:
@@ -785,6 +806,15 @@ func (r *Reconciler) applyRayClusterStatus(
 		// unsuspended, so keep monitoring without touching the Succeeded
 		// condition. Deliberately no terminal-pod-error check here — while
 		// suspended, pod-level signals carry no meaning.
+		// Surface the wait as a Queued condition so callers can tell "held
+		// for admission" apart from "launching".
+		queuedCond := jobsutils.GetCondition(&rayCluster.Status.StatusConditions, QueuedCondition, rayCluster.Generation)
+		jobsutils.UpdateCondition(queuedCond, jobsutils.ConditionUpdateParams{
+			Status:     apipb.CONDITION_STATUS_TRUE,
+			Generation: rayCluster.Generation,
+			Reason:     "AwaitingAdmission",
+			Message:    reasonStr,
+		})
 		logger.Info("cluster is suspended (queued for admission), continuing to monitor",
 			"state", newState,
 			"reason", reasonStr)

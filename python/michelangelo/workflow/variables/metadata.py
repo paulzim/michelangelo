@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from michelangelo.lib.model_manager.schema.feature_schema import FeatureSchema
@@ -290,6 +291,31 @@ class ModelMetadata:
 
 
 @dataclass
+class DatasetMetadata:
+    """Typed metadata carried by a ``DatasetVariable`` through workflow tasks.
+
+    Currently scoped to the one field ``tabular_native_transform`` needs to
+    record; extend with additional fields as more tasks need to annotate
+    dataset variables (mirroring how ``ModelMetadata`` grew field-by-field
+    per task).
+
+    Attributes:
+        derived_features: Names of output columns present in the dataset
+            that were not present in its original input (i.e. produced by a
+            transform), in sorted order. Empty when no transform was
+            applied, or when every output column overlaps an input column
+            name.
+
+    Example:
+        >>> meta = DatasetMetadata(derived_features=["scaled_amount"])
+        >>> meta.derived_features
+        ['scaled_amount']
+    """
+
+    derived_features: list[str] = field(default_factory=list)
+
+
+@dataclass
 class FeaturePackageMetadata:
     """Typed metadata carried by a feature-package artifact.
 
@@ -336,3 +362,19 @@ class FeaturePackageMetadata:
             The unpickled sample data, or ``None`` if ``_sample_data`` is unset.
         """
         return retrieve_object(self._sample_data)
+
+
+class SourceMessageType(Enum):
+    """The type of value a ``MessageVariable`` holds."""
+
+    INVALID = "invalid"
+    PROTO = "proto"
+    JSON_DATA = "json_data"
+
+
+@dataclass
+class MessageMetadata:
+    """Metadata of a ``MessageVariable``."""
+
+    class_name: str = field(default_factory=str)
+    type: SourceMessageType = field(default=SourceMessageType.INVALID)

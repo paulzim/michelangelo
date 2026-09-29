@@ -55,7 +55,7 @@ def amazon_books_qwen_workflow(sample_size=100):
 
 
 # For Local Run from python directory:
-# PYTHONPATH=examples python examples/amazon_books_qwen/amazon_books_qwen.py
+# PYTHONPATH="." poetry run python ./examples/amazon_books_qwen/amazon_books_qwen.py
 # For Remote Run:
 # python examples/amazon_books_qwen/amazon_books_qwen.py remote-run \
 #   --storage-url <STORAGE_URL> --image <IMAGE>
@@ -79,7 +79,6 @@ if __name__ == "__main__":
     ctx.environ["ENABLE_BF16"] = "False"
     ctx.environ["MAX_QUERY_LENGTH"] = "128"
     ctx.environ["MAX_DOC_LENGTH"] = "512"
-    ctx.environ["RAY_LOG_URL_PREFIX"] = "http://localhost:9091/logs"
     ctx.environ["SPARK_LOG_URL_PREFIX"] = "http://localhost:9091/logs"
 
     sample_size = 1000
