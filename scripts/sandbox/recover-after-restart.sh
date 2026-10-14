@@ -24,23 +24,23 @@
 #      for >300s evicts the mysql/minio bare Pods.
 #   5. mysql/minio bare Pods: delete evicted/terminal ones and reapply missing
 #      manifests (gotchas #9/#22/#28).
-#   6. Re-import locally-built images into k3d, before sync and the overrides
-#      in step 9 reference them.
+#   6. Re-import locally-built images into k3d, before sync references them.
 #   7. Delete app Deployments carrying a kubectl field-manager lock (e.g. from
 #      `kubectl set image`) so Helm's server-side apply can't conflict
 #      (gotcha #12). A failed upgrade would also mark the release "failed" and
 #      push every later sync into a full reinstall (gotcha #29).
-#   8. `ma sandbox sync` (gotcha #8).
-#   9. Re-apply local Helm overrides from values-local.yaml (gitignored; copy
-#      values-local.example.yaml). Re-applied on every run, so custom images
-#      survive both `--reuse-values` upgrades and gotcha #29 reinstalls.
-#  10. Poll until pods leave Pending/ContainerCreating.
-#  11. Auto-fix ghcr.io images stuck in ImagePullBackOff via host-Docker
+#   8. `ma sandbox sync` (gotcha #8), passing values-local.yaml (gitignored;
+#      copy values-local.example.yaml) as `--set` flags so custom images apply
+#      inside sync's own helm call on both the upgrade and reinstall paths.
+#      If sync's helm step succeeds but its readiness wait fails, continue and
+#      let the final health check report it.
+#   9. Poll until pods leave Pending/ContainerCreating.
+#  10. Auto-fix ghcr.io images stuck in ImagePullBackOff via host-Docker
 #      digest pulls + `k3d image import` (gotchas #24-27/#29).
-#  12. Backfill compute-cluster CRD/RBAC/secrets (gotcha #4).
-#  13. Ensure the ma-examples namespace + Project CR (gotchas #10/#11).
-#  14. Verify/register the Cadence domain (gotcha #5).
-#  15. Clean zombie RayClusters (both CRD groups) and failed pods (gotcha #13).
+#  11. Backfill compute-cluster CRD/RBAC/secrets (gotcha #4).
+#  12. Ensure the ma-examples namespace + Project CR (gotchas #10/#11).
+#  13. Verify/register the Cadence domain (gotcha #5).
+#  14. Clean zombie RayClusters (both CRD groups) and failed pods (gotcha #13).
 #   Finally: report pods still unhealthy (minus IGNORE_PODS) and exit 2 if any.
 #
 # Usage:
@@ -65,7 +65,7 @@
 #
 # Exit codes:
 #   0 = completed, all pods healthy (excluding IGNORE_PODS)
-#   1 = blocked: missing tool/cluster, wedged Docker ports, nodes not Ready, or sync failed
+#   1 = blocked: missing tool/cluster, wedged Docker ports, nodes not Ready, or sync's helm step failed
 #   2 = completed, but some pods are still unhealthy (listed at the end)
 
 set -euo pipefail
@@ -73,7 +73,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PYTHON_DIR="$REPO_ROOT/python"
-CHART_DIR="$REPO_ROOT/helm/michelangelo"
 PROJECT_YAML="$PYTHON_DIR/examples/config/project.yaml"
 MYSQL_YAML="$PYTHON_DIR/michelangelo/cli/sandbox/resources/mysql.yaml"
 MINIO_YAML="$PYTHON_DIR/michelangelo/cli/sandbox/resources/minio.yaml"
@@ -96,7 +95,7 @@ NODE_RESTART_AFTER="${NODE_RESTART_AFTER:-60}"
 
 CA_MOUNT_DEST="/etc/ssl/certs/ca-certificates.crt"
 APP_DEPLOYMENTS=(michelangelo-apiserver michelangelo-controllermgr michelangelo-worker michelangelo-ui)
-TOTAL_STEPS=15
+TOTAL_STEPS=14
 STEP=0
 
 log() { echo "[recover] $*"; }
@@ -261,7 +260,9 @@ nodes_not_ready() {
 
 # Seconds since the most recent node Ready-condition transition.
 newest_ready_age() {
-  kubectl get nodes -o json 2>/dev/null | python3 -c '
+  local json
+  json="$(kubectl get nodes -o json 2>/dev/null || true)"
+  printf '%s' "$json" | python3 -c '
 import json, sys
 from datetime import datetime, timezone
 try:
@@ -280,7 +281,7 @@ for node in items:
                 continue
             ages.append(int((now - t.replace(tzinfo=timezone.utc)).total_seconds()))
 print(min(ages) if ages else 0)
-' || echo 0
+'
 }
 
 # Succeeds if the bare Pod is Running/Pending and not being deleted.
@@ -289,6 +290,20 @@ pod_usable() {
   state="$(kubectl get pod "$1" -n "$NAMESPACE" \
     -o jsonpath='{.status.phase}/{.metadata.deletionTimestamp}' 2>/dev/null || true)"
   [ "$state" = "Running/" ] || [ "$state" = "Pending/" ]
+}
+
+# Prints "<revision> <status>" for the Helm release, or "0 missing".
+release_state() {
+  local json
+  json="$(helm status michelangelo -n "$NAMESPACE" -o json 2>/dev/null || true)"
+  printf '%s' "$json" | python3 -c '
+import json, sys
+try:
+    r = json.load(sys.stdin)
+    print(r.get("version", 0), r.get("info", {}).get("status") or "unknown")
+except Exception:
+    print(0, "missing")
+'
 }
 
 # ---------------------------------------------------------------------------
@@ -475,43 +490,80 @@ if [ "${#locked[@]}" -gt 0 ]; then
 else
   log "  no locks found."
 fi
-release_json="$(helm status michelangelo -n "$NAMESPACE" -o json 2>/dev/null || true)"
-case "$release_json" in
-  *'"status":"deployed"'*) log "  Helm release is 'deployed' — sync will upgrade in place." ;;
-  *) log "  Helm release missing or not 'deployed' — sync will uninstall + reinstall (gotcha #29); step 9 re-applies local overrides." ;;
+release_before="$(release_state)"
+case "${release_before#* }" in
+  deployed) log "  Helm release revision ${release_before%% *} is 'deployed' — sync will upgrade in place." ;;
+  *) log "  Helm release is '${release_before#* }' — sync will uninstall + reinstall (gotcha #29)." ;;
 esac
 
 # ---------------------------------------------------------------------------
-# 8. ma sandbox sync
+# 8. ma sandbox sync, with local overrides as --set flags
 # ---------------------------------------------------------------------------
+# Overrides go through sync's own --set passthrough rather than a separate
+# helm upgrade afterwards: --set outranks sync's `-f values-k3d.yaml` (which
+# pins every app image tag to "main"), and it applies on both the upgrade and
+# reinstall paths, so a recreated Deployment comes up on the right image
+# before sync's readiness wait runs.
 step "ma sandbox sync"
-if ! (cd "$PYTHON_DIR" && poetry run ma sandbox sync); then
-  die "'ma sandbox sync' failed — see its output above (field-manager conflict: gotcha #12; MySQL absent: gotchas #9/#28)."
-fi
-
-# ---------------------------------------------------------------------------
-# 9. Local Helm overrides
-# ---------------------------------------------------------------------------
-step "applying local Helm overrides"
+SYNC_SET_ARGS=()
 if [ -f "$VALUES_LOCAL" ]; then
-  log "  helm upgrade --reuse-values -f $VALUES_LOCAL"
-  if ! helm upgrade michelangelo "$CHART_DIR" -n "$NAMESPACE" --reuse-values -f "$VALUES_LOCAL" >/dev/null; then
-    die "helm upgrade with $VALUES_LOCAL failed — see output above."
+  overrides="$(cd "$PYTHON_DIR" && VALUES_LOCAL="$VALUES_LOCAL" poetry run python3 -c '
+import os, sys, yaml
+path = os.environ["VALUES_LOCAL"]
+try:
+    with open(path) as f:
+        data = yaml.safe_load(f) or {}
+except yaml.YAMLError as e:
+    sys.exit(f"invalid YAML in {path}: {e}")
+if not isinstance(data, dict):
+    sys.exit(f"{path} must be a YAML mapping")
+def esc(s, chars):
+    s = s.replace("\\", "\\\\")
+    for c in chars:
+        s = s.replace(c, "\\" + c)
+    return s
+def walk(prefix, node):
+    for k, v in node.items():
+        key = prefix + esc(str(k), ".,")
+        if isinstance(v, dict):
+            walk(key + ".", v)
+        elif isinstance(v, list):
+            sys.exit(f"{path}: lists are not supported (key {key})")
+        else:
+            s = "null" if v is None else ("true" if v is True else "false" if v is False else str(v))
+            print(key + "=" + esc(s, ","))
+walk("", data)
+')" || die "could not read $VALUES_LOCAL (see error above)."
+  while IFS= read -r kv; do
+    if [ -n "$kv" ]; then SYNC_SET_ARGS+=(--set "$kv"); fi
+  done <<< "$overrides"
+  if [ "${#SYNC_SET_ARGS[@]}" -gt 0 ]; then
+    log "  local overrides from $VALUES_LOCAL:"
+    echo "$overrides" | sed 's/^/[recover]     --set /'
   fi
-  for d in "${APP_DEPLOYMENTS[@]}"; do
-    kubectl rollout status "deployment/$d" -n "$NAMESPACE" --timeout=180s >/dev/null 2>&1 || \
-      log "  WARNING — $d did not finish rolling out within 180s."
-  done
-  log "  applied; current app images:"
-  kubectl get deployment -n "$NAMESPACE" "${APP_DEPLOYMENTS[@]}" \
-    -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.template.spec.containers[0].image}{"\n"}{end}' \
-    2>/dev/null | sed 's/^/[recover]     /' || true
 else
-  log "  no $VALUES_LOCAL — chart default images in use (template: $SCRIPT_DIR/values-local.example.yaml)."
+  log "  no $VALUES_LOCAL — chart default images (template: $SCRIPT_DIR/values-local.example.yaml)."
 fi
+if ! (cd "$PYTHON_DIR" && poetry run ma sandbox sync ${SYNC_SET_ARGS[@]+"${SYNC_SET_ARGS[@]}"}); then
+  # A new 'deployed' revision means helm itself succeeded and only sync's
+  # readiness wait failed — keep going so the final health check can report.
+  release_after="$(release_state)"
+  if [ "$release_after" != "$release_before" ] && [ "${release_after#* }" = deployed ]; then
+    log "  WARNING — sync's helm step succeeded (revision ${release_after%% *}) but its readiness wait failed;"
+    log "  continuing. The final health check lists what's unhealthy (stale cached image? gotcha #36)."
+  elif [ "$release_after" = "$release_before" ]; then
+    die "'ma sandbox sync' failed without producing a new Helm release revision — see its output above."
+  else
+    die "'ma sandbox sync' failed; Helm release is now '${release_after#* }' — see its output above (field-manager conflict: gotcha #12)."
+  fi
+fi
+log "  app images now:"
+kubectl get deployment -n "$NAMESPACE" "${APP_DEPLOYMENTS[@]}" \
+  -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.template.spec.containers[0].image}{"\n"}{end}' \
+  2>/dev/null | sed 's/^/[recover]     /' || true
 
 # ---------------------------------------------------------------------------
-# 10. Pods settle
+# 9. Pods settle
 # ---------------------------------------------------------------------------
 step "waiting for pods in namespace '$NAMESPACE' to settle (timeout ${POD_WAIT_TIMEOUT}s)"
 deadline=$(( $(date +%s) + POD_WAIT_TIMEOUT ))
@@ -533,14 +585,14 @@ while true; do
     log "  still settling: $(echo "$unsettled" | tr '\n' ' ')"
   fi
   if [ "$(date +%s)" -ge "$deadline" ]; then
-    log "  timed out after ${POD_WAIT_TIMEOUT}s — continuing anyway, step 11 will try to fix image-pull failures."
+    log "  timed out after ${POD_WAIT_TIMEOUT}s — continuing anyway, the next step tries to fix image-pull failures."
     break
   fi
   sleep 5
 done
 
 # ---------------------------------------------------------------------------
-# 11. ghcr.io image-pull failures
+# 10. ghcr.io image-pull failures
 # ---------------------------------------------------------------------------
 step "checking for ghcr.io images stuck in ImagePullBackOff/ErrImagePull"
 bad_pods=()
@@ -614,7 +666,7 @@ for m in data.get('manifests', []):
 fi
 
 # ---------------------------------------------------------------------------
-# 12. Compute-cluster CRD/RBAC/secrets
+# 11. Compute-cluster CRD/RBAC/secrets
 # ---------------------------------------------------------------------------
 step "checking compute-cluster CRD/RBAC/secrets"
 if kubectl get secret "cluster-${CLUSTER_NAME}-ca-data" -n "$NAMESPACE" >/dev/null 2>&1 \
@@ -635,7 +687,7 @@ _create_compute_cluster_secrets(name)
 fi
 
 # ---------------------------------------------------------------------------
-# 13. ma-examples namespace + Project CR
+# 12. ma-examples namespace + Project CR
 # ---------------------------------------------------------------------------
 step "ensuring '$EXAMPLES_NAMESPACE' namespace and Project CR"
 kubectl create namespace "$EXAMPLES_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
@@ -647,7 +699,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 14. Cadence domain
+# 13. Cadence domain
 # ---------------------------------------------------------------------------
 step "checking Cadence domain registration"
 if kubectl get deployment -n "$NAMESPACE" \
@@ -662,7 +714,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 15. Zombie RayClusters + failed pods
+# 14. Zombie RayClusters + failed pods
 # ---------------------------------------------------------------------------
 step "cleaning zombie RayCluster CRs and failed pods"
 kubectl delete raycluster.michelangelo.api -n "$NAMESPACE" --all --ignore-not-found >/dev/null 2>&1 || true
