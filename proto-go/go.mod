@@ -1,6 +1,6 @@
 module github.com/michelangelo-ai/michelangelo/proto-go
 
-go 1.26.8
+go 1.26.9
 
 replace github.com/michelangelo-ai/michelangelo/go => ../go
 
@@ -10,7 +10,7 @@ require (
 	github.com/michelangelo-ai/michelangelo/go v0.0.0-00010101000000-000000000000
 	github.com/uber-go/tally v3.5.10+incompatible
 	go.uber.org/fx v1.22.0
-	go.uber.org/yarpc v1.80.0
+	go.uber.org/yarpc v1.88.0
 	google.golang.org/grpc v1.83.2
 	k8s.io/api v0.34.8
 	k8s.io/apimachinery v0.34.8
@@ -78,6 +78,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.4.3 // indirect
+	k8s.io/apiserver v0.34.8 // indirect
 	k8s.io/client-go v0.34.8 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20250814151709-d7b6acb124c3 // indirect

@@ -1,12 +1,14 @@
 module github.com/michelangelo-ai/michelangelo/go
 
-go 1.26.8
+go 1.26.9
 
 require (
 	cloud.google.com/go/storage v1.64.0
 	github.com/cadence-workflow/starlark-worker v1.0.15
 	github.com/cenkalti/backoff v2.2.1+incompatible
+	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/dave/dst v0.27.3
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/zapr v1.3.0
 	github.com/go-sql-driver/mysql v1.9.3
@@ -33,10 +35,10 @@ require (
 	go.temporal.io/api v1.49.1
 	go.temporal.io/sdk v1.35.0
 	go.temporal.io/sdk/contrib/tally v0.2.0
-	go.uber.org/cadence v1.3.1-rc.11
+	go.uber.org/cadence v1.4.0
 	go.uber.org/config v1.4.0
 	go.uber.org/fx v1.22.0
-	go.uber.org/yarpc v1.80.0
+	go.uber.org/yarpc v1.88.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/tools v0.48.0
 	google.golang.org/api v0.287.1
@@ -83,7 +85,6 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/go-ini/ini v1.67.0 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/jsonpointer v0.21.2 // indirect
 	github.com/go-openapi/jsonreference v0.21.0 // indirect
@@ -125,6 +126,7 @@ require (
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/twmb/murmur3 v1.1.8 // indirect
 	github.com/uber-go/mapdecode v1.0.0 // indirect
+	github.com/uber/cadence-idl v0.0.0-20260818192101-d6d4d81fa739 // indirect
 	github.com/uber/tchannel-go v1.34.4 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
@@ -145,7 +147,7 @@ require (
 	go.uber.org/thriftrw v1.32.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
+	golang.org/x/crypto v0.56.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20221208152030-732eee02a75a // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/mod v0.38.0 // indirect
