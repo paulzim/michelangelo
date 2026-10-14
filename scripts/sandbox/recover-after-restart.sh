@@ -5,63 +5,43 @@
 #
 # SCOPE: this is a *restart* recovery script — it assumes the k3d cluster and
 # its volumes already exist (you ran `ma sandbox stop` then `ma sandbox
-# start`, or the Mac itself rebooted and k3d came back on its own). It does
-# NOT perform the Zscaler CA docker-cp fix into the k3d node containers —
-# that is only needed after a full `ma sandbox delete` + `ma sandbox create`
-# (see the `sandbox_zscaler_ca_fixes` note), because a stop/start cycle never
-# touches the node containers' trust store. If you just ran delete+create,
-# do the CA fix first, then this script.
+# start`, or the Mac itself rebooted). It does NOT perform the full Zscaler CA
+# setup a fresh `ma sandbox delete` + `create` needs (see the
+# `sandbox_zscaler_ca_fixes` note) — it only repairs the k3d CA bind-mount
+# source file when macOS has garbage-collected it (step 1).
 #
-# What this covers (see CLAUDE.md "Sandbox install gotchas" for the full
-# writeup of each):
-#   1. After a node restart, `kubectl` can fail with `Unable to connect to
-#      the server: EOF` because the k3d `serverlb` proxy holds stale backend
-#      connections (gotcha #23) — detect this and restart serverlb before
-#      anything else, since every later step depends on kubectl working.
-#   2. `mysql`/`minio` are bare Pods with no Deployment/PVC — if a node
-#      restart evicts them, nothing recreates them, and `ma sandbox sync`
-#      cannot repair this itself: gotcha #22 confirms `_sync()` deliberately
-#      never touches infra resources, and gotcha #9 confirms sync outright
-#      fails if MySQL isn't already reachable. In the worst case (gotcha
-#      #28) both pods are entirely absent — reapply their raw manifests,
-#      plus minio's credentials Secret and bucket-setup Job, defensively
-#      before sync runs.
-#   3. `ma sandbox start` only restarts k3d nodes — Michelangelo pods do not
-#      come back on their own (gotcha #8). `ma sandbox sync` redeploys them
-#      — though if the prior release was broken/absent, sync silently falls
-#      back to a full `helm uninstall` + fresh install (gotcha #29), which
-#      matters for step 5 below.
-#   4. Pods can take a few minutes to settle after sync; poll until healthy
-#      instead of racing the very next step.
-#   5. A fresh Helm install (see #3) points apiserver/controllermgr/ui/worker
-#      at the published `ghcr.io/michelangelo-ai/*:main` images, and the k3d
-#      node's own containerd has a never-fully-diagnosed x509 trust failure
-#      pulling from ghcr.io specifically, even with the right CA present
-#      (gotchas #24/#25) — so expect `ImagePullBackOff`/`ErrImagePull` on
-#      all of them. Work around it the same way gotcha #26 does: pull each
-#      affected image by exact platform digest via the Mac's own (Zscaler-
-#      clean) Docker daemon, tag it back to the original ref, and
-#      `k3d image import` it directly — bypassing node-internal pulls
-#      entirely — then delete the stuck pods so they pick up the local copy.
-#   6. A `sync`-based recovery never re-runs the compute-cluster CRD/RBAC/
-#      secrets setup that `create` does (gotcha #4) — backfill defensively.
-#   7. The `ma-examples` namespace and its Project CR are lost on `delete`
-#      but NOT on `stop`/`start` — however if the cluster was ever recovered
-#      via `sync` after a wipe, they may be missing (gotchas #10/#11).
-#   8. If `_helm_wait()` timed out on this or a previous sync, Cadence domain
-#      registration can be skipped (gotcha #5) — verify/register it.
-#   9. Zombie RayCluster CRs (both `ray.io` and `michelangelo.api` groups)
-#      accumulate across failed runs and saturate the reconcile queue
-#      (gotcha #13) — clean them defensively on every run.
-#  10. Locally-built images (controllermgr overrides, example pipeline
-#      images) live in the k3d node's containerd content store, which does
-#      survive stop/start — but re-import defensively in case the node
-#      volume was recreated.
-#
-# NOT covered: the root cause of #5's node-internal ghcr.io trust failure —
-# it's a workaround, not a fix. Also does not redo the Zscaler CA docker-cp
-# fix (see SCOPE above) or attempt anything for registries other than
-# ghcr.io, since that's the only one seen to hit this failure mode so far.
+# Steps (see CLAUDE.md "Sandbox install gotchas" for the full writeup of each):
+#   1. Node containers: rebuild the k3d CA bind-mount source in $TMPDIR if a
+#      reboot deleted it (gotcha #32), then start stopped containers in
+#      order — server, agents, serverlb.
+#   2. Fail fast if Docker Desktop's port forwarding is wedged: serverlb has
+#      configured host ports that aren't live (gotcha #35). Only a Mac reboot
+#      clears this, so stop with that instruction instead of cascading.
+#   3. kubectl connectivity — restart serverlb on stale-EOF (gotcha #23).
+#   4. Nodes Ready *and stable* — a freshly booted node can report Ready and
+#      then flip to NotReady ~50s later; restart any node container that stays
+#      NotReady (gotcha #32 addendum). Must run before step 5: a node NotReady
+#      for >300s evicts the mysql/minio bare Pods.
+#   5. mysql/minio bare Pods: delete evicted/terminal ones and reapply missing
+#      manifests (gotchas #9/#22/#28).
+#   6. Re-import locally-built images into k3d, before sync and the overrides
+#      in step 9 reference them.
+#   7. Delete app Deployments carrying a kubectl field-manager lock (e.g. from
+#      `kubectl set image`) so Helm's server-side apply can't conflict
+#      (gotcha #12). A failed upgrade would also mark the release "failed" and
+#      push every later sync into a full reinstall (gotcha #29).
+#   8. `ma sandbox sync` (gotcha #8).
+#   9. Re-apply local Helm overrides from values-local.yaml (gitignored; copy
+#      values-local.example.yaml). Re-applied on every run, so custom images
+#      survive both `--reuse-values` upgrades and gotcha #29 reinstalls.
+#  10. Poll until pods leave Pending/ContainerCreating.
+#  11. Auto-fix ghcr.io images stuck in ImagePullBackOff via host-Docker
+#      digest pulls + `k3d image import` (gotchas #24-27/#29).
+#  12. Backfill compute-cluster CRD/RBAC/secrets (gotcha #4).
+#  13. Ensure the ma-examples namespace + Project CR (gotchas #10/#11).
+#  14. Verify/register the Cadence domain (gotcha #5).
+#  15. Clean zombie RayClusters (both CRD groups) and failed pods (gotcha #13).
+#   Finally: report pods still unhealthy (minus IGNORE_PODS) and exit 2 if any.
 #
 # Usage:
 #   scripts/sandbox/recover-after-restart.sh
@@ -74,15 +54,26 @@
 #   LOCAL_IMAGE_PATTERN  — grep pattern for local images to re-import (default: -local)
 #   SERVERLB_CONTAINER   — k3d serverlb container name (default: k3d-<CLUSTER_NAME>-serverlb)
 #   IMAGE_PLATFORM       — os/arch to resolve ghcr.io digests for (default: linux/arm64)
+#   VALUES_LOCAL         — Helm overrides file (default: <script dir>/values-local.yaml)
+#   ZSCALER_CA_PEM       — Zscaler root CA appended to a rebuilt CA bundle
+#                          (default: <repo>/../michelangelo-examples/.docker/zscaler-root-ca.pem)
+#   IGNORE_PODS          — regex of pod names excluded from the final health check
+#                          (default: ^model-sync- ; empty string = ignore nothing)
+#   NODE_READY_TIMEOUT   — seconds to wait for nodes Ready+stable (default: 300)
+#   NODE_STABLE_SECS     — seconds a Ready transition must hold (default: 90)
+#   NODE_RESTART_AFTER   — seconds NotReady before restarting a node container (default: 60)
 #
 # Exit codes:
-#   0 = completed (see final pod summary for actual health)
-#   1 = a required precondition failed (cluster not found, poetry/kubectl missing)
+#   0 = completed, all pods healthy (excluding IGNORE_PODS)
+#   1 = blocked: missing tool/cluster, wedged Docker ports, nodes not Ready, or sync failed
+#   2 = completed, but some pods are still unhealthy (listed at the end)
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PYTHON_DIR="$REPO_ROOT/python"
+CHART_DIR="$REPO_ROOT/helm/michelangelo"
 PROJECT_YAML="$PYTHON_DIR/examples/config/project.yaml"
 MYSQL_YAML="$PYTHON_DIR/michelangelo/cli/sandbox/resources/mysql.yaml"
 MINIO_YAML="$PYTHON_DIR/michelangelo/cli/sandbox/resources/minio.yaml"
@@ -96,59 +87,325 @@ POD_WAIT_TIMEOUT="${POD_WAIT_TIMEOUT:-300}"
 LOCAL_IMAGE_PATTERN="${LOCAL_IMAGE_PATTERN:--local}"
 SERVERLB_CONTAINER="${SERVERLB_CONTAINER:-k3d-${CLUSTER_NAME}-serverlb}"
 IMAGE_PLATFORM="${IMAGE_PLATFORM:-linux/arm64}"
+VALUES_LOCAL="${VALUES_LOCAL:-$SCRIPT_DIR/values-local.yaml}"
+ZSCALER_CA_PEM="${ZSCALER_CA_PEM:-$REPO_ROOT/../michelangelo-examples/.docker/zscaler-root-ca.pem}"
+IGNORE_PODS="${IGNORE_PODS-^model-sync-}"
+NODE_READY_TIMEOUT="${NODE_READY_TIMEOUT:-300}"
+NODE_STABLE_SECS="${NODE_STABLE_SECS:-90}"
+NODE_RESTART_AFTER="${NODE_RESTART_AFTER:-60}"
+
+CA_MOUNT_DEST="/etc/ssl/certs/ca-certificates.crt"
+APP_DEPLOYMENTS=(michelangelo-apiserver michelangelo-controllermgr michelangelo-worker michelangelo-ui)
+TOTAL_STEPS=15
+STEP=0
 
 log() { echo "[recover] $*"; }
+step() { STEP=$((STEP + 1)); log "Step ${STEP}/${TOTAL_STEPS}: $*"; }
+die() { log "ERROR — $*"; exit 1; }
 
-if ! command -v kubectl >/dev/null 2>&1; then
-  echo "kubectl not found on PATH" >&2
-  exit 1
-fi
-if ! command -v poetry >/dev/null 2>&1; then
-  echo "poetry not found on PATH (needed for \`ma sandbox\` commands)" >&2
-  exit 1
-fi
+for tool in kubectl poetry helm docker k3d python3; do
+  command -v "$tool" >/dev/null 2>&1 || die "'$tool' not found on PATH"
+done
+docker info >/dev/null 2>&1 || die "Docker daemon not reachable — is Docker Desktop running (and fully started)?"
 if ! k3d cluster get "$CLUSTER_NAME" >/dev/null 2>&1; then
-  echo "k3d cluster '$CLUSTER_NAME' not found. This script only handles" >&2
-  echo "restart recovery; run \`ma sandbox create\` for a fresh cluster." >&2
-  exit 1
+  die "k3d cluster '$CLUSTER_NAME' not found. This script only handles restart recovery; run 'ma sandbox create' for a fresh cluster."
 fi
 
-# 1. Verify kubectl can actually reach the API server before anything else —
-# after a node restart, the k3d serverlb proxy commonly holds stale backend
-# connections and every kubectl call fails with EOF until it's restarted
-# (gotcha #23).
-log "Step 1/10: verifying kubectl connectivity"
-if kubectl get --raw='/healthz' --request-timeout=5s >/dev/null 2>&1; then
+SERVER_CONTAINERS=()
+AGENT_CONTAINERS=()
+while IFS= read -r name; do
+  case "$name" in
+    "k3d-${CLUSTER_NAME}-server-"*) SERVER_CONTAINERS+=("$name") ;;
+    "k3d-${CLUSTER_NAME}-agent-"*) AGENT_CONTAINERS+=("$name") ;;
+  esac
+done < <(docker ps -a --format '{{.Names}}' 2>/dev/null | sort)
+[ "${#SERVER_CONTAINERS[@]}" -gt 0 ] || die "no container named k3d-${CLUSTER_NAME}-server-* found"
+NODE_CONTAINERS=("${SERVER_CONTAINERS[@]}")
+if [ "${#AGENT_CONTAINERS[@]}" -gt 0 ]; then
+  NODE_CONTAINERS+=("${AGENT_CONTAINERS[@]}")
+fi
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+
+port_wedge_abort() {
+  log "ERROR — Docker Desktop is not publishing host ports for $1 (gotcha #35)."
+  if [ -n "${2:-}" ]; then
+    log "  detail: $2"
+  fi
+  log "  If 'lsof -nP -iTCP:<port> -sTCP:LISTEN' shows nothing holding the port, Docker Desktop's"
+  log "  port-forwarding layer is stuck. Restarting containers or Docker Desktop does NOT clear it:"
+  log "  reboot the Mac, then rerun this script (step 1 repairs the CA mount a reboot breaks)."
+  exit 1
+}
+
+check_serverlb_ports() {
+  local configured live missing
+  configured="$(docker inspect -f '{{json .HostConfig.PortBindings}}' "$SERVERLB_CONTAINER" 2>/dev/null || echo '{}')"
+  live="$(docker inspect -f '{{json .NetworkSettings.Ports}}' "$SERVERLB_CONTAINER" 2>/dev/null || echo '{}')"
+  missing="$(CONFIGURED="$configured" LIVE="$live" python3 -c '
+import json, os
+def bound(raw):
+    try:
+        data = json.loads(raw) or {}
+    except Exception:
+        return set()
+    return {port for port, bindings in data.items() if bindings}
+print(" ".join(sorted(bound(os.environ["CONFIGURED"]) - bound(os.environ["LIVE"]))))
+')"
+  if [ -n "$missing" ]; then
+    port_wedge_abort "$SERVERLB_CONTAINER" "configured but not live: $missing"
+  fi
+}
+
+container_running() {
+  [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null || echo false)" = "true" ]
+}
+
+STARTED_ANY=0
+start_container() {
+  local err
+  if container_running "$1"; then
+    return 0
+  fi
+  log "  starting $1"
+  if ! err="$(docker start "$1" 2>&1 >/dev/null)"; then
+    case "$err" in
+      *"ports are not available"*) port_wedge_abort "$1" "$err" ;;
+    esac
+    die "failed to start $1: $err"
+  fi
+  STARTED_ANY=1
+}
+
+ca_mount_source() {
+  docker inspect "$1" \
+    --format "{{range .Mounts}}{{if eq .Destination \"$CA_MOUNT_DEST\"}}{{.Source}}{{end}}{{end}}" \
+    2>/dev/null || true
+}
+
+build_ca_bundle() {
+  command -v security >/dev/null 2>&1 || return 1
+  security export -t certs -f pemseq /Library/Keychains/System.keychain > "$1"
+  if [ -f "$ZSCALER_CA_PEM" ]; then
+    cat "$ZSCALER_CA_PEM" >> "$1"
+  else
+    log "  WARNING — $ZSCALER_CA_PEM not found; bundle has System keychain certs only (gotcha #24: may lack the Zscaler root)."
+  fi
+}
+
+repair_ca_mount() {
+  local src tmp
+  src="$(ca_mount_source "$1")"
+  if [ -z "$src" ] || [ -f "$src" ]; then
+    return 0
+  fi
+  log "  $1: CA bind-mount source is missing or not a file (gotcha #32): $src"
+  if [ -d "$src" ]; then
+    if [ -n "$(ls -A "$src" 2>/dev/null)" ]; then
+      die "$src is a non-empty directory — not touching it; inspect it manually."
+    fi
+    rmdir "$src"
+  fi
+  tmp="$(mktemp)"
+  if ! build_ca_bundle "$tmp"; then
+    rm -f "$tmp"
+    die "cannot rebuild the CA bundle (macOS 'security' tool unavailable) — see CLAUDE.md gotcha #32."
+  fi
+  cp "$tmp" "$src"
+  chmod 644 "$src"
+  rm -f "$tmp"
+  log "  rebuilt $src ($(grep -c 'BEGIN CERTIFICATE' "$src" || true) certs)"
+}
+
+kubectl_reachable() {
+  kubectl get --raw='/healthz' --request-timeout=5s >/dev/null 2>&1
+}
+
+restart_serverlb() {
+  local err deadline
+  if ! docker inspect "$SERVERLB_CONTAINER" >/dev/null 2>&1; then
+    log "  WARNING — container '$SERVERLB_CONTAINER' not found, cannot restart it."
+    return 0
+  fi
+  log "  restarting $SERVERLB_CONTAINER (gotcha #23)"
+  if ! err="$(docker restart "$SERVERLB_CONTAINER" 2>&1 >/dev/null)"; then
+    case "$err" in
+      *"ports are not available"*) port_wedge_abort "$SERVERLB_CONTAINER" "$err" ;;
+    esac
+    log "  WARNING — docker restart failed: $err"
+    return 0
+  fi
+  check_serverlb_ports
+  deadline=$(( $(date +%s) + 30 ))
+  until kubectl_reachable; do
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      log "  WARNING — kubectl still unreachable 30s after restarting serverlb."
+      return 0
+    fi
+    sleep 2
+  done
+  log "  kubectl connectivity restored."
+}
+
+# Prints NotReady node names, or __apiserver_unreachable__ if kubectl fails.
+nodes_not_ready() {
+  local out
+  if ! out="$(kubectl get nodes --no-headers 2>/dev/null)" || [ -z "$out" ]; then
+    echo "__apiserver_unreachable__"
+    return 0
+  fi
+  echo "$out" | awk '$2 !~ /^Ready/ {print $1}'
+}
+
+# Seconds since the most recent node Ready-condition transition.
+newest_ready_age() {
+  kubectl get nodes -o json 2>/dev/null | python3 -c '
+import json, sys
+from datetime import datetime, timezone
+try:
+    items = json.load(sys.stdin)["items"]
+except Exception:
+    print(0)
+    sys.exit(0)
+now = datetime.now(timezone.utc)
+ages = []
+for node in items:
+    for cond in node.get("status", {}).get("conditions", []):
+        if cond.get("type") == "Ready" and cond.get("lastTransitionTime"):
+            try:
+                t = datetime.strptime(cond["lastTransitionTime"], "%Y-%m-%dT%H:%M:%SZ")
+            except ValueError:
+                continue
+            ages.append(int((now - t.replace(tzinfo=timezone.utc)).total_seconds()))
+print(min(ages) if ages else 0)
+' || echo 0
+}
+
+# Succeeds if the bare Pod is Running/Pending and not being deleted.
+pod_usable() {
+  local state
+  state="$(kubectl get pod "$1" -n "$NAMESPACE" \
+    -o jsonpath='{.status.phase}/{.metadata.deletionTimestamp}' 2>/dev/null || true)"
+  [ "$state" = "Running/" ] || [ "$state" = "Pending/" ]
+}
+
+# ---------------------------------------------------------------------------
+# 1. Node containers
+# ---------------------------------------------------------------------------
+step "checking k3d node containers (CA bind-mount, start order)"
+for c in "${NODE_CONTAINERS[@]}"; do
+  repair_ca_mount "$c"
+done
+for c in "${SERVER_CONTAINERS[@]}"; do
+  start_container "$c"
+done
+if [ "$STARTED_ANY" -eq 1 ] && [ "${#AGENT_CONTAINERS[@]}" -gt 0 ]; then
+  log "  giving the server 15s head start before agents"
+  sleep 15
+fi
+if [ "${#AGENT_CONTAINERS[@]}" -gt 0 ]; then
+  for c in "${AGENT_CONTAINERS[@]}"; do
+    start_container "$c"
+  done
+fi
+if docker inspect "$SERVERLB_CONTAINER" >/dev/null 2>&1; then
+  start_container "$SERVERLB_CONTAINER"
+fi
+if [ "$STARTED_ANY" -eq 0 ]; then
+  log "  all node containers already running."
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Docker Desktop port publishing
+# ---------------------------------------------------------------------------
+step "verifying Docker publishes serverlb's host ports"
+if docker inspect "$SERVERLB_CONTAINER" >/dev/null 2>&1; then
+  check_serverlb_ports
+  log "  all configured host ports are live."
+else
+  log "  WARNING — $SERVERLB_CONTAINER not found; skipping."
+fi
+
+# ---------------------------------------------------------------------------
+# 3. kubectl connectivity
+# ---------------------------------------------------------------------------
+step "verifying kubectl connectivity"
+if kubectl_reachable; then
   log "  kubectl connectivity OK."
 else
   log "  kubectl cannot reach the API server — likely a stale serverlb proxy."
-  if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$SERVERLB_CONTAINER"; then
-    log "  restarting $SERVERLB_CONTAINER"
-    docker restart "$SERVERLB_CONTAINER" >/dev/null
-    deadline=$(( $(date +%s) + 30 ))
-    until kubectl get --raw='/healthz' --request-timeout=5s >/dev/null 2>&1; do
-      if [ "$(date +%s)" -ge "$deadline" ]; then
-        log "  WARNING — kubectl still unreachable after restarting serverlb; continuing anyway, later steps will likely fail."
-        break
-      fi
-      sleep 2
-    done
-    kubectl get --raw='/healthz' --request-timeout=5s >/dev/null 2>&1 && log "  kubectl connectivity restored."
-  else
-    log "  WARNING — container '$SERVERLB_CONTAINER' not found, cannot auto-fix. Continuing anyway."
-  fi
+  restart_serverlb
 fi
 
-# 2. Reapply mysql/minio bare-Pod manifests (and, if minio itself was gone,
-# its credentials Secret + bucket-setup Job too) if a node eviction dropped
-# them — `ma sandbox sync` cannot recover this on its own (gotchas #9/#22),
-# and in the worst case both are entirely absent, not just unhealthy
-# (gotcha #28).
-log "Step 2/10: checking mysql/minio pods in namespace '$NAMESPACE'"
+# ---------------------------------------------------------------------------
+# 4. Nodes Ready and stable
+# ---------------------------------------------------------------------------
+step "waiting for nodes to be Ready and stable (timeout ${NODE_READY_TIMEOUT}s)"
+start_ts=$(date +%s)
+deadline=$((start_ts + NODE_READY_TIMEOUT))
+restarted_nodes=0
+while true; do
+  not_ready="$(nodes_not_ready)"
+  now=$(date +%s)
+  if [ -z "$not_ready" ]; then
+    age="$(newest_ready_age)"
+    age="${age:-0}"
+    if [ "$age" -ge "$NODE_STABLE_SECS" ]; then
+      log "  all nodes Ready (newest Ready transition ${age}s ago)."
+      break
+    fi
+    log "  all nodes Ready, but newest Ready transition was ${age}s ago — waiting until ${NODE_STABLE_SECS}s to rule out a post-boot flip back to NotReady"
+  else
+    log "  not Ready: $(echo "$not_ready" | tr '\n' ' ')"
+    if [ "$restarted_nodes" -eq 0 ] && [ $((now - start_ts)) -ge "$NODE_RESTART_AFTER" ]; then
+      restarted_nodes=1
+      if [ "$not_ready" = "__apiserver_unreachable__" ]; then
+        restart_serverlb
+      else
+        log "  still NotReady after ${NODE_RESTART_AFTER}s — restarting those node containers once (gotcha #32 addendum)"
+        for n in $not_ready; do
+          if docker inspect "$n" >/dev/null 2>&1; then
+            docker restart "$n" >/dev/null
+          else
+            log "  WARNING — no container named $n"
+          fi
+        done
+        sleep 10
+        restart_serverlb
+      fi
+    fi
+  fi
+  if [ "$now" -ge "$deadline" ]; then
+    log "ERROR — nodes not Ready+stable after ${NODE_READY_TIMEOUT}s; 'ma sandbox sync' would fail its own node wait."
+    log "  Inspect: kubectl describe node <name> | tail -30"
+    log "           docker inspect -f '{{json .State}}' <node container>"
+    exit 1
+  fi
+  sleep 5
+done
+
+# ---------------------------------------------------------------------------
+# 5. mysql/minio bare Pods
+# ---------------------------------------------------------------------------
+step "checking mysql/minio pods in namespace '$NAMESPACE'"
 mysql_missing=0
 minio_missing=0
-kubectl get pod mysql -n "$NAMESPACE" >/dev/null 2>&1 || mysql_missing=1
-kubectl get pod minio -n "$NAMESPACE" >/dev/null 2>&1 || minio_missing=1
+for p in mysql minio; do
+  if pod_usable "$p"; then
+    continue
+  fi
+  if kubectl get pod "$p" -n "$NAMESPACE" >/dev/null 2>&1; then
+    log "  $p pod exists but is not Running/Pending (likely evicted while a node was NotReady) — deleting it"
+    kubectl delete pod "$p" -n "$NAMESPACE" --ignore-not-found --wait=true --timeout=60s >/dev/null 2>&1 || true
+  fi
+  if [ "$p" = "mysql" ]; then
+    mysql_missing=1
+  else
+    minio_missing=1
+  fi
+done
 if [ "$mysql_missing" -eq 0 ] && [ "$minio_missing" -eq 0 ]; then
   log "  mysql and minio pods already present — skipping."
 else
@@ -179,15 +436,84 @@ else
     log "  WARNING — mysql/minio did not report ready in time; continuing anyway."
 fi
 
-# 3. Redeploy the Michelangelo app pods (gotcha #8). Note: if the prior Helm
-# release was broken/absent, sync silently does a full uninstall+reinstall
-# instead of an upgrade (gotcha #29) — step 5 below handles the fallout.
-log "Step 3/10: ma sandbox sync"
-(cd "$PYTHON_DIR" && poetry run ma sandbox sync)
+# ---------------------------------------------------------------------------
+# 6. Local images
+# ---------------------------------------------------------------------------
+step "re-importing local images matching '*${LOCAL_IMAGE_PATTERN}*' into k3d"
+local_images="$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -- "$LOCAL_IMAGE_PATTERN" || true)"
+if [ -n "$local_images" ]; then
+  local_images_arr=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && local_images_arr+=("$line")
+  done <<< "$local_images"
+  k3d image import "${local_images_arr[@]}" -c "$CLUSTER_NAME"
+  printf '%s\n' "${local_images_arr[@]}" | sed 's/^/[recover]   imported: /'
+else
+  log "  no local images found matching '*${LOCAL_IMAGE_PATTERN}*'."
+fi
 
-# 4. Poll until nothing is Pending/ContainerCreating, surfacing crash-loops
-# and image-pull failures (the latter handled by step 5).
-log "Step 4/10: waiting for pods in namespace '$NAMESPACE' to settle (timeout ${POD_WAIT_TIMEOUT}s)"
+# ---------------------------------------------------------------------------
+# 7. Field-manager locks + release state
+# ---------------------------------------------------------------------------
+step "checking app Deployments for kubectl field-manager locks (gotcha #12)"
+locked=()
+while IFS=$'\t' read -r name managers; do
+  [ -n "$name" ] || continue
+  case ",$managers," in
+    *,kubectl-set,*|*,kubectl-edit,*|*,kubectl-patch,*) locked+=("$name") ;;
+  esac
+done < <(kubectl get deployment -n "$NAMESPACE" -l app.kubernetes.io/instance=michelangelo \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .metadata.managedFields[*]}{.manager}{","}{end}{"\n"}{end}' \
+  2>/dev/null || true)
+if [ "${#locked[@]}" -gt 0 ]; then
+  for d in "${locked[@]}"; do
+    img="$(kubectl get deployment "$d" -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+    log "  $d has fields owned by a kubectl edit (image: ${img:-?}) — deleting so Helm can recreate it."
+    kubectl delete deployment "$d" -n "$NAMESPACE" --wait=true >/dev/null
+  done
+  log "  pin custom images in $VALUES_LOCAL instead of 'kubectl set image' (see values-local.example.yaml)."
+else
+  log "  no locks found."
+fi
+release_json="$(helm status michelangelo -n "$NAMESPACE" -o json 2>/dev/null || true)"
+case "$release_json" in
+  *'"status":"deployed"'*) log "  Helm release is 'deployed' — sync will upgrade in place." ;;
+  *) log "  Helm release missing or not 'deployed' — sync will uninstall + reinstall (gotcha #29); step 9 re-applies local overrides." ;;
+esac
+
+# ---------------------------------------------------------------------------
+# 8. ma sandbox sync
+# ---------------------------------------------------------------------------
+step "ma sandbox sync"
+if ! (cd "$PYTHON_DIR" && poetry run ma sandbox sync); then
+  die "'ma sandbox sync' failed — see its output above (field-manager conflict: gotcha #12; MySQL absent: gotchas #9/#28)."
+fi
+
+# ---------------------------------------------------------------------------
+# 9. Local Helm overrides
+# ---------------------------------------------------------------------------
+step "applying local Helm overrides"
+if [ -f "$VALUES_LOCAL" ]; then
+  log "  helm upgrade --reuse-values -f $VALUES_LOCAL"
+  if ! helm upgrade michelangelo "$CHART_DIR" -n "$NAMESPACE" --reuse-values -f "$VALUES_LOCAL" >/dev/null; then
+    die "helm upgrade with $VALUES_LOCAL failed — see output above."
+  fi
+  for d in "${APP_DEPLOYMENTS[@]}"; do
+    kubectl rollout status "deployment/$d" -n "$NAMESPACE" --timeout=180s >/dev/null 2>&1 || \
+      log "  WARNING — $d did not finish rolling out within 180s."
+  done
+  log "  applied; current app images:"
+  kubectl get deployment -n "$NAMESPACE" "${APP_DEPLOYMENTS[@]}" \
+    -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.template.spec.containers[0].image}{"\n"}{end}' \
+    2>/dev/null | sed 's/^/[recover]     /' || true
+else
+  log "  no $VALUES_LOCAL — chart default images in use (template: $SCRIPT_DIR/values-local.example.yaml)."
+fi
+
+# ---------------------------------------------------------------------------
+# 10. Pods settle
+# ---------------------------------------------------------------------------
+step "waiting for pods in namespace '$NAMESPACE' to settle (timeout ${POD_WAIT_TIMEOUT}s)"
 deadline=$(( $(date +%s) + POD_WAIT_TIMEOUT ))
 while true; do
   pod_lines="$(kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null || true)"
@@ -207,21 +533,16 @@ while true; do
     log "  still settling: $(echo "$unsettled" | tr '\n' ' ')"
   fi
   if [ "$(date +%s)" -ge "$deadline" ]; then
-    log "  timed out after ${POD_WAIT_TIMEOUT}s — continuing anyway, step 5 will try to fix image-pull failures."
+    log "  timed out after ${POD_WAIT_TIMEOUT}s — continuing anyway, step 11 will try to fix image-pull failures."
     break
   fi
   sleep 5
 done
 
-# 5. Auto-fix ghcr.io images stuck in ImagePullBackOff/ErrImagePull, across
-# ALL namespaces (a fresh sync-triggered reinstall hits this on apiserver/
-# controllermgr/ui/worker; other flows have hit it on spark-operator and
-# kuberay-historyserver too). The k3d node's containerd has a never-fully-
-# diagnosed x509 trust failure against ghcr.io specifically (gotchas
-# #24/#25) — the reliable workaround is to bypass node-internal pulls
-# entirely: pull by exact platform digest via the Mac's host Docker daemon
-# (gotcha #26), tag back to the original ref, and `k3d image import` it.
-log "Step 5/10: checking for ghcr.io images stuck in ImagePullBackOff/ErrImagePull"
+# ---------------------------------------------------------------------------
+# 11. ghcr.io image-pull failures
+# ---------------------------------------------------------------------------
+step "checking for ghcr.io images stuck in ImagePullBackOff/ErrImagePull"
 bad_pods=()
 while IFS= read -r line; do
   [ -n "$line" ] && bad_pods+=("$line")
@@ -292,8 +613,10 @@ for m in data.get('manifests', []):
   fi
 fi
 
-# 6. Backfill compute-cluster CRD/RBAC/secrets if a sync-recovery skipped them (gotcha #4).
-log "Step 6/10: checking compute-cluster CRD/RBAC/secrets"
+# ---------------------------------------------------------------------------
+# 12. Compute-cluster CRD/RBAC/secrets
+# ---------------------------------------------------------------------------
+step "checking compute-cluster CRD/RBAC/secrets"
 if kubectl get secret "cluster-${CLUSTER_NAME}-ca-data" -n "$NAMESPACE" >/dev/null 2>&1 \
   && kubectl get secret "cluster-${CLUSTER_NAME}-client-token" -n "$NAMESPACE" >/dev/null 2>&1; then
   log "  compute-cluster secrets already present — skipping backfill."
@@ -311,8 +634,10 @@ _create_compute_cluster_secrets(name)
 ")
 fi
 
-# 7. Ensure the ma-examples namespace and Project CR exist (gotchas #10/#11).
-log "Step 7/10: ensuring '$EXAMPLES_NAMESPACE' namespace and Project CR"
+# ---------------------------------------------------------------------------
+# 13. ma-examples namespace + Project CR
+# ---------------------------------------------------------------------------
+step "ensuring '$EXAMPLES_NAMESPACE' namespace and Project CR"
 kubectl create namespace "$EXAMPLES_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 if [ -f "$PROJECT_YAML" ]; then
   kubectl apply -f "$PROJECT_YAML" >/dev/null
@@ -321,8 +646,10 @@ else
   log "  WARNING — $PROJECT_YAML not found, skipping Project CR apply."
 fi
 
-# 8. Verify/register the Cadence domain if this sandbox uses Cadence (gotcha #5).
-log "Step 8/10: checking Cadence domain registration"
+# ---------------------------------------------------------------------------
+# 14. Cadence domain
+# ---------------------------------------------------------------------------
+step "checking Cadence domain registration"
 if kubectl get deployment -n "$NAMESPACE" \
   -l app.kubernetes.io/name=cadence,app.kubernetes.io/component=frontend \
   --no-headers 2>/dev/null | grep -q .; then
@@ -334,26 +661,35 @@ else
   log "  no Cadence frontend deployment found — assuming Temporal, skipping."
 fi
 
-# 9. Clean zombie RayClusters across both CRD groups + failed pods (gotcha #13).
-log "Step 9/10: cleaning zombie RayCluster CRs and failed pods"
+# ---------------------------------------------------------------------------
+# 15. Zombie RayClusters + failed pods
+# ---------------------------------------------------------------------------
+step "cleaning zombie RayCluster CRs and failed pods"
 kubectl delete raycluster.michelangelo.api -n "$NAMESPACE" --all --ignore-not-found >/dev/null 2>&1 || true
 kubectl delete raycluster.ray.io -n "$NAMESPACE" --all --ignore-not-found >/dev/null 2>&1 || true
 kubectl delete pod -n "$NAMESPACE" --field-selector=status.phase=Failed --ignore-not-found >/dev/null 2>&1 || true
 
-# 10. Re-import any locally-built images into k3d (survives stop/start, but
-# re-import defensively in case the node volume was recreated).
-log "Step 10/10: re-importing local images matching '*${LOCAL_IMAGE_PATTERN}*' into k3d"
-local_images="$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -- "$LOCAL_IMAGE_PATTERN" || true)"
-if [ -n "$local_images" ]; then
-  local_images_arr=()
-  while IFS= read -r line; do
-    [ -n "$line" ] && local_images_arr+=("$line")
-  done <<< "$local_images"
-  k3d image import "${local_images_arr[@]}" -c "$CLUSTER_NAME"
-  printf '%s\n' "${local_images_arr[@]}" | sed 's/^/[recover]   imported: /'
-else
-  log "  no local images found matching '*${LOCAL_IMAGE_PATTERN}*'."
-fi
+# ---------------------------------------------------------------------------
+# Final health check
+# ---------------------------------------------------------------------------
+unhealthy_pods() {
+  kubectl get pods --all-namespaces --no-headers 2>/dev/null | awk -v ignore="$IGNORE_PODS" '
+    $4 ~ /CrashLoopBackOff|Error|ImagePullBackOff|ErrImagePull|CreateContainerConfigError|InvalidImageName|RunContainerError|Pending/ &&
+      (ignore == "" || $2 !~ ignore) {print $1"/"$2": "$4}' || true
+}
 
-log "Done. Final pod summary across all namespaces:"
-kubectl get pods --all-namespaces
+log "Final pod summary across all namespaces:"
+kubectl get pods --all-namespaces || true
+unhealthy="$(unhealthy_pods)"
+if [ -n "$unhealthy" ]; then
+  log "  re-checking unhealthy pods in 20s (rollouts may still be finishing)..."
+  sleep 20
+  unhealthy="$(unhealthy_pods)"
+fi
+if [ -n "$unhealthy" ]; then
+  log "FINISHED WITH PROBLEMS — unhealthy pods (ignoring '${IGNORE_PODS}'):"
+  echo "$unhealthy" | sed 's/^/[recover]   /'
+  log "  Next: kubectl logs -n <ns> <pod> --previous ; kubectl describe pod -n <ns> <pod> | tail -30"
+  exit 2
+fi
+log "Done — all pods healthy (ignoring '${IGNORE_PODS}')."

@@ -1,0 +1,12 @@
+# Local Helm overrides for the sandbox. Copy to values-local.yaml (gitignored)
+# next to this file. recover-after-restart.sh re-applies it after every
+# `ma sandbox sync` via `helm upgrade --reuse-values -f values-local.yaml`.
+#
+# Use this instead of `kubectl set image`, which takes field ownership away
+# from Helm and breaks the next sync (CLAUDE.md gotcha #12). Images must
+# already exist in k3d — the script re-imports any local image whose name
+# matches LOCAL_IMAGE_PATTERN (default "-local") before applying this.
+images:
+  controllermgr:
+    repository: michelangelo-controllermgr-local
+    tag: tritonfix
