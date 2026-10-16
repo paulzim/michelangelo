@@ -785,12 +785,20 @@ for d in "${APP_DEPLOYMENTS[@]}"; do
     continue
   fi
   stale_on=""
+  read_any=0
   for n in "${NODE_CONTAINERS[@]}"; do
     node_cfg="$(node_config_digest "$n" "$img")"
-    if [ -n "$node_cfg" ] && [ "$node_cfg" != "$remote_cfg" ]; then
-      stale_on="$stale_on ${n} (${node_cfg:7:12})"
+    if [ -n "$node_cfg" ]; then
+      read_any=1
+      if [ "$node_cfg" != "$remote_cfg" ]; then
+        stale_on="$stale_on ${n} (${node_cfg:7:12})"
+      fi
     fi
   done
+  if [ "$read_any" -eq 0 ]; then
+    log "  WARNING — $d: couldn't read $img from any node's image store (crictl inspecti); not checked."
+    continue
+  fi
   if [ -z "$stale_on" ]; then
     log "  $d: $img is current (${remote_cfg:7:12})."
     continue
