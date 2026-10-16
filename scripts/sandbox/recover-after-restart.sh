@@ -37,11 +37,18 @@
 #   9. Poll until pods leave Pending/ContainerCreating.
 #  10. Auto-fix ghcr.io images stuck in ImagePullBackOff via host-Docker
 #      digest pulls + `k3d image import` (gotchas #24-27/#29).
-#  11. Backfill compute-cluster CRD/RBAC/secrets (gotcha #4).
-#  12. Ensure the ma-examples namespace + Project CR (gotchas #10/#11).
-#  13. Verify/register the Cadence domain (gotcha #5).
-#  14. Clean zombie RayClusters (both CRD groups) and failed pods (gotcha #13).
-#   Finally: report pods still unhealthy (minus IGNORE_PODS) and exit 2 if any.
+#  11. Refresh cached ghcr.io `:main` app images that are behind the registry,
+#      compared by image config digest, then restart their Deployments
+#      (gotcha #36). Nodes never refresh a cached `:main` on their own.
+#  12. Backfill compute-cluster CRD/RBAC/secrets (gotcha #4).
+#  13. Make the michelangelo-config ConfigMap's S3 credentials, which Ray and
+#      Spark task pods use, match what MinIO actually boots with (gotcha #38).
+#      Only `ma sandbox create` writes that ConfigMap.
+#  14. Ensure the ma-examples namespace + Project CR (gotchas #10/#11).
+#  15. Verify/register the Cadence domain (gotcha #5).
+#  16. Clean zombie RayClusters (both CRD groups) and failed pods (gotcha #13).
+#   Finally: report pods still unhealthy (minus IGNORE_PODS) and app images
+#   still stale, and exit 2 if any.
 #
 # Usage:
 #   scripts/sandbox/recover-after-restart.sh
@@ -57,8 +64,11 @@
 #   VALUES_LOCAL         — Helm overrides file (default: <script dir>/values-local.yaml)
 #   ZSCALER_CA_PEM       — Zscaler root CA appended to a rebuilt CA bundle
 #                          (default: <repo>/../michelangelo-examples/.docker/zscaler-root-ca.pem)
-#   IGNORE_PODS          — regex of pod names excluded from the final health check
-#                          (default: ^model-sync- ; empty string = ignore nothing)
+#   IGNORE_PODS          — regex of pod names excluded from the step 9 warning and the
+#                          final health check (default: ^model-sync- ; empty string = ignore nothing)
+#   REFRESH_STALE_IMAGES — 0 = only report stale ghcr.io :main app images in step 11 (default: 1).
+#                          A fresh :main can be ahead of this checkout's chart if the fork
+#                          hasn't synced upstream lately.
 #   NODE_READY_TIMEOUT   — seconds to wait for nodes Ready+stable (default: 300)
 #   NODE_STABLE_SECS     — seconds a Ready transition must hold (default: 90)
 #   NODE_RESTART_AFTER   — seconds NotReady before restarting a node container (default: 60)
@@ -66,7 +76,7 @@
 # Exit codes:
 #   0 = completed, all pods healthy (excluding IGNORE_PODS)
 #   1 = blocked: missing tool/cluster, wedged Docker ports, nodes not Ready, or sync's helm step failed
-#   2 = completed, but some pods are still unhealthy (listed at the end)
+#   2 = completed, but some pods are still unhealthy or app images still stale (listed at the end)
 
 set -euo pipefail
 
@@ -78,6 +88,7 @@ MYSQL_YAML="$PYTHON_DIR/michelangelo/cli/sandbox/resources/mysql.yaml"
 MINIO_YAML="$PYTHON_DIR/michelangelo/cli/sandbox/resources/minio.yaml"
 MINIO_CREDS_YAML="$PYTHON_DIR/michelangelo/cli/sandbox/resources/minio-credentials.yaml"
 BUCKET_SETUP_YAML="$PYTHON_DIR/michelangelo/cli/sandbox/resources/sandbox-bucket-setup.yaml"
+MA_CONFIG_YAML="$PYTHON_DIR/michelangelo/cli/sandbox/resources/michelangelo-config.yaml"
 
 CLUSTER_NAME="${CLUSTER_NAME:-michelangelo-sandbox}"
 NAMESPACE="${NAMESPACE:-default}"
@@ -92,10 +103,12 @@ IGNORE_PODS="${IGNORE_PODS-^model-sync-}"
 NODE_READY_TIMEOUT="${NODE_READY_TIMEOUT:-300}"
 NODE_STABLE_SECS="${NODE_STABLE_SECS:-90}"
 NODE_RESTART_AFTER="${NODE_RESTART_AFTER:-60}"
+REFRESH_STALE_IMAGES="${REFRESH_STALE_IMAGES:-1}"
 
 CA_MOUNT_DEST="/etc/ssl/certs/ca-certificates.crt"
 APP_DEPLOYMENTS=(michelangelo-apiserver michelangelo-controllermgr michelangelo-worker michelangelo-ui)
-TOTAL_STEPS=14
+TOTAL_STEPS=16
+STALE_IMAGES=()
 STEP=0
 
 log() { echo "[recover] $*"; }
@@ -304,6 +317,96 @@ try:
 except Exception:
     print(0, "missing")
 '
+}
+
+# Prints IMG's $IMAGE_PLATFORM manifest digest from the registry, or nothing.
+remote_platform_digest() {
+  docker buildx imagetools inspect "$1" --raw 2>/dev/null | PLATFORM="$IMAGE_PLATFORM" python3 -c '
+import json, os, sys
+want = os.environ["PLATFORM"].split("/")
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for m in data.get("manifests", []):
+    p = m.get("platform", {})
+    if p.get("os") == want[0] and p.get("architecture") == want[-1]:
+        print(m["digest"])
+        break
+' || true
+}
+
+# Prints the image config digest of the manifest BASE@DIGEST, or nothing.
+remote_config_digest() {
+  docker buildx imagetools inspect "$1@$2" --raw 2>/dev/null | python3 -c '
+import json, sys
+try:
+    print(json.load(sys.stdin)["config"]["digest"])
+except Exception:
+    pass
+' || true
+}
+
+# Prints the config digest (image ID) of IMG in node container NODE's
+# containerd store, or nothing if the node doesn't have it.
+node_config_digest() {
+  docker exec "$1" crictl inspecti -o json "$2" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    print(json.load(sys.stdin)["status"]["id"])
+except Exception:
+    pass
+' || true
+}
+
+# Prints MinIO's root user and password, one per line, as the live minio Pod
+# boots with them (literal env value or secretKeyRef). Falls back to the
+# minio-credentials Secret; prints nothing if neither can be read.
+minio_root_creds() {
+  kubectl get pod minio -n "$NAMESPACE" -o json 2>/dev/null | NS="$NAMESPACE" python3 -c '
+import base64, json, os, subprocess, sys
+
+def secret_value(name, key):
+    out = subprocess.run(
+        ["kubectl", "get", "secret", name, "-n", os.environ["NS"], "-o", "jsonpath={.data." + key + "}"],
+        capture_output=True, text=True,
+    )
+    if out.returncode != 0 or not out.stdout.strip():
+        return None
+    return base64.b64decode(out.stdout.strip()).decode()
+
+def from_pod():
+    try:
+        containers = json.load(sys.stdin)["spec"]["containers"]
+    except Exception:
+        return None
+    if not containers:
+        return None
+    c = next((c for c in containers if c.get("name") == "minio"), containers[0])
+    env = {e.get("name"): e for e in c.get("env", [])}
+    if "MINIO_ROOT_USER" not in env and "MINIO_ROOT_PASSWORD" not in env:
+        # MinIO uses its built-in default when neither is set (minio.yaml before #2219).
+        return None if c.get("envFrom") else ["minioadmin", "minioadmin"]
+    values = []
+    for var in ("MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD"):
+        e = env.get(var, {})
+        if "value" in e:
+            values.append(e["value"])
+            continue
+        ref = e.get("valueFrom", {}).get("secretKeyRef")
+        value = secret_value(ref.get("name", ""), ref.get("key", "")) if ref else None
+        if value is None:
+            return None
+        values.append(value)
+    return values
+
+creds = from_pod()
+if creds is None:
+    creds = [secret_value("minio-credentials", k) for k in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY")]
+if all(creds):
+    print(creds[0])
+    print(creds[1])
+' || true
 }
 
 # ---------------------------------------------------------------------------
@@ -573,7 +676,9 @@ while true; do
     log "  no pods found yet in '$NAMESPACE'..."
   else
     unsettled="$(echo "$pod_lines" | awk '$3 ~ /Pending|ContainerCreating|PodInitializing|Init:/ {print $1}')"
-    crashing="$(echo "$pod_lines" | awk '$3 ~ /CrashLoopBackOff|Error|ImagePullBackOff|ErrImagePull/ {print $1 ": " $3}')"
+    crashing="$(echo "$pod_lines" | awk -v ignore="$IGNORE_PODS" '
+      $3 ~ /CrashLoopBackOff|Error|ImagePullBackOff|ErrImagePull/ &&
+        (ignore == "" || $1 !~ ignore) {print $1 ": " $3}')"
     if [ -n "$crashing" ]; then
       log "  WARNING — pods in a failure state (will keep polling until timeout):"
       echo "$crashing" | sed 's/^/[recover]   /'
@@ -627,23 +732,10 @@ else
     log "  stuck pods found but none reference ghcr.io — not an auto-fixable case here, leaving as-is."
   else
     log "  resolving and pulling ${#images_to_fix[@]} ghcr.io image(s) by $IMAGE_PLATFORM digest via host Docker"
-    platform_os="${IMAGE_PLATFORM%%/*}"
-    platform_arch="${IMAGE_PLATFORM##*/}"
     for img in "${images_to_fix[@]}"; do
       base="${img%:*}"
       log "    inspecting $img"
-      digest="$(docker buildx imagetools inspect "$img" --raw 2>/dev/null | python3 -c "
-import json, sys
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    sys.exit(0)
-for m in data.get('manifests', []):
-    p = m.get('platform', {})
-    if p.get('architecture') == '$platform_arch' and p.get('os') == '$platform_os':
-        print(m['digest'])
-        break
-")"
+      digest="$(remote_platform_digest "$img")"
       if [ -z "$digest" ]; then
         log "    WARNING — could not resolve a $IMAGE_PLATFORM digest for $img, skipping."
         continue
@@ -666,7 +758,82 @@ for m in data.get('manifests', []):
 fi
 
 # ---------------------------------------------------------------------------
-# 11. Compute-cluster CRD/RBAC/secrets
+# 11. Stale cached ghcr.io :main app images
+# ---------------------------------------------------------------------------
+# Compared by image config digest, which survives the host pull + `k3d image
+# import` path unchanged; a manifest digest may not.
+step "checking cached ghcr.io :main app images against the registry (gotcha #36)"
+refresh_deploys=()
+refresh_images=()
+checked=0
+for d in "${APP_DEPLOYMENTS[@]}"; do
+  img="$(kubectl get deployment "$d" -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+  case "$img" in
+    ghcr.io/michelangelo-ai/*:main) ;;
+    "") continue ;;
+    *) log "  $d: $img is not a ghcr.io :main image — skipping."; continue ;;
+  esac
+  checked=$((checked + 1))
+  base="${img%:*}"
+  digest="$(remote_platform_digest "$img")"
+  remote_cfg=""
+  if [ -n "$digest" ]; then
+    remote_cfg="$(remote_config_digest "$base" "$digest")"
+  fi
+  if [ -z "$remote_cfg" ]; then
+    log "  WARNING — $d: could not read $img's $IMAGE_PLATFORM config from the registry; not checked."
+    continue
+  fi
+  stale_on=""
+  for n in "${NODE_CONTAINERS[@]}"; do
+    node_cfg="$(node_config_digest "$n" "$img")"
+    if [ -n "$node_cfg" ] && [ "$node_cfg" != "$remote_cfg" ]; then
+      stale_on="$stale_on ${n} (${node_cfg:7:12})"
+    fi
+  done
+  if [ -z "$stale_on" ]; then
+    log "  $d: $img is current (${remote_cfg:7:12})."
+    continue
+  fi
+  log "  $d: $img is stale on$stale_on; the registry has ${remote_cfg:7:12}."
+  if [ "$REFRESH_STALE_IMAGES" = "0" ]; then
+    STALE_IMAGES+=("$d: $img")
+  elif docker pull "${base}@${digest}" >/dev/null && docker tag "${base}@${digest}" "$img"; then
+    refresh_deploys+=("$d")
+    refresh_images+=("$img")
+  else
+    log "  WARNING — could not pull ${base}@${digest}."
+    STALE_IMAGES+=("$d: $img")
+  fi
+done
+if [ "$checked" -eq 0 ]; then
+  log "  no app Deployments use ghcr.io :main images — skipping."
+fi
+if [ "${#refresh_images[@]}" -gt 0 ]; then
+  log "  importing ${#refresh_images[@]} refreshed image(s) into k3d cluster '$CLUSTER_NAME'"
+  if k3d image import "${refresh_images[@]}" -c "$CLUSTER_NAME"; then
+    for d in "${refresh_deploys[@]}"; do
+      kubectl rollout restart "deployment/$d" -n "$NAMESPACE" >/dev/null
+    done
+    for d in "${refresh_deploys[@]}"; do
+      if kubectl rollout status "deployment/$d" -n "$NAMESPACE" --timeout=180s >/dev/null 2>&1; then
+        log "  $d restarted on the refreshed image."
+      else
+        log "  WARNING — $d's rollout didn't finish within 180s; the final check lists its pods."
+      fi
+    done
+  else
+    log "  WARNING — k3d image import failed; the stale images are still in use."
+    i=0
+    while [ "$i" -lt "${#refresh_deploys[@]}" ]; do
+      STALE_IMAGES+=("${refresh_deploys[$i]}: ${refresh_images[$i]}")
+      i=$((i + 1))
+    done
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# 12. Compute-cluster CRD/RBAC/secrets
 # ---------------------------------------------------------------------------
 step "checking compute-cluster CRD/RBAC/secrets"
 if kubectl get secret "cluster-${CLUSTER_NAME}-ca-data" -n "$NAMESPACE" >/dev/null 2>&1 \
@@ -687,7 +854,55 @@ _create_compute_cluster_secrets(name)
 fi
 
 # ---------------------------------------------------------------------------
-# 12. ma-examples namespace + Project CR
+# 13. Task-pod S3 credentials
+# ---------------------------------------------------------------------------
+# Ray and Spark task pods read S3 settings from michelangelo-config via
+# envFrom. Only `ma sandbox create` writes it, so a sandbox created before the
+# minioadmin -> michelangeloadmin rename keeps the old key. Only the two
+# credential keys are synced; REGISTRY_NAMESPACE and the rest are left alone.
+step "checking michelangelo-config S3 credentials against MinIO's (gotcha #38)"
+minio_creds="$(minio_root_creds)"
+minio_user="$(printf '%s\n' "$minio_creds" | sed -n 1p)"
+minio_password="$(printf '%s\n' "$minio_creds" | sed -n 2p)"
+if [ -z "$minio_user" ] || [ -z "$minio_password" ]; then
+  log "  WARNING — could not read MinIO's root credentials (minio pod or minio-credentials Secret); skipping."
+else
+  if ! kubectl get configmap michelangelo-config -n "$NAMESPACE" >/dev/null 2>&1; then
+    if [ -f "$MA_CONFIG_YAML" ]; then
+      log "  michelangelo-config is missing — applying $MA_CONFIG_YAML"
+      kubectl apply -n "$NAMESPACE" -f "$MA_CONFIG_YAML" >/dev/null
+    else
+      log "  WARNING — michelangelo-config is missing and $MA_CONFIG_YAML not found; task pods can't start."
+    fi
+  fi
+  if kubectl get configmap michelangelo-config -n "$NAMESPACE" >/dev/null 2>&1; then
+    cm_user="$(kubectl get configmap michelangelo-config -n "$NAMESPACE" -o jsonpath='{.data.AWS_ACCESS_KEY_ID}' 2>/dev/null || true)"
+    cm_password="$(kubectl get configmap michelangelo-config -n "$NAMESPACE" -o jsonpath='{.data.AWS_SECRET_ACCESS_KEY}' 2>/dev/null || true)"
+    if [ "$cm_user" = "$minio_user" ] && [ "$cm_password" = "$minio_password" ]; then
+      log "  credentials match MinIO's (access key '$minio_user')."
+    else
+      if [ "$cm_user" = "$minio_user" ]; then
+        log "  access key '$minio_user' matches, but the secret key differs — patching."
+      else
+        log "  ConfigMap has access key '${cm_user:-<unset>}', MinIO uses '$minio_user' — patching."
+      fi
+      patch_file="$(mktemp)"
+      MINIO_USER="$minio_user" MINIO_PASSWORD="$minio_password" python3 -c '
+import json, os
+print(json.dumps({"data": {
+    "AWS_ACCESS_KEY_ID": os.environ["MINIO_USER"],
+    "AWS_SECRET_ACCESS_KEY": os.environ["MINIO_PASSWORD"],
+}}))
+' > "$patch_file"
+      kubectl patch configmap michelangelo-config -n "$NAMESPACE" --type merge --patch-file "$patch_file" >/dev/null
+      rm -f "$patch_file"
+      log "  patched. No restarts needed: every task creates new pods."
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# 14. ma-examples namespace + Project CR
 # ---------------------------------------------------------------------------
 step "ensuring '$EXAMPLES_NAMESPACE' namespace and Project CR"
 kubectl create namespace "$EXAMPLES_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
@@ -699,7 +914,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 13. Cadence domain
+# 15. Cadence domain
 # ---------------------------------------------------------------------------
 step "checking Cadence domain registration"
 if kubectl get deployment -n "$NAMESPACE" \
@@ -714,7 +929,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 14. Zombie RayClusters + failed pods
+# 16. Zombie RayClusters + failed pods
 # ---------------------------------------------------------------------------
 step "cleaning zombie RayCluster CRs and failed pods"
 kubectl delete raycluster.michelangelo.api -n "$NAMESPACE" --all --ignore-not-found >/dev/null 2>&1 || true
@@ -738,10 +953,22 @@ if [ -n "$unhealthy" ]; then
   sleep 20
   unhealthy="$(unhealthy_pods)"
 fi
+problems=0
 if [ -n "$unhealthy" ]; then
   log "FINISHED WITH PROBLEMS — unhealthy pods (ignoring '${IGNORE_PODS}'):"
   echo "$unhealthy" | sed 's/^/[recover]   /'
   log "  Next: kubectl logs -n <ns> <pod> --previous ; kubectl describe pod -n <ns> <pod> | tail -30"
+  problems=1
+fi
+if [ "${#STALE_IMAGES[@]}" -gt 0 ]; then
+  log "FINISHED WITH PROBLEMS — app images still behind the registry (step 11, gotcha #36):"
+  printf '%s\n' "${STALE_IMAGES[@]}" | sed 's/^/[recover]   /'
+  if [ "$REFRESH_STALE_IMAGES" = "0" ]; then
+    log "  Rerun without REFRESH_STALE_IMAGES=0 to refresh them."
+  fi
+  problems=1
+fi
+if [ "$problems" -eq 1 ]; then
   exit 2
 fi
 log "Done — all pods healthy (ignoring '${IGNORE_PODS}')."
