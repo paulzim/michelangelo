@@ -19,21 +19,28 @@
 #      clears this, so stop with that instruction instead of cascading.
 #   3. kubectl connectivity — restart serverlb on stale-EOF (gotcha #23).
 #   4. Nodes Ready *and stable* — a freshly booted node can report Ready and
-#      then flip to NotReady ~50s later; restart any node container that stays
-#      NotReady (gotcha #32 addendum). Must run before step 5: a node NotReady
-#      for >300s evicts the mysql/minio bare Pods.
+#      then flip to NotReady ~50s later, and right after a reboot a node can
+#      still show the Ready status it had before it, while its kubelet isn't
+#      running. So also require every node's kubelet Lease to renew. Restart
+#      any node container that stays NotReady or never renews (gotcha #32
+#      addendum, #39). Must run before step 5: a node NotReady for >300s
+#      evicts the mysql/minio bare Pods.
 #   5. mysql/minio bare Pods: delete evicted/terminal ones and reapply missing
-#      manifests (gotchas #9/#22/#28).
+#      manifests (gotchas #9/#22/#28), pinned to the node holding their
+#      node-local hostPath data (gotcha #39).
 #   6. Re-import locally-built images into k3d, before sync references them.
 #   7. Delete app Deployments carrying a kubectl field-manager lock (e.g. from
 #      `kubectl set image`) so Helm's server-side apply can't conflict
 #      (gotcha #12). A failed upgrade would also mark the release "failed" and
-#      push every later sync into a full reinstall (gotcha #29).
+#      push every later sync into a full reinstall (gotcha #29). Skipped with
+#      SKIP_SYNC=1.
 #   8. `ma sandbox sync` (gotcha #8), passing values-local.yaml (gitignored;
 #      copy values-local.example.yaml) as `--set` flags so custom images apply
 #      inside sync's own helm call on both the upgrade and reinstall paths.
 #      If sync's helm step succeeds but its readiness wait fails, continue and
-#      let the final health check report it.
+#      let the final health check report it. Sync drops and recreates the
+#      michelangelo MySQL database (gotcha #37); with SKIP_SYNC=1 this step
+#      only restarts the app Deployments instead, keeping the data.
 #   9. Poll until pods leave Pending/ContainerCreating.
 #  10. Auto-fix ghcr.io images stuck in ImagePullBackOff via host-Docker
 #      digest pulls + `k3d image import` (gotchas #24-27/#29).
@@ -52,6 +59,7 @@
 #
 # Usage:
 #   scripts/sandbox/recover-after-restart.sh
+#   SKIP_SYNC=1 scripts/sandbox/recover-after-restart.sh   # keep Studio's run history + Models
 #
 # Environment overrides:
 #   CLUSTER_NAME         — k3d cluster name (default: michelangelo-sandbox)
@@ -70,12 +78,19 @@
 #                          A fresh :main can be ahead of this checkout's chart if the fork
 #                          hasn't synced upstream lately.
 #   NODE_READY_TIMEOUT   — seconds to wait for nodes Ready+stable (default: 300)
-#   NODE_STABLE_SECS     — seconds a Ready transition must hold (default: 90)
+#   NODE_STABLE_SECS     — seconds nodes must stay Ready (default: 90). If this run started or
+#                          restarted a node container, only time this run observed counts.
 #   NODE_RESTART_AFTER   — seconds NotReady before restarting a node container (default: 60)
+#   SKIP_SYNC            — 1 = don't run `ma sandbox sync` (steps 7/8), so the michelangelo
+#                          MySQL database survives. Only for restarts: it can't recreate missing
+#                          Deployments or apply values-local.yaml (default: 0).
+#   DATA_NODE            — node to pin a recreated mysql/minio pod to, instead of the node
+#                          with the newest /shared/mysql-data or /shared/minio-data (step 5)
 #
 # Exit codes:
 #   0 = completed, all pods healthy (excluding IGNORE_PODS)
-#   1 = blocked: missing tool/cluster, wedged Docker ports, nodes not Ready, or sync's helm step failed
+#   1 = blocked: missing tool/cluster, wedged Docker ports, nodes not Ready, mysql/minio stuck
+#       terminating, sync's helm step failed, or SKIP_SYNC=1 with app Deployments missing
 #   2 = completed, but some pods are still unhealthy or app images still stale (listed at the end)
 
 set -euo pipefail
@@ -104,9 +119,13 @@ NODE_READY_TIMEOUT="${NODE_READY_TIMEOUT:-300}"
 NODE_STABLE_SECS="${NODE_STABLE_SECS:-90}"
 NODE_RESTART_AFTER="${NODE_RESTART_AFTER:-60}"
 REFRESH_STALE_IMAGES="${REFRESH_STALE_IMAGES:-1}"
+SKIP_SYNC="${SKIP_SYNC:-0}"
+DATA_NODE="${DATA_NODE:-}"
 
 CA_MOUNT_DEST="/etc/ssl/certs/ca-certificates.crt"
 APP_DEPLOYMENTS=(michelangelo-apiserver michelangelo-controllermgr michelangelo-worker michelangelo-ui)
+# What sync restarts, plus history-server, which crash-loops while MinIO is down (gotcha #28).
+RESTART_DEPLOYMENTS=(michelangelo-apiserver michelangelo-controllermgr michelangelo-worker history-server)
 TOTAL_STEPS=16
 STALE_IMAGES=()
 STEP=0
@@ -135,6 +154,12 @@ done < <(docker ps -a --format '{{.Names}}' 2>/dev/null | sort)
 NODE_CONTAINERS=("${SERVER_CONTAINERS[@]}")
 if [ "${#AGENT_CONTAINERS[@]}" -gt 0 ]; then
   NODE_CONTAINERS+=("${AGENT_CONTAINERS[@]}")
+fi
+if [ -n "$DATA_NODE" ]; then
+  case " ${NODE_CONTAINERS[*]} " in
+    *" $DATA_NODE "*) ;;
+    *) die "DATA_NODE='$DATA_NODE' is not one of this cluster's nodes: ${NODE_CONTAINERS[*]}" ;;
+  esac
 fi
 
 # ---------------------------------------------------------------------------
@@ -271,6 +296,32 @@ nodes_not_ready() {
   echo "$out" | awk '$2 !~ /^Ready/ {print $1}'
 }
 
+node_names() {
+  kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true
+}
+
+# Prints "<node> <renewTime>" for each kubelet Lease in kube-node-lease.
+node_lease_times() {
+  kubectl get leases -n kube-node-lease \
+    -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.renewTime}{"\n"}{end}' 2>/dev/null || true
+}
+
+# Prints the nodes in $1 whose Lease line in $3 (now) is absent or unchanged
+# from $2 (when step 4 began). Right after a reboot a node can still show the
+# Ready status it had before it, until the control plane notices its kubelet
+# is gone; a kubelet renews its Lease every 10s, so a renewal proves it's running.
+unrenewed_nodes() {
+  local n then_line now_line
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    then_line="$(printf '%s\n' "$2" | awk -v n="$n" '$1 == n')"
+    now_line="$(printf '%s\n' "$3" | awk -v n="$n" '$1 == n')"
+    if [ -z "$now_line" ] || [ "$now_line" = "$then_line" ]; then
+      echo "$n"
+    fi
+  done <<< "$1"
+}
+
 # Seconds since the most recent node Ready-condition transition.
 newest_ready_age() {
   local json
@@ -303,6 +354,60 @@ pod_usable() {
   state="$(kubectl get pod "$1" -n "$NAMESPACE" \
     -o jsonpath='{.status.phase}/{.metadata.deletionTimestamp}' 2>/dev/null || true)"
   [ "$state" = "Running/" ] || [ "$state" = "Pending/" ]
+}
+
+# Prints "<mtime> <node container>" for each node with files under DIR, newest
+# first. mtime is that of the newest file there, in epoch seconds.
+data_copies() {
+  local n t
+  for n in "${NODE_CONTAINERS[@]}"; do
+    t="$(docker exec "$n" sh -c 'find "$1" -type f 2>/dev/null | xargs stat -c %Y 2>/dev/null | sort -n | tail -1' \
+      _ "$1" 2>/dev/null || true)"
+    case "$t" in
+      '' | *[!0-9]*) ;;
+      *) echo "$t $n" ;;
+    esac
+  done | sort -rn
+}
+
+fmt_epoch() {
+  python3 -c 'import datetime, sys; print(datetime.datetime.fromtimestamp(int(sys.argv[1])).strftime("%Y-%m-%d %H:%M"))' "$1"
+}
+
+# Reapplies bare Pod POD from MANIFEST, pinned to the node holding its hostPath
+# data under DIR. Each node has its own /shared, so a pod that lands elsewhere
+# starts with an empty or stale copy (gotcha #39). DATA_NODE overrides the
+# choice; with no data on any node (a fresh sandbox) the scheduler picks.
+recreate_data_pod() {
+  local pod="$1" manifest="$2" dir="$3" copies node="" t n
+  if [ ! -f "$manifest" ]; then
+    log "  WARNING — $pod pod missing and $manifest not found, skipping."
+    return 0
+  fi
+  if [ -n "$DATA_NODE" ]; then
+    node="$DATA_NODE"
+    log "  $pod: pinning to DATA_NODE=$node"
+  else
+    copies="$(data_copies "$dir")"
+    if [ -z "$copies" ]; then
+      log "  $pod: no node has files under $dir — not pinning (fresh sandbox?)"
+    else
+      while read -r t n; do
+        log "    $dir on $n: newest file $(fmt_epoch "$t")"
+      done <<< "$copies"
+      node="$(printf '%s\n' "$copies" | awk 'NR == 1 {print $2}')"
+      if [ "$(printf '%s\n' "$copies" | awk 'END {print NR}')" -gt 1 ]; then
+        log "  WARNING — $pod: $dir exists on more than one node; using the newest. The others are stale copies."
+      fi
+      log "  $pod: pinning to $node, which holds the newest data (gotcha #39)"
+    fi
+  fi
+  log "  reapplying $manifest"
+  awk -v node="$node" '
+    /^kind: Pod/ {pod = 1}
+    {print}
+    pod && node != "" && /^spec:/ && !done {print "  nodeName: " node; done = 1}
+  ' "$manifest" | kubectl apply -n "$NAMESPACE" -f - >/dev/null
 }
 
 # Prints "<revision> <status>" for the Helm release, or "0 missing".
@@ -464,26 +569,53 @@ step "waiting for nodes to be Ready and stable (timeout ${NODE_READY_TIMEOUT}s)"
 start_ts=$(date +%s)
 deadline=$((start_ts + NODE_READY_TIMEOUT))
 restarted_nodes=0
+stable_since=""
+leases_then="$(node_lease_times)"
+if [ -z "$leases_then" ]; then
+  log "  WARNING — can't read node Leases in kube-node-lease; checking Ready conditions only."
+fi
 while true; do
   not_ready="$(nodes_not_ready)"
   now=$(date +%s)
-  if [ -z "$not_ready" ]; then
+  unrenewed=""
+  if [ -n "$leases_then" ] && [ "$not_ready" != "__apiserver_unreachable__" ]; then
+    unrenewed="$(unrenewed_nodes "$(node_names)" "$leases_then" "$(node_lease_times)")"
+  fi
+  stuck="$(printf '%s\n%s\n' "$not_ready" "$unrenewed" | awk 'NF && !seen[$0]++')"
+  if [ -z "$stuck" ]; then
+    if [ -z "$stable_since" ]; then
+      stable_since=$now
+    fi
     age="$(newest_ready_age)"
     age="${age:-0}"
+    # A node container this run started or restarted can still show the Ready
+    # transition from before it stopped, so count only what this loop has seen.
+    if [ "$STARTED_ANY" -eq 1 ] || [ "$restarted_nodes" -eq 1 ]; then
+      held=$((now - stable_since))
+      if [ "$held" -lt "$age" ]; then
+        age=$held
+      fi
+    fi
     if [ "$age" -ge "$NODE_STABLE_SECS" ]; then
-      log "  all nodes Ready (newest Ready transition ${age}s ago)."
+      log "  all nodes Ready with live kubelets for ${age}s."
       break
     fi
-    log "  all nodes Ready, but newest Ready transition was ${age}s ago — waiting until ${NODE_STABLE_SECS}s to rule out a post-boot flip back to NotReady"
+    log "  all nodes Ready with live kubelets for ${age}s — waiting until ${NODE_STABLE_SECS}s to rule out a flip back to NotReady"
   else
-    log "  not Ready: $(echo "$not_ready" | tr '\n' ' ')"
+    stable_since=""
+    if [ -n "$not_ready" ]; then
+      log "  not Ready: $(echo "$not_ready" | tr '\n' ' ')"
+    fi
+    if [ -n "$unrenewed" ]; then
+      log "  waiting for a kubelet Lease renewal from: $(echo "$unrenewed" | tr '\n' ' ')"
+    fi
     if [ "$restarted_nodes" -eq 0 ] && [ $((now - start_ts)) -ge "$NODE_RESTART_AFTER" ]; then
       restarted_nodes=1
       if [ "$not_ready" = "__apiserver_unreachable__" ]; then
         restart_serverlb
       else
-        log "  still NotReady after ${NODE_RESTART_AFTER}s — restarting those node containers once (gotcha #32 addendum)"
-        for n in $not_ready; do
+        log "  still NotReady or no kubelet renewal after ${NODE_RESTART_AFTER}s — restarting those node containers once (gotcha #32 addendum, #39)"
+        for n in $stuck; do
           if docker inspect "$n" >/dev/null 2>&1; then
             docker restart "$n" >/dev/null
           else
@@ -496,9 +628,10 @@ while true; do
     fi
   fi
   if [ "$now" -ge "$deadline" ]; then
-    log "ERROR — nodes not Ready+stable after ${NODE_READY_TIMEOUT}s; 'ma sandbox sync' would fail its own node wait."
+    log "ERROR — nodes not Ready+stable after ${NODE_READY_TIMEOUT}s; stopping before anything touches mysql/minio."
     log "  Inspect: kubectl describe node <name> | tail -30"
     log "           docker inspect -f '{{json .State}}' <node container>"
+    log "  A node that never renews its Lease often recovers after another 'docker restart <node container>'."
     exit 1
   fi
   sleep 5
@@ -515,8 +648,11 @@ for p in mysql minio; do
     continue
   fi
   if kubectl get pod "$p" -n "$NAMESPACE" >/dev/null 2>&1; then
-    log "  $p pod exists but is not Running/Pending (likely evicted while a node was NotReady) — deleting it"
-    kubectl delete pod "$p" -n "$NAMESPACE" --ignore-not-found --wait=true --timeout=60s >/dev/null 2>&1 || true
+    log "  $p pod exists but is not Running/Pending (evicted, or terminating after a node was NotReady) — deleting it"
+    kubectl delete pod "$p" -n "$NAMESPACE" --ignore-not-found --wait=true --timeout=120s >/dev/null 2>&1 || true
+    if kubectl get pod "$p" -n "$NAMESPACE" >/dev/null 2>&1; then
+      die "the $p pod still exists 120s after deletion, so its node's kubelet hasn't finished terminating it. Don't force-delete it: the old container may still hold /shared/$p-data. Check: kubectl get pod $p -n $NAMESPACE -o wide ; kubectl get nodes"
+    fi
   fi
   if [ "$p" = "mysql" ]; then
     mysql_missing=1
@@ -528,20 +664,12 @@ if [ "$mysql_missing" -eq 0 ] && [ "$minio_missing" -eq 0 ]; then
   log "  mysql and minio pods already present — skipping."
 else
   if [ "$mysql_missing" -eq 1 ]; then
-    if [ -f "$MYSQL_YAML" ]; then
-      log "  mysql pod missing — reapplying $MYSQL_YAML"
-      kubectl apply -f "$MYSQL_YAML" >/dev/null
-    else
-      log "  WARNING — mysql pod missing and $MYSQL_YAML not found, skipping."
-    fi
+    log "  mysql pod missing"
+    recreate_data_pod mysql "$MYSQL_YAML" /shared/mysql-data
   fi
   if [ "$minio_missing" -eq 1 ]; then
-    if [ -f "$MINIO_YAML" ]; then
-      log "  minio pod missing — reapplying $MINIO_YAML"
-      kubectl apply -f "$MINIO_YAML" >/dev/null
-    else
-      log "  WARNING — minio pod missing and $MINIO_YAML not found, skipping."
-    fi
+    log "  minio pod missing"
+    recreate_data_pod minio "$MINIO_YAML" /shared/minio-data
     for extra in "$MINIO_CREDS_YAML" "$BUCKET_SETUP_YAML"; do
       if [ -f "$extra" ]; then
         log "  minio was missing — also reapplying $extra (gotcha #28)"
@@ -574,43 +702,68 @@ fi
 # 7. Field-manager locks + release state
 # ---------------------------------------------------------------------------
 step "checking app Deployments for kubectl field-manager locks (gotcha #12)"
-locked=()
-while IFS=$'\t' read -r name managers; do
-  [ -n "$name" ] || continue
-  case ",$managers," in
-    *,kubectl-set,*|*,kubectl-edit,*|*,kubectl-patch,*) locked+=("$name") ;;
-  esac
-done < <(kubectl get deployment -n "$NAMESPACE" -l app.kubernetes.io/instance=michelangelo \
-  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .metadata.managedFields[*]}{.manager}{","}{end}{"\n"}{end}' \
-  2>/dev/null || true)
-if [ "${#locked[@]}" -gt 0 ]; then
-  for d in "${locked[@]}"; do
-    img="$(kubectl get deployment "$d" -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
-    log "  $d has fields owned by a kubectl edit (image: ${img:-?}) — deleting so Helm can recreate it."
-    kubectl delete deployment "$d" -n "$NAMESPACE" --wait=true >/dev/null
-  done
-  log "  pin custom images in $VALUES_LOCAL instead of 'kubectl set image' (see values-local.example.yaml)."
+if [ "$SKIP_SYNC" = "1" ]; then
+  log "  skipped (SKIP_SYNC=1): only a sync could recreate a deleted Deployment."
 else
-  log "  no locks found."
+  locked=()
+  while IFS=$'\t' read -r name managers; do
+    [ -n "$name" ] || continue
+    case ",$managers," in
+      *,kubectl-set,*|*,kubectl-edit,*|*,kubectl-patch,*) locked+=("$name") ;;
+    esac
+  done < <(kubectl get deployment -n "$NAMESPACE" -l app.kubernetes.io/instance=michelangelo \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .metadata.managedFields[*]}{.manager}{","}{end}{"\n"}{end}' \
+    2>/dev/null || true)
+  if [ "${#locked[@]}" -gt 0 ]; then
+    for d in "${locked[@]}"; do
+      img="$(kubectl get deployment "$d" -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+      log "  $d has fields owned by a kubectl edit (image: ${img:-?}) — deleting so Helm can recreate it."
+      kubectl delete deployment "$d" -n "$NAMESPACE" --wait=true >/dev/null
+    done
+    log "  pin custom images in $VALUES_LOCAL instead of 'kubectl set image' (see values-local.example.yaml)."
+  else
+    log "  no locks found."
+  fi
+  release_before="$(release_state)"
+  case "${release_before#* }" in
+    deployed) log "  Helm release revision ${release_before%% *} is 'deployed' — sync will upgrade in place." ;;
+    *) log "  Helm release is '${release_before#* }' — sync will uninstall + reinstall (gotcha #29)." ;;
+  esac
 fi
-release_before="$(release_state)"
-case "${release_before#* }" in
-  deployed) log "  Helm release revision ${release_before%% *} is 'deployed' — sync will upgrade in place." ;;
-  *) log "  Helm release is '${release_before#* }' — sync will uninstall + reinstall (gotcha #29)." ;;
-esac
 
 # ---------------------------------------------------------------------------
-# 8. ma sandbox sync, with local overrides as --set flags
+# 8. ma sandbox sync, with local overrides as --set flags (SKIP_SYNC=1: restarts only)
 # ---------------------------------------------------------------------------
-# Overrides go through sync's own --set passthrough rather than a separate
-# helm upgrade afterwards: --set outranks sync's `-f values-k3d.yaml` (which
-# pins every app image tag to "main"), and it applies on both the upgrade and
-# reinstall paths, so a recreated Deployment comes up on the right image
-# before sync's readiness wait runs.
-step "ma sandbox sync"
-SYNC_SET_ARGS=()
-if [ -f "$VALUES_LOCAL" ]; then
-  overrides="$(cd "$PYTHON_DIR" && VALUES_LOCAL="$VALUES_LOCAL" poetry run python3 -c '
+if [ "$SKIP_SYNC" = "1" ]; then
+  step "restarting app Deployments without a sync (SKIP_SYNC=1 keeps the MySQL data)"
+  missing_deploys=()
+  for d in "${APP_DEPLOYMENTS[@]}"; do
+    kubectl get deployment "$d" -n "$NAMESPACE" >/dev/null 2>&1 || missing_deploys+=("$d")
+  done
+  if [ "${#missing_deploys[@]}" -gt 0 ]; then
+    die "missing Deployments: ${missing_deploys[*]}. SKIP_SYNC=1 can't recreate them; rerun without it, knowing that sync drops the michelangelo MySQL database (gotcha #37)."
+  fi
+  if [ -f "$VALUES_LOCAL" ]; then
+    log "  $VALUES_LOCAL is only applied by a sync; Deployments keep their current images."
+  fi
+  # Like sync's own restarts: resets crash-loop backoff from while mysql/minio
+  # were down, and picks up local images step 6 re-imported under the same tag.
+  for d in "${RESTART_DEPLOYMENTS[@]}"; do
+    if kubectl get deployment "$d" -n "$NAMESPACE" >/dev/null 2>&1; then
+      kubectl rollout restart "deployment/$d" -n "$NAMESPACE" >/dev/null
+      log "  restarted $d"
+    fi
+  done
+else
+  # Overrides go through sync's own --set passthrough rather than a separate
+  # helm upgrade afterwards: --set outranks sync's `-f values-k3d.yaml` (which
+  # pins every app image tag to "main"), and it applies on both the upgrade and
+  # reinstall paths, so a recreated Deployment comes up on the right image
+  # before sync's readiness wait runs.
+  step "ma sandbox sync"
+  SYNC_SET_ARGS=()
+  if [ -f "$VALUES_LOCAL" ]; then
+    overrides="$(cd "$PYTHON_DIR" && VALUES_LOCAL="$VALUES_LOCAL" poetry run python3 -c '
 import os, sys, yaml
 path = os.environ["VALUES_LOCAL"]
 try:
@@ -637,27 +790,28 @@ def walk(prefix, node):
             print(key + "=" + esc(s, ","))
 walk("", data)
 ')" || die "could not read $VALUES_LOCAL (see error above)."
-  while IFS= read -r kv; do
-    if [ -n "$kv" ]; then SYNC_SET_ARGS+=(--set "$kv"); fi
-  done <<< "$overrides"
-  if [ "${#SYNC_SET_ARGS[@]}" -gt 0 ]; then
-    log "  local overrides from $VALUES_LOCAL:"
-    echo "$overrides" | sed 's/^/[recover]     --set /'
-  fi
-else
-  log "  no $VALUES_LOCAL — chart default images (template: $SCRIPT_DIR/values-local.example.yaml)."
-fi
-if ! (cd "$PYTHON_DIR" && poetry run ma sandbox sync ${SYNC_SET_ARGS[@]+"${SYNC_SET_ARGS[@]}"}); then
-  # A new 'deployed' revision means helm itself succeeded and only sync's
-  # readiness wait failed — keep going so the final health check can report.
-  release_after="$(release_state)"
-  if [ "$release_after" != "$release_before" ] && [ "${release_after#* }" = deployed ]; then
-    log "  WARNING — sync's helm step succeeded (revision ${release_after%% *}) but its readiness wait failed;"
-    log "  continuing. The final health check lists what's unhealthy (stale cached image? gotcha #36)."
-  elif [ "$release_after" = "$release_before" ]; then
-    die "'ma sandbox sync' failed without producing a new Helm release revision — see its output above."
+    while IFS= read -r kv; do
+      if [ -n "$kv" ]; then SYNC_SET_ARGS+=(--set "$kv"); fi
+    done <<< "$overrides"
+    if [ "${#SYNC_SET_ARGS[@]}" -gt 0 ]; then
+      log "  local overrides from $VALUES_LOCAL:"
+      echo "$overrides" | sed 's/^/[recover]     --set /'
+    fi
   else
-    die "'ma sandbox sync' failed; Helm release is now '${release_after#* }' — see its output above (field-manager conflict: gotcha #12)."
+    log "  no $VALUES_LOCAL — chart default images (template: $SCRIPT_DIR/values-local.example.yaml)."
+  fi
+  if ! (cd "$PYTHON_DIR" && poetry run ma sandbox sync ${SYNC_SET_ARGS[@]+"${SYNC_SET_ARGS[@]}"}); then
+    # A new 'deployed' revision means helm itself succeeded and only sync's
+    # readiness wait failed — keep going so the final health check can report.
+    release_after="$(release_state)"
+    if [ "$release_after" != "$release_before" ] && [ "${release_after#* }" = deployed ]; then
+      log "  WARNING — sync's helm step succeeded (revision ${release_after%% *}) but its readiness wait failed;"
+      log "  continuing. The final health check lists what's unhealthy (stale cached image? gotcha #36)."
+    elif [ "$release_after" = "$release_before" ]; then
+      die "'ma sandbox sync' failed without producing a new Helm release revision — see its output above."
+    else
+      die "'ma sandbox sync' failed; Helm release is now '${release_after#* }' — see its output above (field-manager conflict: gotcha #12)."
+    fi
   fi
 fi
 log "  app images now:"
