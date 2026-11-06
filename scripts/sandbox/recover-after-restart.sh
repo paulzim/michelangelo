@@ -13,10 +13,14 @@
 # Steps (see CLAUDE.md "Sandbox install gotchas" for the full writeup of each):
 #   1. Node containers: rebuild the k3d CA bind-mount source in $TMPDIR if a
 #      reboot deleted it (gotcha #32), then start stopped containers in
-#      order — server, agents, serverlb.
-#   2. Fail fast if Docker Desktop's port forwarding is wedged: serverlb has
-#      configured host ports that aren't live (gotcha #35). Only a Mac reboot
-#      clears this, so stop with that instruction instead of cascading.
+#      order — server, agents, serverlb. Restart serverlb if it was already up
+#      before the nodes it proxies: Docker Desktop starts it at launch, and it
+#      crash-loops while the server nodes are down.
+#   2. Fail fast if Docker Desktop's port forwarding is wedged: serverlb is
+#      running but its configured host ports still aren't live after
+#      SERVERLB_PORT_WAIT (gotcha #35). Only a Mac reboot clears this, so stop
+#      with that instruction instead of cascading. A serverlb that isn't
+#      running at all gets a different message: no reboot needed.
 #   3. kubectl connectivity — restart serverlb on stale-EOF (gotcha #23).
 #   4. Nodes Ready *and stable* — a freshly booted node can report Ready and
 #      then flip to NotReady ~50s later, and right after a reboot a node can
@@ -68,6 +72,7 @@
 #   POD_WAIT_TIMEOUT     — seconds to poll for pods to settle (default: 300)
 #   LOCAL_IMAGE_PATTERN  — grep pattern for local images to re-import (default: -local)
 #   SERVERLB_CONTAINER   — k3d serverlb container name (default: k3d-<CLUSTER_NAME>-serverlb)
+#   SERVERLB_PORT_WAIT   — seconds to wait for serverlb's host ports before step 2 fails (default: 30)
 #   IMAGE_PLATFORM       — os/arch to resolve ghcr.io digests for (default: linux/arm64)
 #   VALUES_LOCAL         — Helm overrides file (default: <script dir>/values-local.yaml)
 #   ZSCALER_CA_PEM       — Zscaler root CA appended to a rebuilt CA bundle
@@ -111,6 +116,7 @@ EXAMPLES_NAMESPACE="${EXAMPLES_NAMESPACE:-ma-examples}"
 POD_WAIT_TIMEOUT="${POD_WAIT_TIMEOUT:-300}"
 LOCAL_IMAGE_PATTERN="${LOCAL_IMAGE_PATTERN:--local}"
 SERVERLB_CONTAINER="${SERVERLB_CONTAINER:-k3d-${CLUSTER_NAME}-serverlb}"
+SERVERLB_PORT_WAIT="${SERVERLB_PORT_WAIT:-30}"
 IMAGE_PLATFORM="${IMAGE_PLATFORM:-linux/arm64}"
 VALUES_LOCAL="${VALUES_LOCAL:-$SCRIPT_DIR/values-local.yaml}"
 ZSCALER_CA_PEM="${ZSCALER_CA_PEM:-$REPO_ROOT/../michelangelo-examples/.docker/zscaler-root-ca.pem}"
@@ -177,11 +183,11 @@ port_wedge_abort() {
   exit 1
 }
 
-check_serverlb_ports() {
-  local configured live missing
+serverlb_unpublished_ports() {
+  local configured live
   configured="$(docker inspect -f '{{json .HostConfig.PortBindings}}' "$SERVERLB_CONTAINER" 2>/dev/null || echo '{}')"
   live="$(docker inspect -f '{{json .NetworkSettings.Ports}}' "$SERVERLB_CONTAINER" 2>/dev/null || echo '{}')"
-  missing="$(CONFIGURED="$configured" LIVE="$live" python3 -c '
+  CONFIGURED="$configured" LIVE="$live" python3 -c '
 import json, os
 def bound(raw):
     try:
@@ -190,14 +196,50 @@ def bound(raw):
         return set()
     return {port for port, bindings in data.items() if bindings}
 print(" ".join(sorted(bound(os.environ["CONFIGURED"]) - bound(os.environ["LIVE"]))))
-')"
-  if [ -n "$missing" ]; then
-    port_wedge_abort "$SERVERLB_CONTAINER" "configured but not live: $missing"
-  fi
+'
 }
 
+# Docker publishes ports only while a container runs. A serverlb that
+# crash-loops (its nginx exits when it can't resolve a server node) has none
+# between retries, yet .State.Running still says true. So it's the gotcha #35
+# wedge only if the container is really up and its ports stay dead.
+check_serverlb_ports() {
+  local missing status deadline
+  deadline=$(( $(date +%s) + SERVERLB_PORT_WAIT ))
+  while true; do
+    missing="$(serverlb_unpublished_ports)"
+    if [ -z "$missing" ]; then
+      return 0
+    fi
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      break
+    fi
+    sleep 2
+  done
+  status="$(container_status "$SERVERLB_CONTAINER")"
+  if [ "$status" != "running" ]; then
+    log "ERROR — $SERVERLB_CONTAINER is '$status' ($(container_restarts "$SERVERLB_CONTAINER") restarts), so Docker isn't publishing its ports."
+    log "  This is not the Docker port wedge (gotcha #35): no reboot needed. Its nginx exits when it"
+    log "  can't resolve a server node. See why:"
+    log "    docker logs --tail 30 $SERVERLB_CONTAINER"
+    log "  Check that every k3d-${CLUSTER_NAME}-server-* container is running, then rerun this script."
+    exit 1
+  fi
+  port_wedge_abort "$SERVERLB_CONTAINER" "configured but not live: $missing"
+}
+
+# True for a container Docker is about to restart, too (see check_serverlb_ports).
 container_running() {
   [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null || echo false)" = "true" ]
+}
+
+# running | restarting | exited | created | paused | dead
+container_status() {
+  docker inspect -f '{{.State.Status}}' "$1" 2>/dev/null || echo unknown
+}
+
+container_restarts() {
+  docker inspect -f '{{.RestartCount}}' "$1" 2>/dev/null || echo '?'
 }
 
 STARTED_ANY=0
@@ -260,20 +302,27 @@ kubectl_reachable() {
   kubectl get --raw='/healthz' --request-timeout=5s >/dev/null 2>&1
 }
 
+# docker restart serverlb. Stops the run on the gotcha #35 wedge; warns and
+# returns 1 on any other failure.
+restart_serverlb_container() {
+  local err
+  if ! err="$(docker restart "$SERVERLB_CONTAINER" 2>&1 >/dev/null)"; then
+    case "$err" in
+      *"ports are not available"*) port_wedge_abort "$SERVERLB_CONTAINER" "$err" ;;
+    esac
+    log "  WARNING — docker restart $SERVERLB_CONTAINER failed: $err"
+    return 1
+  fi
+}
+
 restart_serverlb() {
-  local err deadline
+  local deadline
   if ! docker inspect "$SERVERLB_CONTAINER" >/dev/null 2>&1; then
     log "  WARNING — container '$SERVERLB_CONTAINER' not found, cannot restart it."
     return 0
   fi
   log "  restarting $SERVERLB_CONTAINER (gotcha #23)"
-  if ! err="$(docker restart "$SERVERLB_CONTAINER" 2>&1 >/dev/null)"; then
-    case "$err" in
-      *"ports are not available"*) port_wedge_abort "$SERVERLB_CONTAINER" "$err" ;;
-    esac
-    log "  WARNING — docker restart failed: $err"
-    return 0
-  fi
+  restart_serverlb_container || return 0
   check_serverlb_ports
   deadline=$(( $(date +%s) + 30 ))
   until kubectl_reachable; do
@@ -534,7 +583,16 @@ if [ "${#AGENT_CONTAINERS[@]}" -gt 0 ]; then
   done
 fi
 if docker inspect "$SERVERLB_CONTAINER" >/dev/null 2>&1; then
-  start_container "$SERVERLB_CONTAINER"
+  lb_status="$(container_status "$SERVERLB_CONTAINER")"
+  # Docker Desktop restarts serverlb by itself at launch. After a reboot the
+  # nodes can't start until the CA repair above, so serverlb crash-loops
+  # (2026-11-06: 23 restarts), and docker start is a no-op on it.
+  if [ "$lb_status" = "restarting" ] || { [ "$STARTED_ANY" -eq 1 ] && [ "$lb_status" = "running" ]; }; then
+    log "  restarting $SERVERLB_CONTAINER: it came up before the nodes it proxies (state '$lb_status', $(container_restarts "$SERVERLB_CONTAINER") restarts)"
+    restart_serverlb_container || true
+  else
+    start_container "$SERVERLB_CONTAINER"
+  fi
 fi
 if [ "$STARTED_ANY" -eq 0 ]; then
   log "  all node containers already running."
@@ -617,6 +675,7 @@ while true; do
         log "  still NotReady or no kubelet renewal after ${NODE_RESTART_AFTER}s — restarting those node containers once (gotcha #32 addendum, #39)"
         for n in $stuck; do
           if docker inspect "$n" >/dev/null 2>&1; then
+            log "  restarting $n"
             docker restart "$n" >/dev/null
           else
             log "  WARNING — no container named $n"
